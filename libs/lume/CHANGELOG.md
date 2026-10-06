@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/trycua/cua/compare/lume-v0.6.1...lume-v0.6.2) (2026-10-06)
+
+
+### Bug Fixes
+
+* **lume:** stop a VM in lume serve without ending the server ([#4662](https://github.com/trycua/cua/issues/4662)) ([25f63ee](https://github.com/trycua/cua/commit/25f63eea951c1ac31f7b71357ba4c9f849199cec))
+
 ## [0.6.1](https://github.com/trycua/cua/compare/lume-v0.6.0...lume-v0.6.1) (2026-10-04)
 
 
