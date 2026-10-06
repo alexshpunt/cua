@@ -7385,7 +7385,17 @@ static HOLD_KEYS_DEF: std::sync::OnceLock<ToolDef> = std::sync::OnceLock::new();
 #[async_trait]
 impl Tool for HoldKeysTool {
     fn def(&self) -> &ToolDef {
-        HOLD_KEYS_DEF.get_or_init(|| ToolDef {
+        HOLD_KEYS_DEF.get_or_init(|| {
+            let point = json!({"type":"object","required":["x","y"],"properties":{"x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0}},"additionalProperties":false});
+            let pointer = json!({"type":"object","required":["action"],"properties":{
+                "action":{"type":"string","enum":["click","drag"]},
+                "x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0},
+                "from_x":{"type":"number","minimum":0},"from_y":{"type":"number","minimum":0},
+                "to_x":{"type":"number","minimum":0},"to_y":{"type":"number","minimum":0},
+                "duration_ms":{"type":"integer","minimum":0,"maximum":10000},"steps":{"type":"integer","minimum":1,"maximum":200},
+                "via":{"type":"array","minItems":1,"maxItems":254,"items":point}
+            },"additionalProperties":false});
+            ToolDef {
             name: "hold_keys".into(),
             description: "Windows only: hold 1..8 keys together for one bounded interval, optionally performing complete left clicks/drags while the keys remain down. Explicit foreground, exact pid/window_id and prior screenshot required. Keys release within this call; no cross-call state. Cancellation/target loss reports a partial prefix; never replay uncertain input.".into(),
             input_schema: json!({"type":"object","required":["pid","window_id","keys","duration_ms"],"properties":{
@@ -7394,17 +7404,11 @@ impl Tool for HoldKeysTool {
                 "pid":{"type":"integer","minimum":1},"window_id":{"type":"integer","minimum":1},
                 "keys":{"type":"array","minItems":1,"maxItems":8,"uniqueItems":true,"items":{"type":"string"}},
                 "duration_ms":{"type":"integer","minimum":1,"maximum":10000},
-                "actions":{"type":"array","minItems":1,"maxItems":32,"description":"Complete pixel left clicks/drags. All requested pointer time must fit the hold duration.","items":{"type":"object","required":["action"],"properties":{
-                    "action":{"type":"string","enum":["click","drag"]},
-                    "x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0},
-                    "from_x":{"type":"number","minimum":0},"from_y":{"type":"number","minimum":0},"to_x":{"type":"number","minimum":0},"to_y":{"type":"number","minimum":0},
-                    "duration_ms":{"type":"integer","minimum":0,"maximum":10000},"steps":{"type":"integer","minimum":1,"maximum":200},
-                    "via":{"type":"array","minItems":1,"maxItems":254,"items":{"type":"object","required":["x","y"],"properties":{"x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0}},"additionalProperties":false}}
-                },"additionalProperties":false}},
+                "actions":{"type":"array","minItems":1,"maxItems":32,"description":"Complete pixel left clicks/drags. All requested pointer time must fit the hold duration.","items":pointer},
                 "delivery_mode":crate::input::delivery::delivery_mode_schema()
             },"additionalProperties":false}),
             read_only:false, destructive:true, idempotent:false, open_world:true,
-        })
+        } })
     }
     async fn invoke(&self, args: Value) -> ToolResult {
         let request = match crate::key_hold::Request::parse(&args) {
