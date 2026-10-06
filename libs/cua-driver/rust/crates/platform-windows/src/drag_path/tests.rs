@@ -88,15 +88,30 @@ fn invalid_scaling_cannot_saturate_into_a_different_native_point() {
 
 #[test]
 fn public_receipt_keeps_partial_prefix_without_claiming_release() {
-    let result = Report {
+    let mut result = Report {
         completed_points: 2,
         pressed: true,
         released: false,
         error: Some("release_failed".into()),
     }
     .into_tool_result(3, 500, 510);
-    let public = result.action_record.unwrap().public_result().unwrap();
-    let value = serde_json::to_value(public).unwrap();
+    assert_ne!(
+        result.is_error,
+        Some(true),
+        "A handled partial action must reach action publication, not the generic MCP error arm."
+    );
+    let public = result
+        .action_record
+        .as_ref()
+        .unwrap()
+        .public_result()
+        .unwrap();
+    result.structured_content = Some(serde_json::to_value(public).unwrap());
+    let wire = cua_driver_core::mcp_result::conforming_tool_result(
+        "drag",
+        serde_json::to_value(&result).unwrap(),
+    );
+    let value = &wire["structuredContent"];
     assert_eq!(value["effect"], "partial");
     assert_eq!(value["delivery"]["delivered_count"], 2);
     assert_eq!(value["delivery"]["mode"], "foreground");

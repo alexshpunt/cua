@@ -88,12 +88,17 @@ impl Report {
         let message = format!("Windows held path: {}/{total} points, pressed={}, released={}, duration_ms={duration_ms}, elapsed_ms={elapsed_ms}. {}",
             self.completed_points, self.pressed, self.released,
             self.error.as_deref().unwrap_or("Delivery is not proof of the app's result."));
-        let result = if self.error.is_some() {
-            ToolResult::error(message)
-        } else {
-            ToolResult::text(message)
-        };
-        result.with_action_record(record)
+        // Handled partial delivery is an action outcome. The MCP error arm
+        // skips action publication and would discard its completed prefix.
+        if self.completed_points == 0 {
+            if let Some(error) = self.error.as_deref() {
+                return ToolResult::error(message).with_structured(serde_json::json!({
+                    "code": error.split(':').next().unwrap_or("input_failed"),
+                    "effect": "refused"
+                }));
+            }
+        }
+        ToolResult::text(message).with_action_record(record)
     }
 }
 struct HeldButton<'a, B: Backend> {
