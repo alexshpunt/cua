@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.5.0](https://github.com/trycua/cua/compare/cua-sdk-v0.4.1...cua-sdk-v0.5.0) (2026-10-06)
+
+
+### Features
+
+* **cua-driver:** six agent cursor motion styles ([#4659](https://github.com/trycua/cua/issues/4659)) ([5e5370f](https://github.com/trycua/cua/commit/5e5370f7c9a57e9540eadc17c19b5bfeca0d9d91))
+
+
+### Bug Fixes
+
+* **cua:** support host-only sign-in from a remote machine ([#4675](https://github.com/trycua/cua/issues/4675)) ([ea763a1](https://github.com/trycua/cua/commit/ea763a110ff967e8caaea4ff551b1b083d113849))
+* **sandbox:** report the live status of local VMs in sandbox ls ([#4657](https://github.com/trycua/cua/issues/4657)) ([9db2208](https://github.com/trycua/cua/commit/9db2208f942460445c0f5b589f6862b91ebf09a6))
+* **spaces:** preserve live OS metadata and show unknown honestly ([#4671](https://github.com/trycua/cua/issues/4671)) ([f25fe36](https://github.com/trycua/cua/commit/f25fe3691e651cc8ac6adf92931940ed25d9a6bb))
+* **spaces:** reach a macOS Space again after lume serve exits ([#4661](https://github.com/trycua/cua/issues/4661)) ([bba73a6](https://github.com/trycua/cua/commit/bba73a6e51339567819120f91f1c7c65fce0d999))
+
 ## [0.4.1](https://github.com/trycua/cua/compare/cua-sdk-v0.4.0...cua-sdk-v0.4.1) (2026-10-05)
 
 
