@@ -37,6 +37,10 @@ pub mod tools;
 // where the multi-monitor normalization bug was diagnosable by pure math.
 pub mod virtualdesk;
 
+// The held-path state machine is pure; native input stays Windows-only.
+#[cfg(any(target_os = "windows", test))]
+mod drag_path;
+
 #[cfg(any(target_os = "windows", test))]
 mod keycodes;
 

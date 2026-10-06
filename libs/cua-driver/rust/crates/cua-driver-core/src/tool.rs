@@ -71,9 +71,19 @@ pub fn with_runtime_scope<T>(scope: String, action: impl FnOnce() -> T) -> T {
     action()
 }
 
-fn desktop_action_coordinator() -> &'static tokio::sync::Mutex<()> {
-    static COORDINATOR: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-    COORDINATOR.get_or_init(|| tokio::sync::Mutex::new(()))
+tokio::task_local! {
+    static DISPATCH_DESKTOP_ACTION: Arc<tokio::sync::OwnedMutexGuard<()>>;
+}
+
+/// Keep physical input admission alive in a native worker after caller cancellation.
+/// Only the registry can install this lease; tool arguments cannot supply it.
+pub fn retain_desktop_action_admission() -> Option<Arc<tokio::sync::OwnedMutexGuard<()>>> {
+    DISPATCH_DESKTOP_ACTION.try_with(Arc::clone).ok()
+}
+
+fn desktop_action_coordinator() -> &'static Arc<tokio::sync::Mutex<()>> {
+    static COORDINATOR: OnceLock<Arc<tokio::sync::Mutex<()>>> = OnceLock::new();
+    COORDINATOR.get_or_init(|| Arc::new(tokio::sync::Mutex::new(())))
 }
 
 fn active_text_input_pids() -> &'static Mutex<HashSet<i64>> {
@@ -1738,10 +1748,10 @@ impl ToolRegistry {
             // which the foreground target can lose keyboard eligibility
             // between the fixture's focus proof and SendInput. Contended
             // runtimes still wait and serialize through the same mutex.
-            Some(match coordinator.try_lock() {
+            Some(Arc::new(match coordinator.clone().try_lock_owned() {
                 Ok(guard) => guard,
-                Err(_) => coordinator.lock().await,
-            })
+                Err(_) => coordinator.clone().lock_owned().await,
+            }))
         } else {
             None
         };
@@ -1782,11 +1792,18 @@ impl ToolRegistry {
         // Desktop pixels read off a capped get_desktop_state image are mapped
         // back to the uncapped capture before any platform interprets them.
         crate::desktop_capture_scale::map_desktop_args(&mut args);
-        let mut result = crate::recording::scope_dispatch_click_capture(
+        let invocation = crate::recording::scope_dispatch_click_capture(
             pending_turn.as_ref(),
             tool.invoke(args.clone()),
-        )
-        .await;
+        );
+        let mut result = match _desktop_action.as_ref() {
+            Some(admission) => {
+                DISPATCH_DESKTOP_ACTION
+                    .scope(admission.clone(), invocation)
+                    .await
+            }
+            None => invocation.await,
+        };
         match resolved_name {
             "get_desktop_state" if result.is_error != Some(true) => {
                 crate::desktop_capture_scale::record_desktop_state(
@@ -5379,6 +5396,80 @@ resources:
                 ..
             }
         ));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn cancelling_a_dispatch_keeps_admission_until_its_native_worker_finishes() {
+        struct HoldingDrag {
+            def: super::ToolDef,
+            started: Arc<tokio::sync::Notify>,
+            finish: Arc<tokio::sync::Notify>,
+        }
+        #[async_trait::async_trait]
+        impl super::Tool for HoldingDrag {
+            fn def(&self) -> &super::ToolDef {
+                &self.def
+            }
+            async fn invoke(&self, _: serde_json::Value) -> ToolResult {
+                let admission =
+                    super::retain_desktop_action_admission().expect("registry input admission");
+                let finish = self.finish.clone();
+                tokio::spawn(async move {
+                    finish.notified().await;
+                    drop(admission);
+                });
+                self.started.notify_one();
+                std::future::pending().await
+            }
+        }
+        let started = Arc::new(tokio::sync::Notify::new());
+        let finish = Arc::new(tokio::sync::Notify::new());
+        let mut registry = super::ToolRegistry::new();
+        registry.register(Box::new(HoldingDrag {
+            def: super::ToolDef {
+                name: "drag".into(),
+                description: "Held path test worker".into(),
+                input_schema: serde_json::json!({"type":"object","additionalProperties":true}),
+                read_only: false,
+                destructive: true,
+                idempotent: false,
+                open_world: true,
+            },
+            started: started.clone(),
+            finish: finish.clone(),
+        }));
+        let dispatch = tokio::spawn(async move {
+            registry
+                .invoke_with_context(
+                    "drag",
+                    serde_json::json!({
+                        "pid": 42, "window_id": 7, "delivery_mode": "foreground",
+                        "from_x": 1, "from_y": 1, "to_x": 2, "to_y": 2
+                    }),
+                    unrestricted_context(),
+                )
+                .await
+        });
+        tokio::time::timeout(Duration::from_secs(2), started.notified())
+            .await
+            .unwrap();
+        dispatch.abort();
+        assert!(dispatch.await.unwrap_err().is_cancelled());
+        let blocked = tokio::time::timeout(
+            Duration::from_millis(40),
+            desktop_action_coordinator().lock(),
+        )
+        .await;
+        let stayed_blocked = blocked.is_err();
+        drop(blocked);
+        finish.notify_one();
+        let released =
+            tokio::time::timeout(Duration::from_secs(2), desktop_action_coordinator().lock()).await;
+        assert!(
+            stayed_blocked,
+            "cancellation admitted input before native release"
+        );
+        assert!(released.is_ok());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

@@ -1,0 +1,114 @@
+name: Windows fork build
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact source commit to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-fork-build
+  cancel-in-progress: false
+
+env:
+  CUA_TELEMETRY: "0"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: libs/cua-driver/rust
+    steps:
+      - name: Validate source revision
+        working-directory: .
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          if ($env:SOURCE_REF -notmatch '^[0-9a-f]{40}$') {
+            throw 'source_ref must be an exact commit SHA'
+          }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1, same as the upstream release
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            libs/cua-driver/rust/target
+          key: windows-fork-rust-1.97.1-${{ hashFiles('libs/cua-driver/rust/Cargo.lock', 'libs/cua-driver/rust/**/Cargo.toml') }}
+      - name: Record build environment
+        run: |
+          New-Item -ItemType Directory -Force -Path build-evidence | Out-Null
+          git rev-parse HEAD | Set-Content build-evidence/source-sha.txt
+          rustc --version --verbose | Tee-Object build-evidence/rustc.txt
+          cargo --version | Tee-Object build-evidence/cargo.txt
+          rustup show active-toolchain | Tee-Object build-evidence/toolchain.txt
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json |
+            Set-Content build-evidence/msvc-installation.json
+          if ($LASTEXITCODE -ne 0) { throw 'Visual Studio discovery failed' }
+      - name: Run hermetic owner tests
+        env:
+          CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
+        run: |
+          cargo test --locked -p cua-driver-core -p platform-windows --lib 2>&1 |
+            Tee-Object build-evidence/tests.log
+          if ($LASTEXITCODE -ne 0) { throw "cargo test failed: $LASTEXITCODE" }
+      - name: Run protocol and schema tests
+        env:
+          CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
+        run: |
+          cargo test --locked -p cua-driver --test protocol_schema_test 2>&1 |
+            Tee-Object build-evidence/protocol-tests.log
+          if ($LASTEXITCODE -ne 0) { throw "protocol tests failed: $LASTEXITCODE" }
+      - name: Build candidate source
+        run: |
+          cargo build --locked -p cua-driver -p cursor-theme-cli -p cua-driver-uia --release --target x86_64-pc-windows-msvc 2>&1 |
+            Tee-Object build-evidence/build.log
+          if ($LASTEXITCODE -ne 0) { throw "cargo build failed: $LASTEXITCODE" }
+          git diff --exit-code
+          if ($LASTEXITCODE -ne 0) { throw 'The build changed tracked source' }
+      - name: Check and package the unsigned candidate
+        run: |
+          $release = 'target/x86_64-pc-windows-msvc/release'
+          & "$release/cua-driver.exe" --version 2>&1 | Tee-Object build-evidence/version.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Built driver version check failed' }
+          & "$release/cua-driver.exe" --help 2>&1 | Set-Content build-evidence/help.txt
+          if ($LASTEXITCODE -ne 0) { throw 'Built driver help check failed' }
+          $bundle = 'build-evidence/runtime'
+          New-Item -ItemType Directory -Force -Path $bundle | Out-Null
+          foreach ($name in 'cua-driver.exe', 'cua-cursor-theme.exe', 'cua-driver-uia.exe') {
+            Copy-Item "$release/$name" "$bundle/$name"
+          }
+          Copy-Item '../../../LICENSE.md' "$bundle/LICENSE.md"
+          Copy-Item 'THIRD_PARTY_NOTICES.md' "$bundle/THIRD_PARTY_NOTICES.md"
+          Get-ChildItem "$bundle/*.exe" | Get-FileHash -Algorithm SHA256 |
+            Select-Object @{Name='name';Expression={Split-Path $_.Path -Leaf}}, Hash |
+            ConvertTo-Json | Set-Content build-evidence/hashes.json
+          Get-ChildItem "$bundle/*.exe" | ForEach-Object {
+            $signature = Get-AuthenticodeSignature $_.FullName
+            [pscustomobject]@{name=$_.Name;signature_status=[string]$signature.Status}
+          } | ConvertTo-Json | Set-Content build-evidence/signatures.json
+          'Unsigned research build. This is not an installed or qualified runtime; UIAccess signing is not established.' |
+            Set-Content "$bundle/BUILD-NOTICE.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-fork-build-${{ inputs.source_ref }}
+          path: libs/cua-driver/rust/build-evidence/
+          if-no-files-found: error
+          retention-days: 14
