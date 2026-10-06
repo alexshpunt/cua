@@ -7382,6 +7382,75 @@ pub struct DragTool {
 }
 
 static DRAG_DEF: std::sync::OnceLock<ToolDef> = std::sync::OnceLock::new();
+fn path_refusal(code: &str, message: &str) -> ToolResult {
+    ToolResult::error(message).with_structured(json!({"code":code,"effect":"refused"}))
+}
+
+impl DragTool {
+    async fn invoke_path(&self, args: &Value, cursor_key: String) -> ToolResult {
+        let request = match crate::drag_path::Request::parse(args) {
+            Ok(request) => request,
+            Err(code) => {
+                return path_refusal(code, "Invalid held-path request; no input was sent.")
+            }
+        };
+        if crate::input::delivery::DeliveryMode::from_args(args)
+            != crate::input::delivery::DeliveryMode::Foreground
+        {
+            return path_refusal(
+                "background_unavailable",
+                "Windows held paths need delivery_mode:foreground. No path input was sent.",
+            );
+        }
+        let pid = request.pid;
+        let hwnd = request.window_id;
+        let ratio = match screenshot_scale(&self.state, args, pid, Some(hwnd)) {
+            Ok(ratio) => ratio,
+            Err(refusal) => return refusal,
+        };
+        let path = match request.into_path(ratio) {
+            Ok(path) => path,
+            Err(code) => return path_refusal(code, "Invalid scaled path; no input was sent."),
+        };
+        let total_points = path.points.len();
+        let duration_ms = path.duration_ms;
+        let started = std::time::Instant::now();
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let _cancel_on_drop = crate::input::path::CancelOnDrop(cancelled.clone());
+        // A cancelled caller must not admit another input while this worker
+        // still owns its button. The worker releases before dropping the lease.
+        let admission = cua_driver_core::tool::retain_desktop_action_admission();
+        let result = tokio::task::spawn_blocking(move || {
+            let _admission = admission;
+            crate::input::path::send_path(hwnd, pid, &path, cancelled, bitmap_to_screen, cursor_key)
+        })
+        .await;
+        match result {
+            Ok(Ok(report)) => report.into_tool_result(
+                total_points,
+                duration_ms,
+                started.elapsed().as_millis() as u64,
+            ),
+            Ok(Err(error)) => {
+                path_refusal(error.split(':').next().unwrap_or("input_failed"), &error)
+            }
+            Err(error) => {
+                use cua_driver_core::action_record::{
+                    ActionEffect, ActionExecutionRecord, ActionTransport, ActualDelivery,
+                    RequestedDelivery,
+                };
+                let mut record = ActionExecutionRecord::new(
+                    ActionEffect::Unverifiable,
+                    ActionTransport::WindowsSendInput,
+                    RequestedDelivery::Foreground,
+                );
+                record.actual_delivery = Some(ActualDelivery::Unknown);
+                ToolResult::error(format!("Held-path worker failed; prefix and release unconfirmed. Do not replay: {error}"))
+                    .with_action_record(record)
+            }
+        }
+    }
+}
 
 #[async_trait]
 impl Tool for DragTool {
@@ -7390,7 +7459,10 @@ impl Tool for DragTool {
             name: "drag".into(),
             description: "Press-drag-release gesture from (from_x, from_y) to (to_x, to_y) in window-local screenshot pixels. \
                           duration_ms (default 500) is the wall-clock budget; steps (default 20) interpolates intermediate \
-                          WM_MOUSEMOVE events along the path. No focus steal. After a zoom call, pass from_zoom=true. \
+                          WM_MOUSEMOVE events along the straight path. Optional via (1–254 intermediate {x,y} points) holds one \
+                          left button across a Windows foreground path, requiring explicit pid/window_id and a prior screenshot; \
+                          incompatible with steps, modifier, or from_zoom. Straight background drags do not steal focus. \
+                          After a zoom call, straight drags may pass from_zoom=true. \
                           Drags that start on a window caption / title bar or resize border (i.e. moving or resizing the \
                           window itself) cannot be delivered in the background — the OS move/resize loop needs real pointer \
                           input — so they return background_unavailable; re-issue those with delivery_mode:\"foreground\".".into(),
@@ -7403,6 +7475,7 @@ impl Tool for DragTool {
                 "from_y":{"type":"number","description":"Drag-start Y in window-local screenshot pixels."},
                 "to_x":{"type":"number","description":"Drag-end X in window-local screenshot pixels."},
                 "to_y":{"type":"number","description":"Drag-end Y in window-local screenshot pixels."},
+                "via":{"type":"array","minItems":1,"maxItems":254,"description":"Windows only: intermediate screenshot-space points for one held left-button foreground path. Requires explicit pid/window_id; no steps, modifier or zoom coordinates.","items":{"type":"object","required":["x","y"],"properties":{"x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0}},"additionalProperties":false}},
                 "duration_ms":{"type":"integer","minimum":0,"maximum":10000,"description":"Wall-clock duration of drag path. Default: 500."},
                 "steps":{"type":"integer","minimum":1,"maximum":200,"description":"Number of intermediate WM_MOUSEMOVE events. Default: 20."},
                 "modifier": cua_driver_core::tool_schema::modifier_schema(),
@@ -7417,6 +7490,9 @@ impl Tool for DragTool {
         use crate::input::delivery::{DeliveryMode, EventKind};
         use cua_driver_core::tool_args::ArgsExt;
         let cursor_key = resolve_cursor_key(&args);
+        if args.get("via").is_some() {
+            return self.invoke_path(&args, cursor_key).await;
+        }
         if args.get("scope").and_then(Value::as_str) == Some("desktop")
             && args.get("pid").is_none()
             && args.get("window_id").is_none()
