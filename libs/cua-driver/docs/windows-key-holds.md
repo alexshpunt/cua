@@ -27,5 +27,9 @@ Use the existing acknowledged envelope receiver (`CUA_DRIVER_MCP_ENVELOPES=1`)
 for in-flight EOF cancellation. Default serial MCP and cancellation notifications
 are not a safe release boundary. Forced process termination cannot run cleanup.
 
-This feature needs a Windows build and real native lifecycle checks before adoption.
-The existing qualified mouse-path build stays installed until those checks pass.
+The exact source 3b330504 passed Windows CI 37449622352, native timed/modifier-held
+pointer input, foreground/target loss and acknowledged EOF release. Installed Pi
+production tools also passed; the old qualified mouse-path build stays available.
+See https://github.com/alexshpunt/pi-agent-computer-use/blob/develop/docs/windows-key-hold-results.md
+for qualification evidence and limits. Later documentation commits do not change
+the qualified binary source or its hash.
