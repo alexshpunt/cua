@@ -7377,6 +7377,98 @@ impl Tool for RightClickTool {
 
 // ── drag ─────────────────────────────────────────────────────────────────────
 
+pub struct HoldKeysTool {
+    state: Arc<ToolState>,
+}
+static HOLD_KEYS_DEF: std::sync::OnceLock<ToolDef> = std::sync::OnceLock::new();
+
+#[async_trait]
+impl Tool for HoldKeysTool {
+    fn def(&self) -> &ToolDef {
+        HOLD_KEYS_DEF.get_or_init(|| ToolDef {
+            name: "hold_keys".into(),
+            description: "Windows only: hold 1..8 keys together for one bounded interval, optionally performing complete left clicks/drags while the keys remain down. Explicit foreground, exact pid/window_id and prior screenshot required. Keys release within this call; no cross-call state. Cancellation/target loss reports a partial prefix; never replay uncertain input.".into(),
+            input_schema: json!({"type":"object","required":["pid","window_id","keys","duration_ms"],"properties":{
+                "session":cua_driver_core::tool_schema::session_schema(),
+                "scope":{"type":"string","enum":["window"]},
+                "pid":{"type":"integer","minimum":1},"window_id":{"type":"integer","minimum":1},
+                "keys":{"type":"array","minItems":1,"maxItems":8,"uniqueItems":true,"items":{"type":"string"}},
+                "duration_ms":{"type":"integer","minimum":1,"maximum":10000},
+                "actions":{"type":"array","minItems":1,"maxItems":32,"description":"Complete pixel left clicks/drags. All requested pointer time must fit the hold duration.","items":{"type":"object","required":["action"],"properties":{
+                    "action":{"type":"string","enum":["click","drag"]},
+                    "x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0},
+                    "from_x":{"type":"number","minimum":0},"from_y":{"type":"number","minimum":0},"to_x":{"type":"number","minimum":0},"to_y":{"type":"number","minimum":0},
+                    "duration_ms":{"type":"integer","minimum":0,"maximum":10000},"steps":{"type":"integer","minimum":1,"maximum":200},
+                    "via":{"type":"array","minItems":1,"maxItems":254,"items":{"type":"object","required":["x","y"],"properties":{"x":{"type":"number","minimum":0},"y":{"type":"number","minimum":0}},"additionalProperties":false}}
+                },"additionalProperties":false}},
+                "delivery_mode":crate::input::delivery::delivery_mode_schema()
+            },"additionalProperties":false}),
+            read_only:false, destructive:true, idempotent:false, open_world:true,
+        })
+    }
+    async fn invoke(&self, args: Value) -> ToolResult {
+        let request = match crate::key_hold::Request::parse(&args) {
+            Ok(request) => request,
+            Err(code) => return path_refusal(code, "Invalid key-hold request; no input was sent."),
+        };
+        if crate::input::delivery::DeliveryMode::from_args(&args)
+            != crate::input::delivery::DeliveryMode::Foreground
+        {
+            return path_refusal(
+                "background_unavailable",
+                "Windows key holds require explicit foreground. No input was sent.",
+            );
+        }
+        let (pid, hwnd) = (request.pid, request.window_id);
+        let ratio = match screenshot_scale(&self.state, &args, pid, Some(hwnd)) {
+            Ok(ratio) => ratio,
+            Err(refusal) => return refusal,
+        };
+        let hold = match request.into_hold(ratio) {
+            Ok(hold) => hold,
+            Err(code) => return path_refusal(code, "Invalid scaled hold; no input was sent."),
+        };
+        let started = std::time::Instant::now();
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let _cancel_on_drop = crate::input::path::CancelOnDrop(cancelled.clone());
+        let admission = cua_driver_core::tool::retain_desktop_action_admission();
+        let cursor_key = resolve_cursor_key(&args);
+        let result = tokio::task::spawn_blocking(move || {
+            let _admission = admission;
+            let report = crate::input::path::send_hold(
+                hwnd,
+                pid,
+                &hold,
+                cancelled,
+                bitmap_to_screen,
+                cursor_key,
+            );
+            (hold, report)
+        })
+        .await;
+        match result {
+            Ok((hold, Ok(report))) => {
+                report.into_tool_result(&hold, started.elapsed().as_millis() as u64)
+            }
+            Ok((_, Err(error))) => {
+                path_refusal(error.split(':').next().unwrap_or("input_failed"), &error)
+            }
+            Err(error) => {
+                use cua_driver_core::action_record::{
+                    ActionEffect, ActionExecutionRecord, ActionTransport, ActualDelivery,
+                    RequestedDelivery,
+                };
+                let mut record = ActionExecutionRecord::new(
+                    ActionEffect::Unverifiable,
+                    ActionTransport::WindowsSendInput,
+                    RequestedDelivery::Foreground,
+                );
+                record.actual_delivery = Some(ActualDelivery::Unknown);
+                ToolResult::error(format!("Key-hold worker failed; prefix and release unconfirmed. Do not replay: {error}")).with_action_record(record)
+            }
+        }
+    }
+}
 pub struct DragTool {
     state: Arc<ToolState>,
 }
@@ -10238,6 +10330,12 @@ pub fn build_registry_with_provider(
     ));
     r.register(pid_window_guarded(
         RightClickTool {
+            state: state.clone(),
+        },
+        &pid_window_candidates,
+    ));
+    r.register(pid_window_guarded(
+        HoldKeysTool {
             state: state.clone(),
         },
         &pid_window_candidates,

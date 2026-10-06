@@ -40,6 +40,9 @@ struct NativePath {
     previous_cursor: POINT,
     last_cursor: Option<(i32, i32)>,
     cursor_key: String,
+    held_keys: Vec<windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY>,
+    hold_started: Instant,
+    hold_duration_ms: Option<u64>,
 }
 
 impl NativePath {
@@ -105,6 +108,12 @@ impl Backend for NativePath {
     }
 
     fn move_to(&mut self, point: Point) -> Result<(), String> {
+        if self.hold_duration_ms.is_some_and(|duration| {
+            self.hold_started.elapsed() > Duration::from_millis(duration + 50)
+        }) && !self.held_keys.is_empty()
+        {
+            return Err("hold_duration_exceeded: stopped before another pointer event".into());
+        }
         let (x, y) = self.screen_point(point)?;
         let (dx, dy) = unsafe {
             crate::virtualdesk::to_virtualdesk_absolute(
@@ -175,7 +184,8 @@ impl Drop for NativePath {
         // The pure state machine already released on handled failures. This also
         // covers a panic after native insertion but before the backend returned.
         let _ = self.release();
-        if self.held {
+        let _ = crate::key_hold::Backend::release_keys(self);
+        if self.held || !self.held_keys.is_empty() {
             return;
         }
         // Let the target consume its queued button-up before any restoration.
@@ -208,6 +218,40 @@ pub(crate) fn send_path(
     map: MapPoint,
     cursor_key: String,
 ) -> Result<Report, String> {
+    let mut native = prepare(hwnd, pid, cancelled, map, cursor_key, &[], &[path])?;
+    Ok(drag_path::execute(path, &mut native))
+}
+
+/// One native admission owns keyboard state and all pointer work until release.
+pub(crate) fn send_hold(
+    hwnd: u64,
+    pid: u32,
+    hold: &crate::key_hold::Hold,
+    cancelled: Arc<AtomicBool>,
+    map: MapPoint,
+    cursor_key: String,
+) -> Result<crate::key_hold::Report, String> {
+    let paths = hold.actions.iter().collect::<Vec<_>>();
+    let mut native = prepare(hwnd, pid, cancelled, map, cursor_key, &hold.keys, &paths)?;
+    native.hold_duration_ms = Some(hold.duration_ms);
+    native.hold_started = Instant::now();
+    let mut report = crate::key_hold::execute(hold, &mut native);
+    report.held_ms = native.hold_started.elapsed().as_millis() as u64;
+    Ok(report)
+}
+
+fn prepare(
+    hwnd: u64,
+    pid: u32,
+    cancelled: Arc<AtomicBool>,
+    map: MapPoint,
+    cursor_key: String,
+    keys: &[String],
+    paths: &[&Path],
+) -> Result<NativePath, String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        VK_CONTROL, VK_LWIN, VK_MENU, VK_RWIN, VK_SHIFT,
+    };
     if cancelled.load(Ordering::Acquire) {
         return Err("cancelled".into());
     }
@@ -220,15 +264,24 @@ pub(crate) fn send_path(
     if let Some(error) = crate::input::post_message_blocked_by_uipi(hwnd) {
         return Err(format!("input_integrity_denied: {error}"));
     }
-    for key in [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON] {
+    let mut busy = vec![VK_LBUTTON, VK_RBUTTON, VK_MBUTTON];
+    if !keys.is_empty() {
+        busy.extend([VK_CONTROL, VK_SHIFT, VK_MENU, VK_LWIN, VK_RWIN]);
+        for key in keys {
+            busy.push(crate::input::keyboard::key_name_to_vk(key).map_err(|e| e.to_string())?);
+        }
+    }
+    for key in busy {
         if unsafe { GetAsyncKeyState(i32::from(key.0)) } as u16 & 0x8000 != 0 {
-            return Err("input_busy: a physical mouse button is already held".into());
+            return Err(
+                "input_busy: a requested key, modifier or mouse button is already held".into(),
+            );
         }
     }
     let mut previous_cursor = POINT::default();
     unsafe { GetCursorPos(&mut previous_cursor) }
         .map_err(|error| format!("cursor_unavailable: {error}"))?;
-    let mut native = NativePath {
+    let native = NativePath {
         hwnd,
         pid,
         cancelled,
@@ -239,13 +292,59 @@ pub(crate) fn send_path(
         previous_cursor,
         last_cursor: None,
         cursor_key,
+        held_keys: Vec::with_capacity(keys.len()),
+        hold_started: Instant::now(),
+        hold_duration_ms: None,
     };
-    // Validate all current point bounds before activation or any path input.
-    for point in &path.points {
-        native.screen_point(*point)?;
+    for path in paths {
+        for point in &path.points {
+            native.screen_point(*point)?;
+        }
     }
     if !unsafe { crate::input::force_foreground_assisted(HWND(hwnd as *mut _)) }.0 {
         return Err("foreground_unavailable: exact window did not become foreground".into());
     }
-    Ok(drag_path::execute(path, &mut native))
+    Ok(native)
+}
+
+impl crate::key_hold::Backend for NativePath {
+    fn press_key(&mut self, key: &str) -> Result<(), String> {
+        let vk = crate::input::keyboard::key_name_to_vk(key).map_err(|error| error.to_string())?;
+        if unsafe { GetAsyncKeyState(i32::from(vk.0)) } as u16 & 0x8000 != 0 {
+            return Err("input_busy: requested key became held before insertion".into());
+        }
+        if self.held_keys.is_empty() {
+            self.hold_started = Instant::now();
+        }
+        self.send(crate::input::keyboard::key_input(vk, false))?;
+        self.held_keys.push(vk);
+        Ok(())
+    }
+    fn release_keys(&mut self) -> Result<(), String> {
+        let mut errors = Vec::new();
+        for i in (0..self.held_keys.len()).rev() {
+            match self.send(crate::input::keyboard::key_input(self.held_keys[i], true)) {
+                Ok(()) => {
+                    self.held_keys.remove(i);
+                }
+                Err(error) => errors.push(error),
+            }
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(format!("key_release_failed: {}", errors.join("; ")))
+        }
+    }
+    fn wait_hold(&mut self, duration_ms: u64) -> Result<(), String> {
+        let deadline = Duration::from_millis(duration_ms);
+        while self.hold_started.elapsed() < deadline {
+            self.check_target()?;
+            sleep(
+                (deadline - self.hold_started.elapsed().min(deadline))
+                    .min(Duration::from_millis(10)),
+            );
+        }
+        Ok(())
+    }
 }

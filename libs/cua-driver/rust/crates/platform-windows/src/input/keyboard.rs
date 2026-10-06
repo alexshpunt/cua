@@ -780,7 +780,7 @@ fn unicode_key_input(unit: u16, up: bool) -> INPUT {
 /// Build a single keyboard INPUT struct for `vk`, either down (`up = false`)
 /// or up (`up = true`). Uses scancode + EXTENDEDKEY where applicable so the
 /// target sees a hardware-like keystroke.
-fn key_input(vk: VIRTUAL_KEY, up: bool) -> INPUT {
+pub(crate) fn key_input(vk: VIRTUAL_KEY, up: bool) -> INPUT {
     let scan = unsafe { MapVirtualKeyW(vk.0 as u32, MAPVK_VK_TO_VSC) } as u16;
     let mut flags: KEYBD_EVENT_FLAGS = KEYBD_EVENT_FLAGS(0);
     // Scancode is more reliable than VK for some apps. EXTENDEDKEY flag
@@ -855,7 +855,7 @@ fn is_extended(vk: VIRTUAL_KEY) -> bool {
     )
 }
 
-fn key_name_to_vk(key: &str) -> Result<VIRTUAL_KEY> {
+pub(crate) fn key_name_to_vk(key: &str) -> Result<VIRTUAL_KEY> {
     use windows::Win32::UI::Input::KeyboardAndMouse::*;
     // Windows reserves the ASCII values themselves as the virtual-key codes
     // for A-Z and 0-9. Resolve the documented alphanumeric vocabulary

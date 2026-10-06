@@ -2872,6 +2872,7 @@ fn is_physical_desktop_action(tool: &str) -> bool {
             | "mouse_button_up"
             | "type_text"
             | "press_key"
+            | "hold_keys"
             | "hotkey"
             | "set_value"
             | "bring_to_front"
