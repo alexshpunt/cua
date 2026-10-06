@@ -37,7 +37,7 @@ A failed path reports its actual prefix. A release failure must not claim releas
 
 The native worker keeps physical-input admission until release/cleanup finishes. Dropping its caller sets a cancellation flag; the worker checks it during waits and before subsequent events. A foreground change, lost/hidden/minimized target or out-of-bounds point stops further movement and attempts button-up. Restoration never takes foreground away from a window that the user chose while the path was running.
 
-Legacy MCP cancellation notifications are not handled by the baseline transport. Closing its owned stdin ends/aborts its in-flight tasks, which is the graceful cancellation boundary to verify. Do not promise that a bare client timeout stops native input, or that forcibly killing the native process can run its cleanup.
+Use the existing upstream EOF-aware receiver with child-local `CUA_DRIVER_MCP_ENVELOPES=1`. Check its `ai.cua.driver.envelopes` version 1 capability at MCP initialization. It accepts ordinary tool calls and reads EOF while a path is active, drops the invocation and signals native cleanup. The default serial MCP loop cannot notice EOF until the active call finishes; do not qualify it for held paths. Legacy cancellation notifications are ignored in both modes. A bare client timeout is not a release boundary, and forcibly killing the process cannot run its cleanup.
 
 ## Verification boundary
 
