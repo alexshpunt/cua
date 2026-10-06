@@ -72,7 +72,7 @@ jobs:
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
         run: |
-          cargo test --locked -p cua-driver --test protocol_schema_test 2>&1 |
+          cargo test --locked -p cua-driver --test protocol_schema_test --test schema_consistency_test 2>&1 |
             Tee-Object build-evidence/protocol-tests.log
           if ($LASTEXITCODE -ne 0) { throw "protocol tests failed: $LASTEXITCODE" }
       - name: Build candidate source

@@ -7400,7 +7400,6 @@ impl Tool for HoldKeysTool {
             description: "Windows only: hold 1..8 keys together for one bounded interval, optionally performing complete left clicks/drags while the keys remain down. Explicit foreground, exact pid/window_id and prior screenshot required. Keys release within this call; no cross-call state. Cancellation/target loss reports a partial prefix; never replay uncertain input.".into(),
             input_schema: json!({"type":"object","required":["pid","window_id","keys","duration_ms"],"properties":{
                 "session":cua_driver_core::tool_schema::session_schema(),
-                "scope":{"type":"string","enum":["window"],"description":"Exact window-local input scope; desktop input is not supported."},
                 "pid":{"type":"integer","minimum":1,"description":"Process ID owning the observed target window."},
                 "window_id":{"type":"integer","minimum":1,"description":"Exact native window ID from the current observation."},
                 "keys":{"type":"array","minItems":1,"maxItems":8,"uniqueItems":true,"items":{"type":"string"},"description":"Unique complete key names or ctrl/shift/alt/win modifiers. Modifiers press first; all action-owned keys release in reverse order."},

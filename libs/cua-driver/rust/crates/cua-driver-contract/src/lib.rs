@@ -115,6 +115,7 @@ pub const ACTION_RESULT_TOOLS: &[&str] = &[
     "move_cursor",
     "mouse_button_down",
     "mouse_button_up",
+    "hold_keys",
     "type_text",
     "type_text_chars",
     "press_key",

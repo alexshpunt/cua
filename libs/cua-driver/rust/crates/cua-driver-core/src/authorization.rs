@@ -275,6 +275,7 @@ const DESKTOP_INPUT_OPERATIONS: &[&str] = &[
     "move_cursor",
     "mouse_button_down",
     "mouse_button_up",
+    "hold_keys",
     "mouse_drag",
     "parallel_mouse_drag",
     "replay_trajectory",
@@ -887,6 +888,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         | "mouse_button_up"
         | "mouse_drag"
         | "parallel_mouse_drag"
+        | "hold_keys"
         | "type_text"
         | "type_text_chars"
         | "press_key"
@@ -1191,6 +1193,7 @@ fn enforce_hard_invariants(
             | "type_text_chars"
             | "press_key"
             | "hotkey"
+            | "hold_keys"
             | "set_value"
             | "kill_app"
             | "bring_to_front"
@@ -1554,6 +1557,27 @@ mod tests {
             adapter.profile_behavior.for_mode(PermissionMode::Bounded),
             ModeBehavior::AllowWithoutGrant
         );
+    }
+
+    #[test]
+    fn bounded_key_holds_keep_the_desktop_input_authorization_boundary() {
+        let args = serde_json::json!({"pid": 123, "window_id": 456, "keys": ["shift", "w"], "duration_ms": 500});
+        let risk = classify_tool_call("hold_keys", &args);
+        assert_eq!(risk.class, RiskClass::R1);
+        assert_eq!(risk.enforcement, RiskEnforcement::Active);
+        let adapters = enforcement_adapters_for_call("hold_keys", &args);
+        assert_eq!(
+            adapters
+                .iter()
+                .map(|adapter| adapter.id)
+                .collect::<Vec<_>>(),
+            vec!["desktop_input"]
+        );
+        assert!(enforce_hard_invariants(
+            "hold_keys",
+            &serde_json::json!({"pid": std::process::id()})
+        )
+        .is_err());
     }
 
     #[test]

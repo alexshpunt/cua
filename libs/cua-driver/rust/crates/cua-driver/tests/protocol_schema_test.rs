@@ -176,11 +176,48 @@ fn tools_list_schema_shape() {
             );
         }
     }
+    #[cfg(target_os = "windows")]
+    {
+        let hold = tools
+            .iter()
+            .find(|tool| tool["name"] == "hold_keys")
+            .expect("Windows hold_keys tool");
+        let schema = &hold["inputSchema"];
+        let required: BTreeSet<&str> = schema["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            required,
+            BTreeSet::from(["pid", "window_id", "keys", "duration_ms"])
+        );
+        assert_eq!(schema["additionalProperties"], false);
+        let params = &schema["properties"];
+        assert!(
+            params["scope"].is_null(),
+            "Exact window hold has no desktop scope selector"
+        );
+        assert_eq!(params["keys"]["minItems"], 1);
+        assert_eq!(params["keys"]["maxItems"], 8);
+        assert_eq!(params["keys"]["uniqueItems"], true);
+        assert_eq!(params["duration_ms"]["minimum"], 1);
+        assert_eq!(params["duration_ms"]["maximum"], 10000);
+        assert_eq!(params["actions"]["maxItems"], 32);
+        assert_eq!(params["actions"]["items"]["additionalProperties"], false);
+        assert_eq!(
+            params["actions"]["items"]["properties"]["action"]["enum"],
+            serde_json::json!(["click", "drag"])
+        );
+    }
     const DELIVERY_MODE_TOOLS: &[&str] = &[
         "click",
         "double_click",
         "right_click",
         "drag",
+        #[cfg(target_os = "windows")]
+        "hold_keys",
         "type_text",
         "press_key",
         "hotkey",
