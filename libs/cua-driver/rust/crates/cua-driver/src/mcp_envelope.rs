@@ -187,6 +187,7 @@ where
             line.len() <= MAX_LINE,
             "MCP envelope request exceeds size limit"
         );
+        let trace_start = std::time::Instant::now();
         let raw: Value = match serde_json::from_slice(&line) {
             Ok(raw) => raw,
             Err(_) => {
@@ -250,11 +251,19 @@ where
         let session = session.clone();
         let serial = legacy_serial.clone();
         pending.insert(key.clone());
+        let native_trace = request.tool_call().ok().filter(|c| c.name == "get_window_state")
+            .map(|_| cua_driver_core::native_observe_profile::Root::begin(trace_start));
+        if let Some(trace) = &native_trace { trace.record("wire.parse_and_admit", trace_start, std::time::Instant::now()); }
+        let task_queue = cua_driver_core::native_observe_profile::Span::new("wire.task_queue");
         tasks.spawn(async move {
+            drop(task_queue);
             let response = if request.method.starts_with(PREFIX) {
                 typed_request(service, request).await
             } else {
+                let serial_wait = cua_driver_core::native_observe_profile::Span::new("wire.serial_wait");
                 let _guard = serial.lock().await;
+                drop(serial_wait);
+                let pre_dispatch = cua_driver_core::native_observe_profile::Span::new("sdk.pre_dispatch");
                 let mut request = request;
                 crate::proxy::apply_direct_session_identity(&mut request, &session);
                 let context = request.tool_call().ok().and_then(|call| {
@@ -270,6 +279,8 @@ where
                     |name| sdk.is_known_tool(name),
                     StdioExecutionPath::DirectDaemon,
                 );
+                drop(pre_dispatch);
+                let dispatch = cua_driver_core::native_observe_profile::Span::new("sdk.dispatch");
                 let response = cua_driver_core::server::handle_request_with_transport_session(
                     request,
                     id,
@@ -277,6 +288,7 @@ where
                     &session,
                 )
                 .await;
+                drop(dispatch);
                 if let Some(timer) = timer {
                     let outcome = timer.finish(&response);
                     if let Some(context) = context {
@@ -287,6 +299,7 @@ where
                 response
             };
             write_response(&writer, response).await?;
+            drop(native_trace);
             Ok::<_, anyhow::Error>(key)
         });
     }
@@ -302,10 +315,13 @@ async fn write_response<W: AsyncWrite + Unpin>(
     writer: &Arc<tokio::sync::Mutex<W>>,
     response: Response,
 ) -> anyhow::Result<()> {
-    let mut bytes = serde_json::to_vec(&response)?;
+    let mut bytes = cua_driver_core::native_observe_profile::timed("wire.response_serialize", || serde_json::to_vec(&response))?;
     bytes.push(b'\n');
     tokio::time::timeout(Duration::from_secs(10), async {
+        let lock_wait = cua_driver_core::native_observe_profile::Span::new("wire.writer_wait");
         let mut writer = writer.lock().await;
+        drop(lock_wait);
+        let _output = cua_driver_core::native_observe_profile::Span::new("wire.stdout_write_flush");
         writer.write_all(&bytes).await?;
         writer.flush().await
     })

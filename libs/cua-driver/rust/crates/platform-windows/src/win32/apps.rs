@@ -17,9 +17,10 @@ pub struct ProcessInfo {
 
 /// Return all running processes (pid, parent_pid, executable name).
 pub fn list_processes() -> Vec<ProcessInfo> {
+    let _processes = cua_driver_core::native_observe_profile::Span::new("metadata.process_enumeration");
     let mut result = Vec::new();
     unsafe {
-        let snap = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+        let snap = match cua_driver_core::native_observe_profile::timed("metadata.process_snapshot", || CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)) {
             Ok(h) => h,
             Err(_) => return result,
         };
