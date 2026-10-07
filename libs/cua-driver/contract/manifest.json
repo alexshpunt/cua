@@ -1392,6 +1392,7 @@
         "description": "Read exactly the enumerated display in this topology; never fall back to primary.",
         "properties": {
           "display_id": {
+            "description": "Exact native display_id returned by list_displays, not an enumeration index or primary alias.",
             "type": "string"
           },
           "max_image_dimension": {
@@ -1405,6 +1406,7 @@
             "type": "string"
           },
           "topology_id": {
+            "description": "Exact topology_id from the same discovery; a changed topology refuses without pixels or fallback.",
             "type": "string"
           }
         },

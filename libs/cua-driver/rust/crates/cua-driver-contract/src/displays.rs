@@ -56,7 +56,9 @@ impl ToolInput for ListDisplaysInput {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GetDisplayStateInput {
+    /// Exact native display_id returned by list_displays, not an enumeration index or primary alias.
     pub display_id: String,
+    /// Exact topology_id from the same discovery; a changed topology refuses without pixels or fallback.
     pub topology_id: String,
     /// For multi-call work, prefer a short public session label and repeat it on every call that
     /// accepts it. Omit it to use the authenticated transport's implicit lifecycle session.
