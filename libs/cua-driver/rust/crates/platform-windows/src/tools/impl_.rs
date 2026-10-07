@@ -669,7 +669,7 @@ fn screenshot_scale(
 
 fn capture_admission_refusal(error: anyhow::Error) -> ToolResult {
     let code = cua_driver_core::capture_runtime::admission_error_code(&error);
-    ToolResult::error(format!("Capture-bound click refused: {error}")).with_structured(json!({
+    ToolResult::error(format!("Capture-bound action refused: {error}")).with_structured(json!({
         "code": code,
         "effect": "refused",
         "detail": error.to_string(),
@@ -7558,6 +7558,7 @@ impl Tool for DragTool {
                           WM_MOUSEMOVE events along the straight path. Optional via (1–254 intermediate {x,y} points) holds one \
                           left button across a Windows foreground path, requiring explicit pid/window_id and a prior screenshot; \
                           incompatible with steps, modifier, or from_zoom. Straight background drags do not steal focus. \
+                          Optional capture_id binds a straight drag to one prior capture of the exact pid/window_id; both endpoints and live dimensions must match before input. It cannot be combined with via, desktop scope or zoom. \
                           After a zoom call, straight drags may pass from_zoom=true. \
                           Drags that start on a window caption / title bar or resize border (i.e. moving or resizing the \
                           window itself) cannot be delivered in the background — the OS move/resize loop needs real pointer \
@@ -7567,6 +7568,7 @@ impl Tool for DragTool {
                 "scope":{"type":"string","enum":["window","desktop"],"description":"Use desktop with no pid/window_id for screen-absolute coordinates."},
                 "pid":{"type":"integer","description":"Target process ID."},
                 "window_id":{"type":"integer","description":"Target window handle (HWND). Optional — driver picks frontmost window of pid when omitted."},
+                "capture_id":{"type":"string","minLength":1,"description":"Windows only: bind both straight-drag endpoints to this window capture. Requires exact pid/window_id; no via, desktop or zoom."},
                 "from_x":{"type":"number","description":"Drag-start X in window-local screenshot pixels."},
                 "from_y":{"type":"number","description":"Drag-start Y in window-local screenshot pixels."},
                 "to_x":{"type":"number","description":"Drag-end X in window-local screenshot pixels."},
@@ -7586,6 +7588,31 @@ impl Tool for DragTool {
         use crate::input::delivery::{DeliveryMode, EventKind};
         use cua_driver_core::tool_args::ArgsExt;
         let cursor_key = resolve_cursor_key(&args);
+        let capture_bound = args.get("capture_id").is_some();
+        if capture_bound
+            && (args
+                .get("capture_id")
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+                || args.get("via").is_some()
+                || args
+                    .get("scope")
+                    .and_then(Value::as_str)
+                    .is_some_and(|scope| scope != "window")
+                || args.get("from_zoom").and_then(Value::as_bool) == Some(true)
+                || args
+                    .get("pid")
+                    .and_then(Value::as_u64)
+                    .is_none_or(|pid| pid == 0 || pid > u64::from(u32::MAX))
+                || args
+                    .get("window_id")
+                    .and_then(Value::as_u64)
+                    .is_none_or(|hwnd| hwnd == 0))
+        {
+            return capture_admission_refusal(anyhow::anyhow!(
+                "capture_id requires an exact pid/window_id and straight window screenshot coordinates; via, desktop and zoom are not capture-bound"
+            ));
+        }
         if args.get("via").is_some() {
             return self.invoke_path(&args, cursor_key).await;
         }
@@ -7674,7 +7701,28 @@ impl Tool for DragTool {
         let button = args.str_or("button", "left");
         let from_zoom = args.bool_or("from_zoom", false);
 
-        if from_zoom {
+        if capture_bound {
+            let Some(bridge) = &self.state.capture_bridge else {
+                return capture_admission_refusal(anyhow::anyhow!(
+                    "capture service is unavailable"
+                ));
+            };
+            match bridge.admit_drag(
+                &args,
+                crate::capture_admission::WindowsCaptureTarget::Window {
+                    pid,
+                    window_id: hwnd_opt.unwrap(),
+                },
+                (from_x, from_y),
+                (to_x, to_y),
+            ) {
+                Ok((from, to)) => {
+                    (from_x, from_y) = from;
+                    (to_x, to_y) = to;
+                }
+                Err(error) => return capture_admission_refusal(error),
+            }
+        } else if from_zoom {
             match self.state.zoom_context(&args, pid, hwnd_opt) {
                 Ok(ctx) => {
                     let (wx, wy) = ctx.zoom_to_window(from_x, from_y);
@@ -7718,8 +7766,21 @@ impl Tool for DragTool {
         // Compute screen-coord endpoints. Same correction as the click
         // tools — bitmap pixels are anchored to the DWM-frame top-left,
         // not the client area top-left (see `bitmap_to_screen` doc).
-        let (sx_from, sy_from) = bitmap_to_screen(hwnd, from_x as i32, from_y as i32);
-        let (sx_to, sy_to) = bitmap_to_screen(hwnd, to_x as i32, to_y as i32);
+        let (from, to) = if capture_bound {
+            let from = match crate::capture_admission::round_action_point(from_x, from_y) {
+                Ok(point) => point,
+                Err(error) => return capture_admission_refusal(error),
+            };
+            let to = match crate::capture_admission::round_action_point(to_x, to_y) {
+                Ok(point) => point,
+                Err(error) => return capture_admission_refusal(error),
+            };
+            (from, to)
+        } else {
+            ((from_x as i32, from_y as i32), (to_x as i32, to_y as i32))
+        };
+        let (sx_from, sy_from) = bitmap_to_screen(hwnd, from.0, from.1);
+        let (sx_to, sy_to) = bitmap_to_screen(hwnd, to.0, to.1);
 
         // delivery_mode:"background" on WinUI3: a pointer drag can't both land and
         // hold the contract — the content island only consumes real
@@ -10478,6 +10539,8 @@ mod chromium_flag_injection_tests;
 
 #[cfg(test)]
 mod click_capture_id_schema_tests;
+#[cfg(test)]
+mod drag_capture_id_tests;
 
 #[cfg(test)]
 mod snapshot_coordinate_tests;
