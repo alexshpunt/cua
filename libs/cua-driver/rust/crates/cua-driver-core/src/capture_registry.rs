@@ -476,6 +476,15 @@ pub struct CaptureActionAdmission {
     pub digest: ContentDigest,
 }
 
+/// Two endpoints admitted together against one capture. The capture is consumed once.
+#[derive(Debug)]
+pub struct CaptureDragAdmission {
+    /// Start point and the capture identity shared by both endpoints.
+    pub from: CaptureActionAdmission,
+    /// End point in the same native action frame as `from`.
+    pub to_x: f64,
+    pub to_y: f64,
+}
 #[derive(Clone, Copy, Debug, Error, PartialEq)]
 pub enum CaptureActionError {
     #[error(transparent)]
@@ -818,6 +827,16 @@ impl CaptureRegistry {
         &self,
         request: CaptureActionRequest,
     ) -> Result<CaptureActionAdmission, CaptureActionError> {
+        let point = (request.screenshot_x, request.screenshot_y);
+        let [admission] = self.admit_points(request, [point])?;
+        Ok(admission)
+    }
+
+    fn admit_points<const N: usize>(
+        &self,
+        request: CaptureActionRequest,
+        points: [(f64, f64); N],
+    ) -> Result<[CaptureActionAdmission; N], CaptureActionError> {
         let now = self.clock.now();
         let mut inner = self
             .inner
@@ -850,31 +869,27 @@ impl CaptureRegistry {
         }
         let max_x = f64::from(capture.encoded_dimensions.width);
         let max_y = f64::from(capture.encoded_dimensions.height);
-        if !request.screenshot_x.is_finite()
-            || !request.screenshot_y.is_finite()
-            || request.screenshot_x < 0.0
-            || request.screenshot_y < 0.0
-            || request.screenshot_x >= max_x
-            || request.screenshot_y >= max_y
-        {
-            return Err(CaptureActionError::InvalidScreenshotPoint);
+        let mut mapped = [(0.0, 0.0); N];
+        for (index, (x, y)) in points.into_iter().enumerate() {
+            if !x.is_finite() || !y.is_finite() || x < 0.0 || y < 0.0 || x >= max_x || y >= max_y {
+                return Err(CaptureActionError::InvalidScreenshotPoint);
+            }
+            let point = capture.screenshot_to_action.apply(x, y);
+            if !point.0.is_finite() || !point.1.is_finite() {
+                return Err(CaptureActionError::InvalidMappedPoint);
+            }
+            mapped[index] = point;
         }
-        let (action_x, action_y) = capture
-            .screenshot_to_action
-            .apply(request.screenshot_x, request.screenshot_y);
-        if !action_x.is_finite() || !action_y.is_finite() {
-            return Err(CaptureActionError::InvalidMappedPoint);
-        }
-        let admission = CaptureActionAdmission {
+        let admissions = mapped.map(|(action_x, action_y)| CaptureActionAdmission {
             capture_id: capture.id,
             target: capture.target.clone(),
             action_x,
             action_y,
             native_action_dimensions: capture.native_action_dimensions,
             digest: capture.digest,
-        };
+        });
         self.remove_capture(&mut inner, request.capture_id);
-        Ok(admission)
+        Ok(admissions)
     }
 
     /// Atomically remove and return the capture for exactly one action attempt.
@@ -1183,6 +1198,23 @@ impl CaptureService {
         self.registry.admit_action(request)
     }
 
+    /// Validate both screenshot endpoints against one live target frame and map
+    /// them with the capture's transform. Consume the capture only when both pass.
+    /// `request` supplies the start point; `to_x` and `to_y` supply the end point.
+    pub fn admit_drag(
+        &self,
+        request: CaptureActionRequest,
+        to_x: f64,
+        to_y: f64,
+    ) -> Result<CaptureDragAdmission, CaptureActionError> {
+        let from = (request.screenshot_x, request.screenshot_y);
+        let [from, to] = self.registry.admit_points(request, [from, (to_x, to_y)])?;
+        Ok(CaptureDragAdmission {
+            from,
+            to_x: to.action_x,
+            to_y: to.action_y,
+        })
+    }
     /// Predict, without consuming anything, whether a capture-bound action
     /// with these trusted runtime arguments will be refused at admission.
     /// Returns the stable refusal wire code (`capture_id_invalid`,
@@ -1835,6 +1867,73 @@ mod tests {
                     screenshot_x: 2.5,
                     screenshot_y: 1.5,
                 })
+                .unwrap_err(),
+            CaptureActionError::Lookup(CaptureLookupError::Unknown)
+        );
+    }
+
+    #[test]
+    fn drag_admission_checks_both_endpoints_before_consuming_one_capture() {
+        let service = CaptureService::new(config(4, 10_000)).unwrap();
+        let target = CaptureTarget::Window {
+            pid: 42,
+            window_id: 7,
+        };
+        let native_dimensions = NativeActionDimensions::new(40, 30).unwrap();
+        let id = service
+            .publish(CapturePublication {
+                png_bytes: png(4, 3, 9),
+                target: target.clone(),
+                encoded_dimensions: EncodedScreenshotDimensions::new(4, 3).unwrap(),
+                native_action_dimensions: native_dimensions,
+                screenshot_to_action: ScreenshotToActionTransform::new(
+                    2.0, 0.5, -0.25, 3.0, 11.0, -4.0,
+                )
+                .unwrap(),
+                session_id: Arc::from("session-a"),
+                session_generation: 2,
+            })
+            .unwrap();
+        let binding = service.binding("session-a", 2).unwrap();
+        let request = |dimensions| CaptureActionRequest {
+            capture_id: id,
+            binding: binding.clone(),
+            target: target.clone(),
+            current_native_action_dimensions: dimensions,
+            screenshot_x: 2.5,
+            screenshot_y: 1.5,
+        };
+        assert_eq!(
+            service
+                .admit_drag(
+                    request(NativeActionDimensions::new(50, 30).unwrap()),
+                    1.0,
+                    1.0
+                )
+                .unwrap_err(),
+            CaptureActionError::NativeActionFrameMismatch
+        );
+        for (x, y) in [(4.0, 1.0), (-1.0, 1.0), (1.0, 3.0), (1.0, f64::NAN)] {
+            assert_eq!(
+                service
+                    .admit_drag(request(native_dimensions), x, y)
+                    .unwrap_err(),
+                CaptureActionError::InvalidScreenshotPoint
+            );
+            assert!(service.read_for_perception(id, &binding).is_ok());
+        }
+        let admission = service
+            .admit_drag(request(native_dimensions), 1.0, 2.0)
+            .unwrap();
+        assert_eq!(
+            (admission.from.action_x, admission.from.action_y),
+            (16.75, -0.125)
+        );
+        assert_eq!((admission.to_x, admission.to_y), (14.0, 1.75));
+        assert_eq!(admission.from.target, target);
+        assert_eq!(
+            service
+                .admit_drag(request(native_dimensions), 1.0, 2.0)
                 .unwrap_err(),
             CaptureActionError::Lookup(CaptureLookupError::Unknown)
         );

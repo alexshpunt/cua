@@ -120,6 +120,38 @@ impl WindowsCaptureBridge {
         self.admit_click_with_geometry(args, target, current_geometry, screenshot_x, screenshot_y)
     }
 
+    pub(crate) fn admit_drag(
+        &self,
+        args: &Value,
+        target: WindowsCaptureTarget,
+        from: (f64, f64),
+        to: (f64, f64),
+    ) -> anyhow::Result<((f64, f64), (f64, f64))> {
+        let capture_id = args
+            .get("capture_id")
+            .and_then(Value::as_str)
+            .ok_or_else(|| anyhow::anyhow!("capture_id must be a string"))?;
+        let current_geometry = live_geometry(target)?;
+        let admission = self.service.admit_drag(
+            CaptureActionRequest {
+                capture_id: capture_id.parse()?,
+                binding: self.service.binding_from_args(args)?,
+                target: target.core(),
+                current_native_action_dimensions: NativeActionDimensions::new(
+                    current_geometry.native_width,
+                    current_geometry.native_height,
+                )?,
+                screenshot_x: from.0,
+                screenshot_y: from.1,
+            },
+            to.0,
+            to.1,
+        )?;
+        Ok((
+            (admission.from.action_x, admission.from.action_y),
+            (admission.to_x, admission.to_y),
+        ))
+    }
     fn admit_click_with_geometry(
         &self,
         args: &Value,
