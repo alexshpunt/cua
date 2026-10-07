@@ -148,3 +148,22 @@ impl Tool for GetDisplayStateTool {
         ))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn selected_display_tools_publish_live_schemas_without_startup_panic() {
+        for tool in [
+            &ListDisplaysTool as &dyn Tool,
+            &GetDisplayStateTool as &dyn Tool,
+        ] {
+            let entry = tool.def().to_list_entry();
+            let contract = cua_driver_contract::tool_contract(tool.def().name.as_str()).unwrap();
+            assert_eq!(entry["inputSchema"], contract.input_schema);
+            assert_eq!(entry["annotations"]["readOnlyHint"], true);
+            assert!(entry["outputSchema"].is_object());
+        }
+    }
+}

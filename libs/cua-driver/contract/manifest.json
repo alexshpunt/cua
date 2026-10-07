@@ -1383,7 +1383,7 @@
         "idempotent": false,
         "open_world": false
       },
-      "schema_mode": "portable_subset",
+      "schema_mode": "canonical_runtime",
       "cursor_semantics": {
         "action": "observe"
       },
@@ -2770,7 +2770,7 @@
         "idempotent": false,
         "open_world": false
       },
-      "schema_mode": "portable_subset",
+      "schema_mode": "canonical_runtime",
       "cursor_semantics": {
         "action": "observe"
       },

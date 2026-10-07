@@ -118,7 +118,7 @@ pub(crate) fn contracts() -> Vec<ToolContract> {
                 idempotent: false,
                 open_world: false,
             },
-            schema_mode: SchemaMode::PortableSubset,
+            schema_mode: SchemaMode::CanonicalRuntime,
             cursor_semantics: Some(CursorSemantics::new(CursorAction::Observe)),
             input_schema: I::input_schema(),
             success_output_schema: Some(O::output_schema()),
