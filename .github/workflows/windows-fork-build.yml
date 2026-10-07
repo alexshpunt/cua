@@ -65,7 +65,7 @@ jobs:
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
         run: |
-          cargo test --locked -p cua-driver-core -p platform-windows --lib 2>&1 |
+          cargo test --locked -p cua-driver-contract -p cua-driver-core -p platform-windows --lib 2>&1 |
             Tee-Object build-evidence/tests.log
           if ($LASTEXITCODE -ne 0) { throw "cargo test failed: $LASTEXITCODE" }
       - name: Run protocol and schema tests

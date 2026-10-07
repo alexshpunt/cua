@@ -3,7 +3,11 @@
 
 //! Portable native application discovery and exact-window observations.
 
-use crate::{ToolInput, ToolOutput};
+#[cfg(test)]
+#[path = "windows/shell_desktop_tests.rs"]
+mod shell_desktop_tests;
+
+use crate::{ToolInput, ToolOutput, VirtualDesktopMembership};
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
 
@@ -207,6 +211,9 @@ pub struct WindowInfo {
     pub on_current_space: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub space_ids: Option<Vec<u64>>,
+    /// Windows shell membership sampled independently from geometry; omitted by other platforms.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virtual_desktop: Option<VirtualDesktopMembership>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, uniffi::Record)]
@@ -217,6 +224,15 @@ pub struct ListWindowsOutput {
 }
 
 impl ToolOutput for ListWindowsOutput {
+    fn validate(&self) -> Result<(), String> {
+        for window in &self.windows {
+            if let Some(membership) = &window.virtual_desktop {
+                membership.validate()?;
+            }
+        }
+        Ok(())
+    }
+
     fn output_schema() -> serde_json::Value {
         let mut schema = crate::outputs::output_schema_with_additional_properties::<Self>(true);
         // Stacking semantics are part of the existing live discovery contract.
@@ -317,6 +333,9 @@ pub struct WindowStateOutput {
     pub screenshot_frame_valid: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub window_bounds: Option<WindowBounds>,
+    /// Windows membership query metadata; this timestamp is not capture readiness or input authority.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub virtual_desktop: Option<VirtualDesktopMembership>,
     /// Image content belongs to the MCP envelope, never structuredContent.
     #[serde(skip)]
     #[schemars(skip)]
@@ -325,6 +344,9 @@ pub struct WindowStateOutput {
 
 impl ToolOutput for WindowStateOutput {
     fn validate(&self) -> Result<(), String> {
+        if let Some(membership) = &self.virtual_desktop {
+            membership.validate()?;
+        }
         match (self.screenshot_width, self.screenshot_height) {
             (None, None) => {}
             (Some(width), Some(height)) if width > 0 && height > 0 => {}

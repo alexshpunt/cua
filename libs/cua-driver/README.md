@@ -192,6 +192,7 @@ Contributor documentation:
 - `docs/test-matrix.md` maps unit and canonical harness E2E suites.
 - `docs/action-support.md` is the empirical platform behavior ledger.
 - `docs/window-capture-drag.md` explains capture-bound straight drag in this Windows fork.
+- `docs/windows-shell-desktop-membership.md` explains read-only shell desktop GUIDs and independent query failures in this Windows fork.
 - `docs/test-harnesses-guide.md` explains fixture and runner ownership.
 - `docs/linux-desktop-validation.md` covers representative Linux sessions.
 - `docs/linux-support-completion-plan.md` preserves the historical Linux plan.

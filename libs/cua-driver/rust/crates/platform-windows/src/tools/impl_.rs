@@ -919,8 +919,7 @@ impl Tool for ListWindowsTool {
         LIST_WINDOWS_DEF.get_or_init(|| ToolDef {
             name: "list_windows".into(),
             // Description matches Swift `ListWindowsTool.swift` semantics —
-            // Windows-specific caveat: no Spaces concept, so on_current_space
-            // / space_ids are always omitted and current_space_id is null.
+            // macOS space fields stay separate from sampled Windows shell desktop GUIDs.
             description: "List every top-level window currently known to the window manager. \
                 Each record self-contains its owning app identity so the caller never has to \
                 join back against list_apps.\n\n\
@@ -934,7 +933,10 @@ impl Tool for ListWindowsTool {
                 candidate, take the maximum integer z_index; if every value is null, use an \
                 explicit fallback instead of relying on array order. The macOS-specific \
                 on_current_space / space_ids fields are \
-                omitted on Windows; current_space_id is null.\n\n\
+                omitted on Windows; current_space_id is null. The Windows-only virtual_desktop \
+                record contains sampled desktop_id/on_current_desktop values with independent \
+                query errors. Unknown is not the current desktop. These read-only queries do \
+                not switch desktops or grant capture/input authority.\n\n\
                 Inputs: pid (optional pid filter), on_screen_only (bool, default false).".into(),
             input_schema: json!({"type":"object","properties":{
                 "pid":{"type":"integer","description":"Optional pid filter. When set, only this pid's windows are returned."},
@@ -948,15 +950,21 @@ impl Tool for ListWindowsTool {
         use cua_driver_core::tool_args::ArgsExt;
         let filter_pid = args.opt_u64("pid").map(|v| v as u32);
         let on_screen_only = args.bool_or("on_screen_only", false);
-        let (mut windows, pid_to_name) = tokio::task::spawn_blocking(move || {
-            let wins = crate::win32::list_windows(filter_pid);
-            let procs = crate::win32::list_processes();
-            let map: std::collections::HashMap<u32, String> =
-                procs.into_iter().map(|p| (p.pid, p.name)).collect();
-            (wins, map)
-        })
-        .await
-        .unwrap_or_default();
+        let (mut windows, pid_to_name, desktop_membership) =
+            tokio::task::spawn_blocking(move || {
+                let wins = crate::win32::list_windows(filter_pid);
+                let procs = crate::win32::list_processes();
+                let map: std::collections::HashMap<u32, String> =
+                    procs.into_iter().map(|p| (p.pid, p.name)).collect();
+                let query = crate::shell_desktop::Query::new();
+                let membership: std::collections::HashMap<_, _> = wins
+                    .iter()
+                    .map(|window| (window.hwnd, query.read(window.pid, window.hwnd)))
+                    .collect();
+                (wins, map, membership)
+            })
+            .await
+            .unwrap_or_default();
         if on_screen_only {
             windows.retain(|w| w.is_on_screen);
         }
@@ -1010,6 +1018,7 @@ impl Tool for ListWindowsTool {
                     "z_index":    z_index,
                     "is_on_screen": w.is_on_screen,
                     "minimized":    w.minimized,
+                    "virtual_desktop": desktop_membership.get(&w.hwnd),
                 })
             })
             .collect();
@@ -1288,15 +1297,23 @@ impl Tool for GetWindowStateTool {
             window.width,
             window.height,
         ));
-        let app_name = tokio::task::spawn_blocking(move || {
-            crate::win32::list_processes()
+        let (app_name, virtual_desktop) = tokio::task::spawn_blocking(move || {
+            let app_name = crate::win32::list_processes()
                 .into_iter()
                 .find(|p| p.pid == pid)
-                .map(|p| p.name)
+                .map(|p| p.name);
+            (app_name, crate::shell_desktop::Query::new().read(pid, hwnd))
         })
         .await
-        .ok()
-        .flatten();
+        .unwrap_or_else(|_| {
+            (
+                None,
+                crate::shell_desktop::unavailable(
+                    cua_driver_contract::DesktopQueryErrorCode::QueryWorkerFailed,
+                    None,
+                ),
+            )
+        });
         use cua_driver_core::tool_args::ArgsExt;
         // The canonical per-call value overrides all configured limits,
         // including `0` for native resolution. The legacy field retains its
@@ -1714,6 +1731,7 @@ impl Tool for GetWindowStateTool {
                     structured["screenshot_error"] = json!(err);
                 }
 
+                structured["virtual_desktop"] = json!(virtual_desktop);
                 // Window identity metadata (additive): title + on-screen
                 // rectangle + owning process name for the requested window_id,
                 // useful on the capture-only path where no UIA tree names it.
