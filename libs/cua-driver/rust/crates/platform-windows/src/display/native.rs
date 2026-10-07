@@ -155,17 +155,20 @@ pub fn capture(
     let before = current()?;
     let selected = before.select(display_id, topology_id)?.clone();
     let region = &selected.bounds;
-    let (png, overlay) = capture_excluding_overlays(&crate::overlay::CaptureExcluder, |_| {
-        Ok((
-            crate::capture::screenshot_screen_region_bytes(
-                region.x,
-                region.y,
-                region.width as i32,
-                region.height as i32,
-            )?,
-            ResidualCheck::Clean,
-        ))
-    })?;
+    let (png, overlay) = capture_excluding_overlays(
+        &crate::overlay::CaptureExcluder,
+        |_| -> Result<(Vec<u8>, ResidualCheck)> {
+            Ok((
+                crate::capture::screenshot_screen_region_bytes(
+                    region.x,
+                    region.y,
+                    region.width as i32,
+                    region.height as i32,
+                )?,
+                ResidualCheck::Clean,
+            ))
+        },
+    )?;
     let after = current()?;
     after.select(display_id, topology_id)?;
     let dimensions = crate::capture::png_dimensions_pub(&png)?;
