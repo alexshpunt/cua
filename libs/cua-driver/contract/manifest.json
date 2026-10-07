@@ -1368,6 +1368,227 @@
       }
     },
     {
+      "name": "get_display_state",
+      "description": "Read exactly one enumerated Windows display with matching topology. Pixels are display-local and do not authorize input; missing or changed targets refuse without primary fallback.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "screen.capture",
+        "screen.dimensions"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "schema_mode": "portable_subset",
+      "cursor_semantics": {
+        "action": "observe"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Read exactly the enumerated display in this topology; never fall back to primary.",
+        "properties": {
+          "display_id": {
+            "type": "string"
+          },
+          "max_image_dimension": {
+            "description": "Zero or omitted keeps native physical resolution.",
+            "maximum": 4294967295,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "session": {
+            "type": "string"
+          },
+          "topology_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_id",
+          "topology_id"
+        ],
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "agent_overlay_capture": {
+            "additionalProperties": false,
+            "properties": {
+              "method": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "oneOf": [
+                  {
+                    "const": "excluded",
+                    "type": "string"
+                  },
+                  {
+                    "const": "not_present",
+                    "type": "string"
+                  },
+                  {
+                    "const": "not_excluded",
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "status"
+            ],
+            "type": "object"
+          },
+          "display": {
+            "properties": {
+              "bounds": {
+                "properties": {
+                  "height": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "width": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "x": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "y": {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "type": "object"
+              },
+              "display_id": {
+                "type": "string"
+              },
+              "dpi": {
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "monitor_device_paths": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "monitor_handle": {
+                "type": "string"
+              },
+              "primary": {
+                "type": "boolean"
+              },
+              "scale_factor": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "work_area": {
+                "properties": {
+                  "height": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "width": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "x": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "y": {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "display_id",
+              "monitor_handle",
+              "monitor_device_paths",
+              "bounds",
+              "work_area",
+              "primary"
+            ],
+            "type": "object"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "screenshot_height": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "screenshot_mime_type": {
+            "type": "string"
+          },
+          "screenshot_original_height": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "screenshot_original_width": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "screenshot_width": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "topology_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "topology_id",
+          "display",
+          "screenshot_width",
+          "screenshot_height",
+          "screenshot_original_width",
+          "screenshot_original_height",
+          "screenshot_mime_type",
+          "agent_overlay_capture"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "get_screen_size",
       "description": "Return the primary display dimensions and scale factor in the platform's desktop coordinate space.",
       "platforms": [
@@ -2529,6 +2750,152 @@
         },
         "required": [
           "apps"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "list_displays",
+      "description": "List connected Windows displays with native physical bounds and topology. No screenshot or input authority.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "screen.dimensions"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": false
+      },
+      "schema_mode": "portable_subset",
+      "cursor_semantics": {
+        "action": "observe"
+      },
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Enumerate connected displays without reading pixels.",
+        "properties": {
+          "session": {
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "displays": {
+            "items": {
+              "properties": {
+                "bounds": {
+                  "properties": {
+                    "height": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "x": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "y": {
+                      "format": "int32",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                },
+                "display_id": {
+                  "type": "string"
+                },
+                "dpi": {
+                  "minimum": 0,
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "monitor_device_paths": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "monitor_handle": {
+                  "type": "string"
+                },
+                "primary": {
+                  "type": "boolean"
+                },
+                "scale_factor": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "work_area": {
+                  "properties": {
+                    "height": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "width": {
+                      "minimum": 0,
+                      "type": "integer"
+                    },
+                    "x": {
+                      "format": "int32",
+                      "type": "integer"
+                    },
+                    "y": {
+                      "format": "int32",
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "x",
+                    "y",
+                    "width",
+                    "height"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "display_id",
+                "monitor_handle",
+                "monitor_device_paths",
+                "bounds",
+                "work_area",
+                "primary"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "topology_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "platform",
+          "topology_id",
+          "displays"
         ],
         "type": "object"
       }

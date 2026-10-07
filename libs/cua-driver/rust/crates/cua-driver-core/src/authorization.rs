@@ -228,6 +228,8 @@ const EXISTING_PROFILE_REVOCATION: &[&str] = &[
 ];
 
 const PRIVATE_OBSERVATION_OPERATIONS: &[&str] = &[
+    "list_displays",
+    "get_display_state",
     "get_desktop_state",
     "get_accessibility_tree",
     "get_window_state",
@@ -738,6 +740,8 @@ pub fn enforcement_adapters_for_call(
     if matches!(
         tool,
         "get_desktop_state"
+            | "list_displays"
+            | "get_display_state"
             | "get_accessibility_tree"
             | "get_window_state"
             | "verify_state"
@@ -910,6 +914,8 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         // state. Active adapters still decide their exact resource scope at
         // the canonical registry boundary before platform dispatch.
         "zoom"
+        | "list_displays"
+        | "get_display_state"
         | "clipboard_read"
         | "list_apps"
         | "list_windows"
@@ -1874,6 +1880,20 @@ mod tests {
             .contains("outside the capability manifest"));
     }
 
+    #[test]
+    fn selected_display_reads_are_protected_observations_not_input_or_output() {
+        for tool in ["list_displays", "get_display_state"] {
+            let args = serde_json::json!({"display_id": "native", "topology_id": "current"});
+            assert_eq!(
+                enforcement_adapters_for_call(tool, &args)
+                    .into_iter()
+                    .map(|a| a.id)
+                    .collect::<Vec<_>>(),
+                vec!["private_observation"]
+            );
+            assert_eq!(classify_tool_call(tool, &args).class, RiskClass::R2);
+        }
+    }
     #[test]
     fn exact_call_inventory_composes_overlapping_resource_boundaries() {
         let ids = |tool, args: Value| {

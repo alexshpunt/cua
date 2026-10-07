@@ -18,6 +18,8 @@ pub mod compatibility;
 pub mod cursor;
 mod cursor_tools;
 mod desktop;
+mod displays;
+pub use displays::*;
 mod inputs;
 mod outputs;
 mod session;
@@ -228,6 +230,7 @@ pub struct ContractManifest {
 pub fn manifest() -> ContractManifest {
     let mut tools = session::contracts();
     tools.extend(desktop::contracts());
+    tools.extend(displays::contracts());
     tools.extend(cursor_tools::contracts());
     tools.extend(verification::contracts());
     tools.extend(visual::contracts());
