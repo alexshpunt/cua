@@ -81,6 +81,9 @@ pub fn install_pointer_shape_backend() -> bool {
 pub mod win32;
 
 #[cfg(target_os = "windows")]
+mod shell_desktop;
+
+#[cfg(target_os = "windows")]
 pub mod history;
 
 #[cfg(target_os = "windows")]

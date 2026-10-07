@@ -23,9 +23,11 @@ pub use displays::*;
 mod inputs;
 mod outputs;
 mod session;
+mod shell_desktop;
 mod verification;
 mod visual;
 mod windows;
+pub use shell_desktop::{DesktopQueryError, DesktopQueryErrorCode, VirtualDesktopMembership};
 pub use windows::*;
 
 pub(crate) fn schema_settings() -> SchemaSettings {

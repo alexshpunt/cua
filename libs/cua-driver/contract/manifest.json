@@ -2174,6 +2174,104 @@
               "null"
             ]
           },
+          "virtual_desktop": {
+            "additionalProperties": false,
+            "properties": {
+              "desktop_id": {
+                "not": {
+                  "const": "00000000-0000-0000-0000-000000000000"
+                },
+                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "desktop_id_error": {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "com_initialization_failed",
+                      "manager_unavailable",
+                      "window_unavailable",
+                      "desktop_id_query_failed",
+                      "current_desktop_query_failed",
+                      "invalid_desktop_id",
+                      "query_worker_failed"
+                    ],
+                    "type": "string"
+                  },
+                  "hresult": {
+                    "format": "int32",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "code"
+                ],
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "on_current_desktop": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "on_current_desktop_error": {
+                "additionalProperties": false,
+                "properties": {
+                  "code": {
+                    "enum": [
+                      "com_initialization_failed",
+                      "manager_unavailable",
+                      "window_unavailable",
+                      "desktop_id_query_failed",
+                      "current_desktop_query_failed",
+                      "invalid_desktop_id",
+                      "query_worker_failed"
+                    ],
+                    "type": "string"
+                  },
+                  "hresult": {
+                    "format": "int32",
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "code"
+                ],
+                "type": [
+                  "object",
+                  "null"
+                ]
+              },
+              "sampled_at_unix_ms": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "desktop_id",
+              "on_current_desktop",
+              "desktop_id_error",
+              "on_current_desktop_error",
+              "sampled_at_unix_ms"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
+          },
           "window_bounds": {
             "properties": {
               "height": {
@@ -3161,6 +3259,104 @@
                 },
                 "title": {
                   "type": "string"
+                },
+                "virtual_desktop": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "desktop_id": {
+                      "not": {
+                        "const": "00000000-0000-0000-0000-000000000000"
+                      },
+                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "desktop_id_error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "com_initialization_failed",
+                            "manager_unavailable",
+                            "window_unavailable",
+                            "desktop_id_query_failed",
+                            "current_desktop_query_failed",
+                            "invalid_desktop_id",
+                            "query_worker_failed"
+                          ],
+                          "type": "string"
+                        },
+                        "hresult": {
+                          "format": "int32",
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "on_current_desktop": {
+                      "type": [
+                        "boolean",
+                        "null"
+                      ]
+                    },
+                    "on_current_desktop_error": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "com_initialization_failed",
+                            "manager_unavailable",
+                            "window_unavailable",
+                            "desktop_id_query_failed",
+                            "current_desktop_query_failed",
+                            "invalid_desktop_id",
+                            "query_worker_failed"
+                          ],
+                          "type": "string"
+                        },
+                        "hresult": {
+                          "format": "int32",
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "code"
+                      ],
+                      "type": [
+                        "object",
+                        "null"
+                      ]
+                    },
+                    "sampled_at_unix_ms": {
+                      "minimum": 0,
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "desktop_id",
+                    "on_current_desktop",
+                    "desktop_id_error",
+                    "on_current_desktop_error",
+                    "sampled_at_unix_ms"
+                  ],
+                  "type": [
+                    "object",
+                    "null"
+                  ]
                 },
                 "window_id": {
                   "minimum": 0,
