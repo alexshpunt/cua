@@ -322,6 +322,8 @@ pub fn build_registry() -> cua_driver_core::tool::ToolRegistry {
     r.register(Box::new(ScrollTool));
     r.register(Box::new(ScreenshotTool));
     r.register(Box::new(GetScreenSizeTool));
+    r.register(Box::new(super::displays::ListDisplaysTool));
+    r.register(Box::new(super::displays::GetDisplayStateTool));
     r.register(Box::new(GetCursorPositionTool));
     r.register(Box::new(MoveCursorTool));
     r.register(Box::new(SetAgentCursorEnabledV2Tool));

@@ -10403,6 +10403,8 @@ pub fn build_registry_with_provider(
     // depend on them via `Tool` trait reflection.
     let _ = compat; // formerly drove the ScreenshotCompatTool branch
     r.register(Box::new(GetScreenSizeTool));
+    r.register(Box::new(super::displays::ListDisplaysTool));
+    r.register(Box::new(super::displays::GetDisplayStateTool));
     r.register(Box::new(GetDesktopStateTool {
         state: state.clone(),
     }));

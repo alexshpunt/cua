@@ -35,6 +35,7 @@ pub mod tools;
 // normalization. Lives outside the Windows-only `input` module so its
 // unit tests run on any host (no Win32 runtime needed) — see issue #1979,
 // where the multi-monitor normalization bug was diagnosable by pure math.
+pub mod display;
 pub mod virtualdesk;
 
 // The held-path state machine is pure; native input stays Windows-only.

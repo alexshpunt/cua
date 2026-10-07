@@ -181,7 +181,11 @@ fn is_scoped_action(tool_name: &str) -> bool {
 fn tool_scope(tool_name: &str, args: &Value) -> ToolScope {
     if matches!(
         tool_name,
-        "get_desktop_state" | "get_screen_size" | "get_cursor_position"
+        "get_desktop_state"
+            | "get_display_state"
+            | "list_displays"
+            | "get_screen_size"
+            | "get_cursor_position"
     ) {
         return ToolScope::Desktop;
     }
@@ -326,6 +330,19 @@ mod tests {
         format!("capture-scope-{prefix}-{}", std::process::id())
     }
 
+    #[test]
+    fn selected_display_reads_keep_desktop_capture_scope() {
+        let window = fresh("selected-display-window");
+        bind_session(&window, Some(CaptureScopePolicy::Window)).unwrap();
+        for tool in ["list_displays", "get_display_state"] {
+            assert_eq!(
+                enforce_tool(tool, &json!({"session": window}))
+                    .unwrap_err()
+                    .code,
+                "desktop_scope_disabled"
+            );
+        }
+    }
     #[test]
     fn sessions_are_isolated_and_auto_escalates_one_way() {
         let auto = fresh("auto");

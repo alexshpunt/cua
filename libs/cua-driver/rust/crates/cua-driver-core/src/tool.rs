@@ -2017,11 +2017,22 @@ impl ToolRegistry {
             let target_id = browser_target.unwrap_or("unknown");
             (
                 resource,
-                match browser_tab {
-                    Some(tab_id) => {
-                        format!("Allow Cua to observe browser target {target_id}, tab {tab_id}")
+                match tool_name {
+                    "list_displays" => {
+                        "Allow Cua to list the connected Windows displays".to_owned()
                     }
-                    None => format!("Allow Cua to observe browser target {target_id}"),
+                    "get_display_state" => format!(
+                        "Allow Cua to observe Windows display {} in its current topology",
+                        args.get("display_id")
+                            .and_then(Value::as_str)
+                            .unwrap_or("unknown")
+                    ),
+                    _ => match browser_tab {
+                        Some(tab_id) => {
+                            format!("Allow Cua to observe browser target {target_id}, tab {tab_id}")
+                        }
+                        None => format!("Allow Cua to observe browser target {target_id}"),
+                    },
                 },
             )
         } else if browser_target.is_some() {

@@ -712,15 +712,26 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe(
 pub fn screenshot_display_bytes() -> Result<Vec<u8>> {
     unsafe {
         use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
-        // Under Per-Monitor V2 DPI awareness, GetSystemMetrics returns
-        // PHYSICAL pixels — the same unit BitBlt captures in. Scaling by
-        // DPI/96 would allocate an oversized bitmap with black margins
-        // (issue #1879).
-        let w = GetSystemMetrics(SM_CXSCREEN);
-        let h = GetSystemMetrics(SM_CYSCREEN);
-        if w <= 0 || h <= 0 {
-            bail!("Could not get screen metrics");
-        }
+        screenshot_screen_region_bytes(
+            0,
+            0,
+            GetSystemMetrics(SM_CXSCREEN),
+            GetSystemMetrics(SM_CYSCREEN),
+        )
+    }
+}
+
+/// Capture only these host-global physical bounds through the existing GDI backend.
+pub(crate) fn screenshot_screen_region_bytes(
+    left: i32,
+    top: i32,
+    w: i32,
+    h: i32,
+) -> Result<Vec<u8>> {
+    if w <= 0 || h <= 0 || w.checked_mul(h).and_then(|n| n.checked_mul(4)).is_none() {
+        bail!("Invalid physical screen capture dimensions");
+    }
+    unsafe {
         let screen_dc = GetDC(HWND::default());
         if screen_dc.is_invalid() {
             bail!("GetDC(NULL) returned an invalid desktop DC");
@@ -743,7 +754,7 @@ pub fn screenshot_display_bytes() -> Result<Vec<u8>> {
             ReleaseDC(HWND::default(), screen_dc);
             bail!("SelectObject failed to select the capture bitmap");
         }
-        let blt_result = BitBlt(mem_dc, 0, 0, w, h, screen_dc, 0, 0, SRCCOPY);
+        let blt_result = BitBlt(mem_dc, 0, 0, w, h, screen_dc, left, top, SRCCOPY);
         let mut bmi = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
                 biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
