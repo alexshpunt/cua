@@ -43,6 +43,8 @@ pub mod virtualdesk;
 mod drag_path;
 #[cfg(any(target_os = "windows", test))]
 mod key_hold;
+#[cfg(any(target_os = "windows", test))]
+mod semantic;
 
 #[cfg(any(target_os = "windows", test))]
 mod keycodes;

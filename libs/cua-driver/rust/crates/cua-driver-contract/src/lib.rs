@@ -22,7 +22,11 @@ mod displays;
 pub use displays::*;
 mod inputs;
 mod outputs;
+mod semantic;
+#[cfg(test)]
+mod semantic_tests;
 mod session;
+pub use semantic::*;
 mod shell_desktop;
 mod verification;
 mod visual;
@@ -233,6 +237,7 @@ pub fn manifest() -> ContractManifest {
     let mut tools = session::contracts();
     tools.extend(desktop::contracts());
     tools.extend(displays::contracts());
+    tools.extend(semantic::contracts());
     tools.extend(cursor_tools::contracts());
     tools.extend(verification::contracts());
     tools.extend(visual::contracts());

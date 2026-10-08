@@ -4650,6 +4650,127 @@
       }
     },
     {
+      "name": "semantic_action",
+      "description": "Perform exactly invoke, select or set_value through an admitted Windows UIA pattern. Never use mouse/key events, activate the target or retry in foreground. Completion requires independent app readback; provider focus behavior is not guaranteed.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "accessibility.semantic_action",
+        "accessibility.element_tokens"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false,
+        "open_world": true
+      },
+      "schema_mode": "canonical_runtime",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Snapshot-bound Windows UIA operation. Physical and foreground delivery are not accepted.",
+        "properties": {
+          "element_token": {
+            "type": "string"
+          },
+          "operation": {
+            "description": "An exact semantic intent, not an action ladder.",
+            "enum": [
+              "invoke",
+              "select",
+              "set_value"
+            ],
+            "type": "string"
+          },
+          "pid": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "session": {
+            "description": "Repeat a public session label for multi-call work; omit for the transport's implicit session.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "value": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "window_id": {
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id",
+          "element_token",
+          "operation"
+        ],
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "delivery": {
+            "additionalProperties": false,
+            "properties": {
+              "mode": {
+                "enum": [
+                  "background"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "type": "object"
+          },
+          "effect": {
+            "enum": [
+              "unverifiable"
+            ],
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "invoke",
+              "select",
+              "set_value"
+            ],
+            "type": "string"
+          },
+          "pattern": {
+            "enum": [
+              "invoke",
+              "selection_item",
+              "value",
+              "range_value"
+            ],
+            "type": "string"
+          },
+          "route": {
+            "enum": [
+              "accessibility"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "operation",
+          "pattern",
+          "route",
+          "effect",
+          "delivery"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "set_agent_cursor_enabled",
       "description": "Show or hide the agent cursor owned by a session.",
       "platforms": [

@@ -2886,6 +2886,7 @@ fn is_physical_desktop_action(tool: &str) -> bool {
             | "hold_keys"
             | "hotkey"
             | "set_value"
+            | "semantic_action"
             | "bring_to_front"
             | "set_window_frame"
     )

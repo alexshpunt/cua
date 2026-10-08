@@ -10446,6 +10446,12 @@ pub fn build_registry_with_provider(
         &pid_window_candidates,
     ));
     r.register(pid_window_guarded(
+        super::semantic::SemanticActionTool {
+            state: state.clone(),
+        },
+        &pid_window_candidates,
+    ));
+    r.register(pid_window_guarded(
         SetValueTool {
             state: state.clone(),
         },
@@ -10557,6 +10563,8 @@ mod chromium_flag_injection_tests;
 mod click_capture_id_schema_tests;
 #[cfg(test)]
 mod drag_capture_id_tests;
+#[cfg(test)]
+mod semantic_admission_tests;
 
 #[cfg(test)]
 mod snapshot_coordinate_tests;

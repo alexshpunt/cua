@@ -15,6 +15,8 @@ pub(crate) mod page_bookmark;
 pub(crate) mod page_title_marker;
 
 pub(crate) mod displays;
+#[cfg(target_os = "windows")]
+mod semantic;
 #[cfg(not(target_os = "windows"))]
 mod stubs;
 

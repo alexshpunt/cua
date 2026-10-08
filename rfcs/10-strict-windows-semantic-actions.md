@@ -6,8 +6,9 @@ created: 2026-10-08
 last_updated: 2026-10-08
 status: accepted
 discussion: https://github.com/alexshpunt/cua/issues/10
-rfc_pr:
+rfc_pr: https://github.com/alexshpunt/cua/pull/11
 implementation:
+  - https://github.com/alexshpunt/cua/pull/11
 supersedes:
 superseded_by:
 ---

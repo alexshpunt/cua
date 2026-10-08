@@ -286,6 +286,7 @@ const DESKTOP_INPUT_OPERATIONS: &[&str] = &[
     "press_key",
     "hotkey",
     "set_value",
+    "semantic_action",
     "bring_to_front",
     "set_window_frame",
 ];
@@ -898,6 +899,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         | "press_key"
         | "hotkey"
         | "set_value"
+        | "semantic_action"
         | "invoke_menu"
         | "launch_app"
         | "bring_to_front"
@@ -1201,6 +1203,7 @@ fn enforce_hard_invariants(
             | "hotkey"
             | "hold_keys"
             | "set_value"
+            | "semantic_action"
             | "kill_app"
             | "bring_to_front"
             | "get_accessibility_tree"
@@ -1880,6 +1883,26 @@ mod tests {
             .contains("outside the capability manifest"));
     }
 
+    #[test]
+    fn semantic_input_is_protected_and_cannot_target_the_authorization_process() {
+        let args = serde_json::json!({"pid":42,"window_id":7,"element_token":"current","operation":"invoke"});
+        assert_eq!(
+            enforcement_adapters_for_call("semantic_action", &args)
+                .into_iter()
+                .map(|a| a.id)
+                .collect::<Vec<_>>(),
+            vec!["desktop_input"]
+        );
+        assert_eq!(
+            classify_tool_call("semantic_action", &args).class,
+            RiskClass::R1
+        );
+        assert!(enforce_hard_invariants(
+            "semantic_action",
+            &serde_json::json!({"pid":std::process::id()})
+        )
+        .is_err());
+    }
     #[test]
     fn selected_display_reads_are_protected_observations_not_input_or_output() {
         for tool in ["list_displays", "get_display_state"] {
