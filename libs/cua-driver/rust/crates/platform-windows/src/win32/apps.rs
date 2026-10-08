@@ -197,6 +197,21 @@ mod tests {
         assert_eq!(process_name(0), None);
     }
     #[test]
+    fn process_name_returns_none_when_windows_denies_process_access() {
+        use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+
+        // Windows reserves PID 4 for System and refuses user-mode OpenProcess.
+        // This queries no user process and changes no privileges or permissions.
+        let result = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, 4) };
+        if let Ok(handle) = result {
+            unsafe { CloseHandle(handle).unwrap() };
+            panic!("System unexpectedly allowed a process query");
+        }
+        assert_eq!(result.unwrap_err().code().0 as u32, 0x8007_0005);
+        assert_eq!(process_name(4), None);
+    }
+
+    #[test]
     fn descendants_include_root_and_only_its_transitive_process_tree() {
         let processes = vec![
             process(42, 1),
