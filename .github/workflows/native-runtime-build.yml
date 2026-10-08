@@ -112,9 +112,9 @@ jobs:
         env:
           SOURCE_REF: ${{ inputs.source_ref || github.sha }}
         run: |
-          test "$(git rev-parse HEAD)" = "$SOURCE_REF"
+          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$SOURCE_REF"
           mkdir -p libs/cua-driver/rust/build-evidence/licenses
-          git rev-parse HEAD > libs/cua-driver/rust/build-evidence/source-sha.txt
+          git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD > libs/cua-driver/rust/build-evidence/source-sha.txt
           rustc --version --verbose > libs/cua-driver/rust/build-evidence/rustc.txt
           cargo --version > libs/cua-driver/rust/build-evidence/cargo.txt
           cp LICENSE.md libs/cua-driver/rust/build-evidence/licenses/
@@ -135,7 +135,7 @@ jobs:
           cargo build --locked -p cua-driver -p cursor-theme-cli ${{ matrix.extra_crates }} \
             --release --target ${{ matrix.triple }} ${{ matrix.features }} \
             2>&1 | tee build-evidence/build.log
-          git diff --exit-code
+          git -c safe.directory="$GITHUB_WORKSPACE" diff --exit-code
       - name: Check startup and assemble an npm runtime
         env:
           SOURCE_REF: ${{ inputs.source_ref || github.sha }}
