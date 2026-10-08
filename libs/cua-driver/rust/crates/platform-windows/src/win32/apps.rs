@@ -15,6 +15,35 @@ pub struct ProcessInfo {
     pub name: String,
 }
 
+/// Read one process's executable basename without scanning the process table.
+/// This is best-effort display metadata, not proof of process or window lifetime.
+pub(crate) fn process_name(pid: u32) -> Option<String> {
+    use windows::core::PWSTR;
+    use windows::Win32::System::Threading::{
+        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
+        PROCESS_QUERY_LIMITED_INFORMATION,
+    };
+
+    unsafe {
+        let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let mut buffer = vec![0_u16; 32_768];
+        let mut length = buffer.len() as u32;
+        let result = QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_FORMAT(0),
+            PWSTR(buffer.as_mut_ptr()),
+            &mut length,
+        );
+        let _ = CloseHandle(process);
+        result.ok()?;
+        let path = String::from_utf16_lossy(&buffer[..length as usize]);
+        let name = std::path::Path::new(&path)
+            .file_name()?
+            .to_string_lossy()
+            .into_owned();
+        (!name.trim().is_empty()).then_some(name)
+    }
+}
 /// Return all running processes (pid, parent_pid, executable name).
 pub fn list_processes() -> Vec<ProcessInfo> {
     let mut result = Vec::new();
