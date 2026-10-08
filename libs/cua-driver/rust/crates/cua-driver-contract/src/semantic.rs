@@ -16,10 +16,15 @@ pub enum SemanticOperation {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct SemanticActionInput {
+    /// Process that owns the exact top-level target window.
     pub pid: u32,
+    /// Exact native top-level window identifier from discovery.
     pub window_id: u64,
+    /// Current snapshot token belonging to that exact window.
     pub element_token: String,
+    /// One UIA intent; no physical fallback or foreground delivery.
     pub operation: SemanticOperation,
+    /// Replacement text or numeric range value; required only for set_value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub value: Option<String>,
     /// Repeat a public session label for multi-call work; omit for the transport's implicit session.

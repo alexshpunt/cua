@@ -4671,10 +4671,11 @@
         "description": "Snapshot-bound Windows UIA operation. Physical and foreground delivery are not accepted.",
         "properties": {
           "element_token": {
+            "description": "Current snapshot token belonging to that exact window.",
             "type": "string"
           },
           "operation": {
-            "description": "An exact semantic intent, not an action ladder.",
+            "description": "One UIA intent; no physical fallback or foreground delivery.",
             "enum": [
               "invoke",
               "select",
@@ -4683,6 +4684,7 @@
             "type": "string"
           },
           "pid": {
+            "description": "Process that owns the exact top-level target window.",
             "minimum": 0,
             "type": "integer"
           },
@@ -4694,12 +4696,14 @@
             ]
           },
           "value": {
+            "description": "Replacement text or numeric range value; required only for set_value.",
             "type": [
               "string",
               "null"
             ]
           },
           "window_id": {
+            "description": "Exact native top-level window identifier from discovery.",
             "minimum": 0,
             "type": "integer"
           }
