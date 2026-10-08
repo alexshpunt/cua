@@ -18,32 +18,41 @@ pub struct ProcessInfo {
 /// Read one process's executable basename without scanning the process table.
 /// This is best-effort display metadata, not proof of process or window lifetime.
 pub(crate) fn process_name(pid: u32) -> Option<String> {
-    use windows::core::PWSTR;
-    use windows::Win32::System::Threading::{
-        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
-        PROCESS_QUERY_LIMITED_INFORMATION,
-    };
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
-    unsafe {
+    let path = unsafe {
         let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
-        let mut buffer = vec![0_u16; 32_768];
-        let mut length = buffer.len() as u32;
-        let result = QueryFullProcessImageNameW(
+        let result = process_image_path(process);
+        let _ = CloseHandle(process);
+        result.ok()?
+    };
+    let name = std::path::Path::new(&path)
+        .file_name()?
+        .to_string_lossy()
+        .into_owned();
+    (!name.trim().is_empty()).then_some(name)
+}
+
+/// Query a borrowed process handle. The caller owns the handle and closes it on every result.
+fn process_image_path(
+    process: windows::Win32::Foundation::HANDLE,
+) -> windows::core::Result<String> {
+    use windows::core::PWSTR;
+    use windows::Win32::System::Threading::{QueryFullProcessImageNameW, PROCESS_NAME_FORMAT};
+
+    let mut buffer = vec![0_u16; 32_768];
+    let mut length = buffer.len() as u32;
+    unsafe {
+        QueryFullProcessImageNameW(
             process,
             PROCESS_NAME_FORMAT(0),
             PWSTR(buffer.as_mut_ptr()),
             &mut length,
-        );
-        let _ = CloseHandle(process);
-        result.ok()?;
-        let path = String::from_utf16_lossy(&buffer[..length as usize]);
-        let name = std::path::Path::new(&path)
-            .file_name()?
-            .to_string_lossy()
-            .into_owned();
-        (!name.trim().is_empty()).then_some(name)
+        )?;
     }
+    Ok(String::from_utf16_lossy(&buffer[..length as usize]))
 }
+
 /// Return all running processes (pid, parent_pid, executable name).
 pub fn list_processes() -> Vec<ProcessInfo> {
     let mut result = Vec::new();
@@ -197,18 +206,16 @@ mod tests {
         assert_eq!(process_name(0), None);
     }
     #[test]
-    fn process_name_returns_none_when_windows_denies_process_access() {
-        use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    fn process_image_path_preserves_access_denied_without_query_rights() {
+        use windows::Win32::System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE};
 
-        // Windows reserves PID 4 for System and refuses user-mode OpenProcess.
-        // This queries no user process and changes no privileges or permissions.
-        let result = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, 4) };
-        if let Ok(handle) = result {
-            unsafe { CloseHandle(handle).unwrap() };
-            panic!("System unexpectedly allowed a process query");
-        }
+        // A real handle to this test process, with no permission to query its image.
+        // Do not change the process DACL, token privileges or any other process.
+        let handle =
+            unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, std::process::id()).unwrap() };
+        let result = process_image_path(handle);
+        unsafe { CloseHandle(handle).unwrap() };
         assert_eq!(result.unwrap_err().code().0 as u32, 0x8007_0005);
-        assert_eq!(process_name(4), None);
     }
 
     #[test]
