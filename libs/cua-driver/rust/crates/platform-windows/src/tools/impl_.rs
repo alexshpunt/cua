@@ -1298,10 +1298,7 @@ impl Tool for GetWindowStateTool {
             window.height,
         ));
         let (app_name, virtual_desktop) = tokio::task::spawn_blocking(move || {
-            let app_name = crate::win32::list_processes()
-                .into_iter()
-                .find(|p| p.pid == pid)
-                .map(|p| p.name);
+            let app_name = crate::win32::process_name(pid);
             (app_name, crate::shell_desktop::Query::new().read(pid, hwnd))
         })
         .await
@@ -1746,7 +1743,7 @@ impl Tool for GetWindowStateTool {
 
                 cua_driver_core::window_inspection::mark_browser_chrome_capture_coverage(
                     &mut structured,
-                    is_standalone_chromium_browser_process(pid).then_some(
+                    app_name.as_deref().is_some_and(is_chromium_browser_target).then_some(
                         cua_driver_core::window_inspection::BrowserChromeCaptureCoverage::NotObservable,
                     ),
                 );
@@ -1863,13 +1860,6 @@ fn is_chromium_browser_target(target: &str) -> bool {
             | "browser" // Yandex Browser's exe is browser.exe
             | "arc"
     )
-}
-
-fn is_standalone_chromium_browser_process(pid: u32) -> bool {
-    crate::win32::list_processes()
-        .into_iter()
-        .find(|process| process.pid == pid)
-        .is_some_and(|process| is_chromium_browser_target(&process.name))
 }
 
 /// Anti-throttling flags injected on hidden Chromium launches (#1620).
