@@ -26,7 +26,7 @@ fn failure(error: Failure) -> ToolResult {
     }))
 }
 fn query_error(error: windows::core::Error) -> Failure {
-    if error.code() == UIA_E_ELEMENTNOTAVAILABLE {
+    if error.code().0 == UIA_E_ELEMENTNOTAVAILABLE as i32 {
         return Failure::refusal("semantic_element_stale");
     }
     Failure {
@@ -36,7 +36,7 @@ fn query_error(error: windows::core::Error) -> Failure {
     }
 }
 fn pattern_error(error: windows::core::Error) -> Failure {
-    if error.code() == UIA_E_NOTSUPPORTED {
+    if error.code().0 == UIA_E_NOTSUPPORTED as i32 {
         Failure::refusal("semantic_pattern_unsupported")
     } else {
         query_error(error)
