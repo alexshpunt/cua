@@ -154,6 +154,20 @@ mod tests {
     }
 
     #[test]
+    fn process_name_matches_the_current_executable_without_a_path() {
+        let executable = std::env::current_exe().unwrap();
+        let expected = executable.file_name().unwrap().to_string_lossy();
+        assert_eq!(
+            process_name(std::process::id()).as_deref(),
+            Some(expected.as_ref())
+        );
+    }
+
+    #[test]
+    fn process_name_does_not_fabricate_a_name_for_an_unqueryable_pid() {
+        assert_eq!(process_name(0), None);
+    }
+    #[test]
     fn descendants_include_root_and_only_its_transitive_process_tree() {
         let processes = vec![
             process(42, 1),
