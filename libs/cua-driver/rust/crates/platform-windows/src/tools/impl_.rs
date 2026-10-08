@@ -1250,6 +1250,7 @@ impl Tool for GetWindowStateTool {
     }
 
     async fn invoke(&self, args: Value) -> ToolResult {
+        let _invoke = cua_driver_core::native_observe_profile::Span::new("windows.invoke");
         // Swift error wording 1:1.
         let pid = match args.get("pid").and_then(|v| v.as_i64()) {
             Some(v) => v as u32,
@@ -1267,10 +1268,12 @@ impl Tool for GetWindowStateTool {
         // probed through Win32 first; the desktop-wide UIA union (2 s deadline)
         // is consulted only on a miss (#4416).
         use crate::win32::PidWindowLookup;
+        let lookup_wait = cua_driver_core::native_observe_profile::Span::new("metadata.lookup_await");
         let lookup =
-            tokio::task::spawn_blocking(move || crate::win32::lookup_window_for_pid(pid, hwnd))
+            tokio::task::spawn_blocking(move || cua_driver_core::native_observe_profile::timed("metadata.window_lookup", || crate::win32::lookup_window_for_pid(pid, hwnd)))
                 .await
                 .unwrap_or(PidWindowLookup::Missing);
+        drop(lookup_wait);
         let window = match lookup {
             PidWindowLookup::Found(window) => window,
             PidWindowLookup::OtherPid(owner) => {
@@ -1297,7 +1300,9 @@ impl Tool for GetWindowStateTool {
             window.width,
             window.height,
         ));
+        let metadata_wait = cua_driver_core::native_observe_profile::Span::new("metadata.worker_await");
         let (app_name, virtual_desktop) = tokio::task::spawn_blocking(move || {
+            let _metadata = cua_driver_core::native_observe_profile::Span::new("metadata.worker");
             let app_name = crate::win32::list_processes()
                 .into_iter()
                 .find(|p| p.pid == pid)
@@ -1314,6 +1319,7 @@ impl Tool for GetWindowStateTool {
                 ),
             )
         });
+        drop(metadata_wait);
         use cua_driver_core::tool_args::ArgsExt;
         // The canonical per-call value overrides all configured limits,
         // including `0` for native resolution. The legacy field retains its
@@ -1406,6 +1412,7 @@ impl Tool for GetWindowStateTool {
         // error, and the screenshot below still comes back.
         let tree_result = if do_tree {
             let tree_task = tokio::task::spawn_blocking(move || {
+                let _tree = cua_driver_core::native_observe_profile::Span::new("uia.walk_and_snapshot");
                 let mut budget =
                     cua_driver_core::walk_budget::WalkBudget::new(timeout_ms, max_elements);
                 let tree =
@@ -1447,7 +1454,9 @@ impl Tool for GetWindowStateTool {
         } else {
             None
         };
+        let screenshot_wait = cua_driver_core::native_observe_profile::Span::new("capture.worker_await");
         let blocking = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+            let _capture = cua_driver_core::native_observe_profile::Span::new("capture.worker");
             // Capture screenshot AND any error message so the response can
             // surface *why* there's no image (the iconic-window guard from
             // #1973 / PR #1974 is the load-bearing case: minimized windows
@@ -1456,7 +1465,7 @@ impl Tool for GetWindowStateTool {
             // The previous `Err(_) => None` silently dropped the error and
             // upstream agents saw an empty response with no signal.
             let (screenshot, screenshot_err) = if do_shot {
-                match crate::capture::screenshot_window_overview(hwnd, max_dim) {
+                match cua_driver_core::native_observe_profile::timed("image.overview_pipeline", || crate::capture::screenshot_window_overview(hwnd, max_dim)) {
                     Ok((png, native_w, native_h)) => {
                         let (w, h) = crate::capture::png_dimensions_pub(&png)?;
                         // `screenshot_out_file` set (any mode) → write to disk and
@@ -1471,7 +1480,7 @@ impl Tool for GetWindowStateTool {
                         } else {
                             use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
                             (
-                                Some((Some(B64.encode(&png)), None, w, h, native_w, native_h, png)),
+                                Some((Some(cua_driver_core::native_observe_profile::timed("image.base64", || B64.encode(&png))), None, w, h, native_w, native_h, png)),
                                 None,
                             )
                         }
@@ -1496,6 +1505,7 @@ impl Tool for GetWindowStateTool {
                     )),
                 )),
             };
+        drop(screenshot_wait);
         let result =
             result.map(|(screenshot, screenshot_err)| (tree_result, screenshot, screenshot_err));
 
@@ -1669,7 +1679,7 @@ impl Tool for GetWindowStateTool {
                                     ))
                                 }
                             };
-                            match bridge.publish(
+                            match cua_driver_core::native_observe_profile::timed("capture.publish", || bridge.publish(
                                 &args,
                                 png,
                                 crate::capture_admission::WindowsCaptureTarget::Window {
@@ -1677,7 +1687,7 @@ impl Tool for GetWindowStateTool {
                                     window_id: hwnd,
                                 },
                                 geometry,
-                            ) {
+                            )) {
                                 Ok(capture_id) => capture_id,
                                 Err(error) => {
                                     return ToolResult::error(format!(
