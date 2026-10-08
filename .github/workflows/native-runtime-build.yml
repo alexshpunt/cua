@@ -1,6 +1,14 @@
 name: Native runtime packages
 
 on:
+  push:
+    branches: [feat/lpt-662-native-packages]
+    paths:
+      - .github/workflows/native-runtime-build.yml
+      - .github/scripts/native_runtime_package.py
+      - .github/scripts/probe_native_runtime.py
+      - .github/scripts/tests/test_native_runtime_package.py
+      - libs/cua-driver/rust/**
   workflow_dispatch:
     inputs:
       source_ref:
@@ -81,11 +89,11 @@ jobs:
             libx11-dev libxi-dev libxtst-dev libxext-dev libwayland-dev libxkbcommon-dev
       - name: Validate immutable source
         env:
-          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_REF: ${{ inputs.source_ref || github.sha }}
         run: '[[ "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]'
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -102,7 +110,7 @@ jobs:
           key: native-runtime-1.97.1-${{ matrix.triple }}-${{ hashFiles('libs/cua-driver/rust/Cargo.lock', 'libs/cua-driver/rust/**/Cargo.toml') }}
       - name: Record environment and check the package contract
         env:
-          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_REF: ${{ inputs.source_ref || github.sha }}
         run: |
           test "$(git rev-parse HEAD)" = "$SOURCE_REF"
           mkdir -p libs/cua-driver/rust/build-evidence/licenses
@@ -130,7 +138,7 @@ jobs:
           git diff --exit-code
       - name: Check startup and assemble an npm runtime
         env:
-          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_REF: ${{ inputs.source_ref || github.sha }}
           TARGET: ${{ matrix.package }}
           TRIPLE: ${{ matrix.triple }}
           SUFFIX: ${{ matrix.suffix }}
@@ -150,7 +158,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: native-runtime-${{ matrix.package }}-${{ inputs.source_ref }}
+          name: native-runtime-${{ matrix.package }}-${{ inputs.source_ref || github.sha }}
           path: libs/cua-driver/rust/build-evidence/
           if-no-files-found: error
           retention-days: 14
@@ -162,21 +170,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ inputs.source_ref || github.sha }}
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
-          pattern: native-runtime-*-${{ inputs.source_ref }}
+          pattern: native-runtime-*-${{ inputs.source_ref || github.sha }}
           path: artifacts
       - name: Verify every target belongs to the same complete source set
         env:
-          SOURCE_REF: ${{ inputs.source_ref }}
+          SOURCE_REF: ${{ inputs.source_ref || github.sha }}
         run: |
           python3 .github/scripts/native_runtime_package.py verify-set \
             --root artifacts --source "$SOURCE_REF" --output artifacts/complete-set.json
       - uses: actions/upload-artifact@v4
         with:
-          name: native-runtime-complete-${{ inputs.source_ref }}
+          name: native-runtime-complete-${{ inputs.source_ref || github.sha }}
           path: |
             artifacts/complete-set.json
             artifacts/**/*.tgz
