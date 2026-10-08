@@ -359,8 +359,25 @@ pub(crate) fn screenshot_window_click_target(
     Some((png, x, y))
 }
 
+/// Capture a window overview with one PNG encoding after optional pixel resize.
+/// Returns final PNG and original physical frame dimensions for input mapping.
+pub fn screenshot_window_overview(hwnd: u64, max_dim: u32) -> Result<(Vec<u8>, u32, u32)> {
+    screenshot_window_encoded(hwnd, |pixels, w, h| {
+        let png = cua_driver_core::image_utils::encode_bgra_to_png_resized(pixels, w, h, max_dim)?;
+        Ok((png, w, h))
+    })
+    .map(|(overview, _, _)| overview)
+}
+
 fn screenshot_window_mapped(hwnd: u64) -> Result<(Vec<u8>, bool, Option<FrameGeometry>)> {
-    match unsafe { screenshot_window_bytes_with_occlusion_unsafe(hwnd) } {
+    screenshot_window_encoded(hwnd, cua_driver_core::image_utils::encode_bgra_to_png)
+}
+
+fn screenshot_window_encoded<T>(
+    hwnd: u64,
+    encode: impl Fn(&[u8], u32, u32) -> Result<T> + Copy,
+) -> Result<(T, bool, Option<FrameGeometry>)> {
+    match unsafe { screenshot_window_bytes_with_occlusion_unsafe(hwnd, encode) } {
         Ok(capture) => Ok(capture),
         Err(primary_error) => {
             if primary_error.to_string().contains("minimized window") {
@@ -371,11 +388,7 @@ fn screenshot_window_mapped(hwnd: u64) -> Result<(Vec<u8>, bool, Option<FrameGeo
             // WGC reads the compositor-owned frame and is therefore the right
             // first fallback for this class of capture failure.
             match crate::wgc::screenshot_window_via_wgc(hwnd) {
-                Ok((pixels, width, height)) => Ok((
-                    cua_driver_core::image_utils::encode_bgra_to_png(&pixels, width, height)?,
-                    false,
-                    None,
-                )),
+                Ok((pixels, width, height)) => Ok((encode(&pixels, width, height)?, false, None)),
                 Err(wgc_error) => {
                     // Headless/virtualized Windows sessions can expose DWM but
                     // no WGC-compatible hardware device. Once a window is
@@ -385,11 +398,7 @@ fn screenshot_window_mapped(hwnd: u64) -> Result<(Vec<u8>, bool, Option<FrameGeo
                     let occluded = unsafe { target_is_obscured(target) };
                     match unsafe { screenshot_via_screen_region(target) } {
                         Ok((pixels, width, height, geometry)) => Ok((
-                            cua_driver_core::image_utils::encode_bgra_to_png(
-                                &pixels,
-                                width as u32,
-                                height as u32,
-                            )?,
+                            encode(&pixels, width as u32, height as u32)?,
                             occluded,
                             Some(geometry),
                         )),
@@ -418,9 +427,10 @@ pub fn screenshot_window(hwnd: u64) -> Result<(String, u32, u32)> {
     Ok((BASE64.encode(&png_bytes), w, h))
 }
 
-unsafe fn screenshot_window_bytes_with_occlusion_unsafe(
+unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     hwnd: u64,
-) -> Result<(Vec<u8>, bool, Option<FrameGeometry>)> {
+    encode: impl Fn(&[u8], u32, u32) -> Result<T> + Copy,
+) -> Result<(T, bool, Option<FrameGeometry>)> {
     use windows::Win32::Foundation::RECT;
     use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic};
 
@@ -464,7 +474,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe(
         match crate::wgc::screenshot_window_via_wgc(hwnd_raw) {
             Ok((pixels, w, h)) => {
                 return Ok((
-                    cua_driver_core::image_utils::encode_bgra_to_png(&pixels, w, h)?,
+                    encode(&pixels, w, h)?,
                     false, // WGC reads target's own pixels — never occluded by definition
                     None,
                 ));
@@ -481,7 +491,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe(
         match screenshot_via_screen_region(hwnd) {
             Ok((pixels, w, h, geometry)) => {
                 return Ok((
-                    cua_driver_core::image_utils::encode_bgra_to_png(&pixels, w as u32, h as u32)?,
+                    encode(&pixels, w as u32, h as u32)?,
                     occluded,
                     Some(geometry),
                 ));
@@ -638,11 +648,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe(
     if mostly_black {
         match crate::wgc::screenshot_window_via_wgc(hwnd_raw) {
             Ok((alt_pixels, w, h)) => {
-                return Ok((
-                    cua_driver_core::image_utils::encode_bgra_to_png(&alt_pixels, w, h)?,
-                    false,
-                    None,
-                ));
+                return Ok((encode(&alt_pixels, w, h)?, false, None));
             }
             Err(e) => {
                 tracing::warn!(
@@ -656,11 +662,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe(
         match screenshot_via_screen_region(hwnd) {
             Ok((alt_pixels, alt_w, alt_h, geometry)) => {
                 return Ok((
-                    cua_driver_core::image_utils::encode_bgra_to_png(
-                        &alt_pixels,
-                        alt_w as u32,
-                        alt_h as u32,
-                    )?,
+                    encode(&alt_pixels, alt_w as u32, alt_h as u32)?,
                     occluded,
                     Some(geometry),
                 ));
@@ -679,16 +681,13 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe(
         }
     }
 
-    // BGRA → PNG via the shared `image_utils::encode_bgra_to_png`
-    // helper (extracted from this file 2026-05; was a hand-rolled
-    // uncompressed-PNG path that produced ~5x larger output. The
-    // `image` crate's encoder is already a workspace dep so the
-    // smaller output is free).
+    // Encode the captured BGRA frame. Overviews resize pixels first;
+    // existing recording/detail/mapped-click callers keep native-size PNGs.
     // PrintWindow itself reads from the target's own DC, so the bitmap
     // we return here is the target's pixels even when occluded — no
     // occluded warning needed on this path.
     Ok((
-        cua_driver_core::image_utils::encode_bgra_to_png(&pixels, w as u32, h as u32)?,
+        encode(&pixels, w as u32, h as u32)?,
         false,
         (!mostly_black).then_some(cropped_geometry),
     ))

@@ -1456,10 +1456,8 @@ impl Tool for GetWindowStateTool {
             // The previous `Err(_) => None` silently dropped the error and
             // upstream agents saw an empty response with no signal.
             let (screenshot, screenshot_err) = if do_shot {
-                match crate::capture::screenshot_window_bytes(hwnd) {
-                    Ok(raw) => {
-                        let (native_w, native_h) = crate::capture::png_dimensions_pub(&raw)?;
-                        let png = crate::capture::resize_png_if_needed(&raw, max_dim)?;
+                match crate::capture::screenshot_window_overview(hwnd, max_dim) {
+                    Ok((png, native_w, native_h)) => {
                         let (w, h) = crate::capture::png_dimensions_pub(&png)?;
                         // `screenshot_out_file` set (any mode) → write to disk and
                         // surface the path, never embed bytes. Otherwise (vision,

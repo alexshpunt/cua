@@ -320,6 +320,34 @@ pub fn encode_bgra_to_png(bgra: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
     encode_rgba_to_png(&rgba, w, h)
 }
 
+/// Resize top-down BGRA pixels before encoding one final PNG.
+///
+/// A zero cap keeps native size. Channel order, alpha, aspect rounding and
+/// Lanczos3 match the legacy BGRA-to-PNG then PNG-resize path.
+pub fn encode_bgra_to_png_resized(bgra: &[u8], w: u32, h: u32, max_dim: u32) -> Result<Vec<u8>> {
+    if bgra.len() as u64 != (w as u64) * (h as u64) * 4 {
+        bail!("encode_bgra_to_png_resized: invalid buffer for w={w} h={h}");
+    }
+    let mut rgba = bgra.to_vec();
+    for px in rgba.chunks_exact_mut(4) {
+        px.swap(0, 2);
+    }
+    let buf = ImageBuffer::from_raw(w, h, rgba)
+        .ok_or_else(|| anyhow!("invalid RGBA buffer for w={w} h={h}"))?;
+    let img = DynamicImage::ImageRgba8(buf);
+    let img = if max_dim != 0 && (w > max_dim || h > max_dim) {
+        let scale = max_dim as f64 / w.max(h) as f64;
+        let new_w = (w as f64 * scale).round() as u32;
+        let new_h = (h as f64 * scale).round() as u32;
+        img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+    let mut out = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png)?;
+    Ok(out)
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -446,5 +474,65 @@ mod tests {
         let mut decoded = vec![0u8; decoder.total_bytes() as usize];
         decoder.read_image(&mut decoded).unwrap();
         assert_eq!(decoded, vec![30u8, 20, 10, 40]); // RGBA: R=30, G=20, B=10, A=40
+    }
+}
+
+// Appended to the pinned core owner by prepare-native-single-png.mjs.
+#[cfg(test)]
+mod single_png_tests {
+    use super::*;
+
+    fn pixels(w: u32, h: u32) -> Vec<u8> {
+        (0..w * h)
+            .flat_map(|n| {
+                [
+                    n.wrapping_mul(17) as u8,
+                    n.wrapping_mul(29) as u8,
+                    n.wrapping_mul(43) as u8,
+                    n.wrapping_mul(61) as u8,
+                ]
+            })
+            .collect()
+    }
+
+    #[test]
+    fn single_png_matches_legacy_decoded_pixels_and_dimensions() {
+        for (w, h) in [(37, 19), (19, 37), (65, 65), (400, 1), (1, 400)] {
+            let bgra = pixels(w, h);
+            let native = encode_bgra_to_png(&bgra, w, h).unwrap();
+            for cap in [0, 1, 7, 17, 37, 500] {
+                let old = resize_png_if_needed(&native, cap).unwrap();
+                let new = encode_bgra_to_png_resized(&bgra, w, h, cap).unwrap();
+                let old = image::load_from_memory(&old).unwrap().to_rgba8();
+                let new = image::load_from_memory(&new).unwrap().to_rgba8();
+                assert_eq!(new, old, "{w}x{h}, cap={cap}");
+            }
+        }
+    }
+
+    #[test]
+    fn single_png_native_and_within_cap_keep_encoded_bytes() {
+        let bgra = pixels(37, 19);
+        let old = encode_bgra_to_png(&bgra, 37, 19).unwrap();
+        for cap in [0, 37, 500] {
+            assert_eq!(encode_bgra_to_png_resized(&bgra, 37, 19, cap).unwrap(), old);
+        }
+    }
+
+    #[test]
+    fn single_png_keeps_bgra_channels_and_alpha() {
+        let new = encode_bgra_to_png_resized(&[10, 20, 30, 40], 1, 1, 0).unwrap();
+        assert_eq!(
+            image::load_from_memory(&new).unwrap().to_rgba8().as_raw(),
+            &[30, 20, 10, 40]
+        );
+    }
+
+    #[test]
+    fn single_png_rejects_invalid_buffer_before_encoding() {
+        for cap in [0, 1, 500] {
+            assert!(encode_bgra_to_png_resized(&[0; 3], 1, 1, cap).is_err());
+            assert!(encode_bgra_to_png_resized(&[0; 8], 1, 1, cap).is_err());
+        }
     }
 }
