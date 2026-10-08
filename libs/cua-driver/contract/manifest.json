@@ -4672,6 +4672,7 @@
         "properties": {
           "element_token": {
             "description": "Current snapshot token belonging to that exact window.",
+            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
             "type": "string"
           },
           "operation": {
@@ -4689,18 +4690,12 @@
             "type": "integer"
           },
           "session": {
-            "description": "Repeat a public session label for multi-call work; omit for the transport's implicit session.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "type": "string"
           },
           "value": {
             "description": "Replacement text or numeric range value; required only for set_value.",
-            "type": [
-              "string",
-              "null"
-            ]
+            "type": "string"
           },
           "window_id": {
             "description": "Exact native top-level window identifier from discovery.",

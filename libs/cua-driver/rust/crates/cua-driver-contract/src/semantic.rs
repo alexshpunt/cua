@@ -1,4 +1,5 @@
 //! Explicit accessibility-only writes. Completion is not application-effect evidence.
+use crate::inputs::{element_token_schema, string_schema};
 use crate::{Platform, SchemaMode, ToolAnnotations, ToolContract, ToolInput, ToolOutput};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -21,14 +22,18 @@ pub struct SemanticActionInput {
     /// Exact native top-level window identifier from discovery.
     pub window_id: u64,
     /// Current snapshot token belonging to that exact window.
+    #[schemars(schema_with = "element_token_schema")]
     pub element_token: String,
     /// One UIA intent; no physical fallback or foreground delivery.
     pub operation: SemanticOperation,
     /// Replacement text or numeric range value; required only for set_value.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(schema_with = "string_schema")]
     pub value: Option<String>,
-    /// Repeat a public session label for multi-call work; omit for the transport's implicit session.
+    /// For multi-call work, prefer a short public session label and repeat it on every call that
+    /// accepts it. Omit it to use the authenticated transport's implicit lifecycle session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(schema_with = "string_schema")]
     pub session: Option<String>,
 }
 impl ToolInput for SemanticActionInput {
