@@ -824,7 +824,7 @@ pub fn png_bytes_to_jpeg(png_bytes: &[u8], quality: u8) -> Result<Vec<u8>> {
 /// If `max_dim == 0` or the image already fits, returns a copy of the
 /// original bytes unchanged.
 pub fn resize_png_if_needed(png_bytes: &[u8], max_dim: u32) -> Result<Vec<u8>> {
-    cua_driver_core::image_utils::resize_png_if_needed(png_bytes, max_dim)
+    cua_driver_core::image_utils::resize_windows_overview_png(png_bytes, max_dim)
 }
 
 /// Draw a red crosshair at pixel (cx, cy) on a PNG image and return
