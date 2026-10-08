@@ -154,9 +154,9 @@ impl Control for UiaControl<'_> {
         let Some(pattern) = self.prepared.take() else {
             return Err(Failure::refusal("semantic_pattern_unsupported"));
         };
-        let _no_activate = crate::input::NoActivateGuard::arm(windows::Win32::Foundation::HWND(
-            self.hwnd as *mut _,
-        ));
+        // WS_EX_NOACTIVATE removes a window from shell desktop membership.
+        // Restoring that style can reassign it to the current desktop. UIA
+        // must not use the pointer guard; keep only the provider focus shield.
         crate::uia::fg_bypass::run_with_uwp_bypass(self.hwnd as isize, || unsafe {
             match pattern {
                 Prepared::Invoke(pattern) => pattern.Invoke(),

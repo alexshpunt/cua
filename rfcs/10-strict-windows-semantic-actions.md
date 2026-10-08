@@ -28,7 +28,10 @@ Add `semantic_action` with exact pid, window_id, current element_token, operatio
 (invoke, select or set_value), optional session and a value for set_value only.
 No coordinates, activation or foreground option are accepted.
 
-The Windows adapter uses existing admitted UIA targets and focus guards.
+The Windows adapter uses existing admitted UIA targets and the provider
+EnableWindow focus shield. It does not add WS_EX_NOACTIVATE: live testing found
+that restoring that style can move the target to the current shell desktop.
+Qualification checks desktop membership before and after every action.
 Invoke uses InvokePattern; select uses SelectionItemPattern.Select; set_value
 uses ValuePattern or RangeValuePattern. Failed dispatch never retries through
 mouse messages, keys, SendInput or a different input route. A missing pattern,
