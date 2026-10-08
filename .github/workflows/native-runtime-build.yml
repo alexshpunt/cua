@@ -158,6 +158,16 @@ jobs:
             --output "$root/build-evidence/package" --source "$SOURCE_REF" --target "$TARGET" \
             --driver-version "$version" --probe "$root/build-evidence/startup.json"
           npm pack "./$root/build-evidence/package" --ignore-scripts --pack-destination "$root/build-evidence"
+          install="$root/build-evidence/installed"
+          npm install --prefix "$install" --ignore-scripts --no-audit --no-fund "./$root"/build-evidence/*.tgz
+          installed="$install/node_modules/@alexshp/cua-runtime-$TARGET"
+          python3 .github/scripts/native_runtime_package.py verify-install \
+            --installed "$installed" --reference "$root/build-evidence/package" \
+            --output "$root/build-evidence/installation.json"
+          python3 .github/scripts/probe_native_runtime.py \
+            --binary "$installed/runtime/cua-driver$SUFFIX" --source "$SOURCE_REF" \
+            --target "$TARGET" --driver-version "$version" --output "$root/build-evidence/installed-startup.json"
+          rm -rf "$install"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -190,6 +200,8 @@ jobs:
           name: native-runtime-complete-${{ inputs.source_ref || github.sha }}
           path: |
             artifacts/complete-set.json
+            artifacts/**/installation.json
+            artifacts/**/installed-startup.json
             artifacts/**/*.tgz
           if-no-files-found: error
           retention-days: 14

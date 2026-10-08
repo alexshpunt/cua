@@ -11,6 +11,10 @@ produces its manifest and four npm archives. Do not distribute a partial set.
 Each package carries its source, version, binary and notice hashes, required
 companions, and the read-only startup/schema probe. Version/help, initialize and
 tools/list checks do not prove that capture or input works on a real desktop.
+Each native job also installs its npm archive into an isolated directory, checks
+installed metadata and every payload hash against the original package, then
+repeats the read-only startup probe from that installed path. Missing installed
+package/startup evidence blocks the complete-set gate.
 
 The Windows package deliberately permits installation on Linux x64 too. npm sees
 WSL as Linux; this lets the extension select Windows-host control without a

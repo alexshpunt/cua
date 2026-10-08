@@ -88,6 +88,20 @@ def assemble(release, licenses, output, source, target, driver_version, probe):
     return output
 
 
+def verify_install(installed, reference):
+    """Check npm-installed metadata and payload against the original package before startup."""
+    manifest = json.loads((reference / "runtime.json").read_text(encoding="utf-8"))
+    for name in ("runtime.json", "package.json", "startup.json"):
+        if json.loads((installed / name).read_text(encoding="utf-8")) != json.loads(
+            (reference / name).read_text(encoding="utf-8")
+        ):
+            raise ValueError(f"installed package metadata mismatch: {name}")
+    for name, digest in manifest["files"].items():
+        if sha256(installed / "runtime" / name) != digest:
+            raise ValueError(f"installed runtime hash mismatch: {name}")
+    return {"source": manifest["source"], "target": manifest["target"], "files": manifest["files"]}
+
+
 def verify_set(packages, source):
     """Reject missing, duplicate, mixed-source or changed platform packages."""
     entries = []
@@ -121,6 +135,20 @@ def verify_set(packages, source):
             or not probe.get("tools")
         ):
             raise ValueError("missing read-only startup evidence")
+        installed = json.loads((package.parent / "installation.json").read_text(encoding="utf-8"))
+        if installed != {"source": source, "target": target, "files": manifest["files"]}:
+            raise ValueError("installed package evidence mismatch")
+        startup = json.loads(
+            (package.parent / "installed-startup.json").read_text(encoding="utf-8")
+        )
+        if (
+            startup.get("source") != source
+            or startup.get("target") != target
+            or startup.get("input_calls") != 0
+            or startup.get("capture_calls") != 0
+            or not startup.get("tools")
+        ):
+            raise ValueError("missing installed read-only startup evidence")
         entries.append(manifest)
     if seen != set(TARGETS):
         raise ValueError("expected a complete four-target set")
@@ -142,6 +170,10 @@ def main():
     one.add_argument("--source", required=True)
     one.add_argument("--target", choices=TARGETS, required=True)
     one.add_argument("--driver-version", required=True)
+    install = commands.add_parser("verify-install")
+    install.add_argument("--installed", type=Path, required=True)
+    install.add_argument("--reference", type=Path, required=True)
+    install.add_argument("--output", type=Path, required=True)
     complete = commands.add_parser("verify-set")
     complete.add_argument("--root", type=Path, required=True)
     complete.add_argument("--source", required=True)
@@ -157,6 +189,8 @@ def main():
             args.driver_version,
             json.loads(args.probe.read_text(encoding="utf-8")),
         )
+    elif args.command == "verify-install":
+        write_json(args.output, verify_install(args.installed, args.reference))
     else:
         write_json(args.output, verify_set(sorted(args.root.glob("*/package")), args.source))
 

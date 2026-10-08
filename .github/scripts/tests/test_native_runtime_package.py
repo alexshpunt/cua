@@ -38,9 +38,15 @@ class NativeRuntimePackageTests(unittest.TestCase):
             "capture_calls": 0,
             "tools": ["list_windows", "get_window_state"],
         }
-        return self.module.assemble(
+        package = self.module.assemble(
             release, licenses, self.root / target / "package", self.source, target, "0.34.0", probe
         )
+
+        (package.parent / "installation.json").write_text(
+            json.dumps(self.module.verify_install(package, package)), encoding="utf-8"
+        )
+        (package.parent / "installed-startup.json").write_text(json.dumps(probe), encoding="utf-8")
+        return package
 
     def test_complete_set_preserves_source_hashes_companions_and_notices(self):
         packages = [self.assemble(target) for target in self.module.TARGETS]
@@ -69,6 +75,29 @@ class NativeRuntimePackageTests(unittest.TestCase):
         (packages[0] / "runtime" / "cua-driver.exe").write_bytes(b"changed")
         with self.assertRaisesRegex(ValueError, "hash"):
             self.module.verify_set(packages, self.source)
+
+    def test_incomplete_installation_evidence_blocks_complete_set(self):
+        packages = [self.assemble(target) for target in self.module.TARGETS]
+        receipt = packages[0].parent / "installed-startup.json"
+        receipt.write_text(json.dumps({"source": self.source, "target": "win32-x64"}))
+        with self.assertRaisesRegex(ValueError, "installed read-only startup evidence"):
+            self.module.verify_set(packages, self.source)
+
+    def test_installed_payload_matches_reference_and_rejects_missing_or_changed_files(self):
+        import shutil
+
+        package = self.assemble("linux-x64")
+        installed = self.root / "installed"
+        shutil.copytree(package, installed)
+        result = self.module.verify_install(installed, package)
+        self.assertEqual(result["source"], self.source)
+        self.assertEqual(result["target"], "linux-x64")
+        (installed / "runtime" / "cua-cursor-theme").write_bytes(b"changed")
+        with self.assertRaisesRegex(ValueError, "installed runtime hash mismatch"):
+            self.module.verify_install(installed, package)
+        (installed / "runtime" / "cua-cursor-theme").unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.module.verify_install(installed, package)
 
     def test_missing_required_sidecar_refuses_assembly(self):
         package = self.assemble("win32-x64")
