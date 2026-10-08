@@ -27,7 +27,7 @@ struct Apartment {
 }
 impl Apartment {
     fn new() -> Result<Self, DesktopQueryError> {
-        let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+        let hr = unsafe { cua_driver_core::native_observe_profile::timed("shell.COM_initialize", || CoInitializeEx(None, COINIT_MULTITHREADED)) };
         // An existing STA is usable; do not change or uninitialize someone else's apartment.
         if hr.is_err() && hr != HRESULT(0x80010106_u32 as i32) {
             return Err(error(
@@ -44,7 +44,7 @@ impl Apartment {
 impl Drop for Apartment {
     fn drop(&mut self) {
         if self.initialized {
-            unsafe { CoUninitialize() };
+            unsafe { cua_driver_core::native_observe_profile::timed("shell.COM_uninitialize", || CoUninitialize()) };
         }
     }
 }
@@ -56,9 +56,10 @@ pub(crate) struct Query {
 }
 impl Query {
     pub(crate) fn new() -> Self {
+        let _construct = cua_driver_core::native_observe_profile::Span::new("shell.context_construct");
         match Apartment::new() {
             Ok(apartment) => Self {
-                manager: unsafe { CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_ALL) }
+                manager: unsafe { cua_driver_core::native_observe_profile::timed("shell.CoCreateInstance", || CoCreateInstance(&VirtualDesktopManager, None, CLSCTX_ALL)) }
                     .map_err(|e| {
                         error(DesktopQueryErrorCode::ManagerUnavailable, Some(e.code().0))
                     }),
@@ -73,6 +74,7 @@ impl Query {
 
     /// Query this exact HWND/process pair. Method failures are independent and never guessed from visibility.
     pub(crate) fn read(&self, pid: u32, window_id: u64) -> VirtualDesktopMembership {
+        let _queries = cua_driver_core::native_observe_profile::Span::new("shell.membership");
         let hwnd = HWND(window_id as usize as *mut core::ffi::c_void);
         if !same_window(hwnd, pid) {
             return unavailable(DesktopQueryErrorCode::WindowUnavailable, None);
@@ -87,7 +89,7 @@ impl Query {
                 )
             }
         };
-        let desktop_id = unsafe { manager.GetWindowDesktopId(hwnd) }
+        let desktop_id = unsafe { cua_driver_core::native_observe_profile::timed("shell.desktop_id", || manager.GetWindowDesktopId(hwnd)) }
             .map(|guid| format!("{guid:?}").to_ascii_lowercase())
             .map_err(|e| {
                 error(
@@ -95,7 +97,7 @@ impl Query {
                     Some(e.code().0),
                 )
             });
-        let current = unsafe { manager.IsWindowOnCurrentVirtualDesktop(hwnd) }
+        let current = unsafe { cua_driver_core::native_observe_profile::timed("shell.current_desktop", || manager.IsWindowOnCurrentVirtualDesktop(hwnd)) }
             .map(|value| value.as_bool())
             .map_err(|e| {
                 error(

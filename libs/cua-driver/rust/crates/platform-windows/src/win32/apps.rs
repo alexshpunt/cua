@@ -18,6 +18,7 @@ pub struct ProcessInfo {
 /// Read one process's executable basename without scanning the process table.
 /// This is best-effort display metadata, not proof of process or window lifetime.
 pub(crate) fn process_name(pid: u32) -> Option<String> {
+    let _lookup = cua_driver_core::native_observe_profile::Span::new("metadata.direct_process_name");
     use windows::core::PWSTR;
     use windows::Win32::System::Threading::{
         OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
@@ -46,9 +47,10 @@ pub(crate) fn process_name(pid: u32) -> Option<String> {
 }
 /// Return all running processes (pid, parent_pid, executable name).
 pub fn list_processes() -> Vec<ProcessInfo> {
+    let _processes = cua_driver_core::native_observe_profile::Span::new("metadata.process_enumeration");
     let mut result = Vec::new();
     unsafe {
-        let snap = match CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) {
+        let snap = match cua_driver_core::native_observe_profile::timed("metadata.process_snapshot", || CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)) {
             Ok(h) => h,
             Err(_) => return result,
         };

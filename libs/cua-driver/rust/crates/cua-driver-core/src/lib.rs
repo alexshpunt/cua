@@ -77,6 +77,7 @@ pub mod ffmpeg_install;
 pub mod health_report;
 pub mod history;
 pub mod image_utils;
+pub mod native_observe_profile;
 pub mod interactive_input;
 pub mod key_pacing;
 pub mod launch_guard;
