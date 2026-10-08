@@ -1,0 +1,207 @@
+name: Native runtime packages
+
+on:
+  push:
+    branches: [feat/lpt-662-native-packages]
+    paths:
+      - .github/workflows/native-runtime-build.yml
+      - .github/scripts/native_runtime_package.py
+      - .github/scripts/probe_native_runtime.py
+      - .github/scripts/tests/test_native_runtime_package.py
+      - libs/cua-driver/rust/**
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact fork source commit to build for all four targets
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-runtime-packages
+  cancel-in-progress: false
+
+env:
+  CUA_TELEMETRY: "0"
+  CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
+  CUA_DRIVER_RS_UPDATE_CHECK: "false"
+  DO_NOT_TRACK: "1"
+
+jobs:
+  build:
+    name: ${{ matrix.package }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - package: win32-x64
+            runner: windows-latest
+            container: ""
+            triple: x86_64-pc-windows-msvc
+            owner_crates: -p platform-windows
+            extra_crates: -p cua-driver-uia
+            features: ""
+            suffix: .exe
+          - package: linux-x64
+            runner: ubuntu-latest
+            container: debian:11
+            triple: x86_64-unknown-linux-gnu
+            owner_crates: ""
+            extra_crates: ""
+            features: --features cua-driver/portal-input
+            suffix: ""
+          - package: darwin-x64
+            runner: macos-26-intel
+            container: ""
+            triple: x86_64-apple-darwin
+            owner_crates: ""
+            extra_crates: ""
+            features: ""
+            suffix: ""
+          - package: darwin-arm64
+            runner: macos-26
+            container: ""
+            triple: aarch64-apple-darwin
+            owner_crates: ""
+            extra_crates: ""
+            features: ""
+            suffix: ""
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Bootstrap the portable Linux build
+        if: matrix.package == 'linux-x64'
+        run: |
+          cat > /etc/apt/sources.list <<'EOF'
+          deb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://snapshot.debian.org/archive/debian/20260901T000000Z/ bullseye main
+          deb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://snapshot.debian.org/archive/debian/20260901T000000Z/ bullseye-updates main
+          deb [check-valid-until=no signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://snapshot.debian.org/archive/debian-security/20260901T000000Z/ bullseye-security main
+          EOF
+          apt-get -o Dir::Etc::sourceparts=- -o Acquire::Retries=5 update
+          apt-get -o Dir::Etc::sourceparts=- -o Acquire::Retries=5 install -y --no-install-recommends \
+            git ca-certificates curl python3 build-essential pkg-config \
+            libx11-dev libxi-dev libxtst-dev libxext-dev libwayland-dev libxkbcommon-dev
+      - name: Validate immutable source
+        env:
+          SOURCE_REF: ${{ inputs.source_ref || github.sha }}
+        run: '[[ "$SOURCE_REF" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # Rust 1.97.1
+        with:
+          targets: ${{ matrix.triple }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            libs/cua-driver/rust/target
+          key: native-runtime-1.97.1-${{ matrix.triple }}-${{ hashFiles('libs/cua-driver/rust/Cargo.lock', 'libs/cua-driver/rust/**/Cargo.toml') }}
+      - name: Record environment and check the package contract
+        env:
+          SOURCE_REF: ${{ inputs.source_ref || github.sha }}
+        run: |
+          # Debian's security-backported Git reads safe.directory from global config,
+          # not command-scoped -c. This runner/container is disposable.
+          git config --global --add safe.directory "$(pwd -P)"
+          test "$(git rev-parse HEAD)" = "$SOURCE_REF"
+          mkdir -p libs/cua-driver/rust/build-evidence/licenses
+          git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD > libs/cua-driver/rust/build-evidence/source-sha.txt
+          rustc --version --verbose > libs/cua-driver/rust/build-evidence/rustc.txt
+          cargo --version > libs/cua-driver/rust/build-evidence/cargo.txt
+          cp LICENSE.md libs/cua-driver/rust/build-evidence/licenses/
+          cp libs/cua-driver/rust/THIRD_PARTY_NOTICES.md libs/cua-driver/rust/build-evidence/licenses/
+          python3 -m unittest discover -s .github/scripts/tests -p test_native_runtime_package.py
+      - name: Run hermetic native contracts
+        working-directory: libs/cua-driver/rust
+        run: |
+          set -o pipefail
+          cargo test --locked -p cua-driver-contract -p cua-driver-core ${{ matrix.owner_crates }} --lib \
+            2>&1 | tee build-evidence/tests.log
+      - name: Build the native MCP runtime
+        working-directory: libs/cua-driver/rust
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "13.0"
+        run: |
+          set -o pipefail
+          cargo build --locked -p cua-driver -p cursor-theme-cli ${{ matrix.extra_crates }} \
+            --release --target ${{ matrix.triple }} ${{ matrix.features }} \
+            2>&1 | tee build-evidence/build.log
+          git -c safe.directory="$GITHUB_WORKSPACE" diff --exit-code
+      - name: Check startup and assemble an npm runtime
+        env:
+          SOURCE_REF: ${{ inputs.source_ref || github.sha }}
+          TARGET: ${{ matrix.package }}
+          TRIPLE: ${{ matrix.triple }}
+          SUFFIX: ${{ matrix.suffix }}
+        run: |
+          root=libs/cua-driver/rust
+          version=$(tr -d '\r\n' < "$root/VERSION")
+          "$root/target/$TRIPLE/release/cua-driver$SUFFIX" --version > "$root/build-evidence/version.txt"
+          "$root/target/$TRIPLE/release/cua-driver$SUFFIX" --help > "$root/build-evidence/help.txt"
+          python3 .github/scripts/probe_native_runtime.py \
+            --binary "$root/target/$TRIPLE/release/cua-driver$SUFFIX" --source "$SOURCE_REF" \
+            --target "$TARGET" --driver-version "$version" --output "$root/build-evidence/startup.json"
+          python3 .github/scripts/native_runtime_package.py assemble \
+            --release "$root/target/$TRIPLE/release" --licenses "$root/build-evidence/licenses" \
+            --output "$root/build-evidence/package" --source "$SOURCE_REF" --target "$TARGET" \
+            --driver-version "$version" --probe "$root/build-evidence/startup.json"
+          npm pack "./$root/build-evidence/package" --ignore-scripts --pack-destination "$root/build-evidence"
+          install="$root/build-evidence/installed"
+          npm install --prefix "$install" --ignore-scripts --no-audit --no-fund "./$root"/build-evidence/*.tgz
+          installed="$install/node_modules/@alexshp/cua-runtime-$TARGET"
+          python3 .github/scripts/native_runtime_package.py verify-install \
+            --installed "$installed" --reference "$root/build-evidence/package" \
+            --output "$root/build-evidence/installation.json"
+          python3 .github/scripts/probe_native_runtime.py \
+            --binary "$installed/runtime/cua-driver$SUFFIX" --source "$SOURCE_REF" \
+            --target "$TARGET" --driver-version "$version" --output "$root/build-evidence/installed-startup.json"
+          rm -rf "$install"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-runtime-${{ matrix.package }}-${{ inputs.source_ref || github.sha }}
+          path: libs/cua-driver/rust/build-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  complete-set:
+    name: Complete four-target set
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: native-runtime-*-${{ inputs.source_ref || github.sha }}
+          path: artifacts
+      - name: Verify every target belongs to the same complete source set
+        env:
+          SOURCE_REF: ${{ inputs.source_ref || github.sha }}
+        run: |
+          python3 .github/scripts/native_runtime_package.py verify-set \
+            --root artifacts --source "$SOURCE_REF" --output artifacts/complete-set.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-runtime-complete-${{ inputs.source_ref || github.sha }}
+          path: |
+            artifacts/complete-set.json
+            artifacts/**/installation.json
+            artifacts/**/installed-startup.json
+            artifacts/**/*.tgz
+          if-no-files-found: error
+          retention-days: 14
