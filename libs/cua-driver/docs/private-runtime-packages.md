@@ -19,6 +19,12 @@ must verify the chosen execution target and hashes before starting the runtime.
 
 ## Build boundaries
 
+The package gate runs the common core/contract unit suites on every target and
+Windows native owner tests on Windows. Linux/macOS native desktop suites are not
+certification gates here. An initial macOS platform suite passed on one run but
+aborted in an AppKit weak-reference path on the next; do not turn that into a
+platform test-pass claim. Real desktop certification remains separate.
+
 - Windows packages include the driver, cursor-theme CLI and UIAccess helper.
   These are unsigned development artifacts; including the helper does not grant
   UIAccess permission.

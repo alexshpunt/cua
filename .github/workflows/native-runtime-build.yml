@@ -43,7 +43,7 @@ jobs:
             runner: windows-latest
             container: ""
             triple: x86_64-pc-windows-msvc
-            platform_crate: platform-windows
+            owner_crates: -p platform-windows
             extra_crates: -p cua-driver-uia
             features: ""
             suffix: .exe
@@ -51,7 +51,7 @@ jobs:
             runner: ubuntu-latest
             container: debian:11
             triple: x86_64-unknown-linux-gnu
-            platform_crate: platform-linux
+            owner_crates: ""
             extra_crates: ""
             features: --features cua-driver/portal-input
             suffix: ""
@@ -59,7 +59,7 @@ jobs:
             runner: macos-26-intel
             container: ""
             triple: x86_64-apple-darwin
-            platform_crate: platform-macos
+            owner_crates: ""
             extra_crates: ""
             features: ""
             suffix: ""
@@ -67,7 +67,7 @@ jobs:
             runner: macos-26
             container: ""
             triple: aarch64-apple-darwin
-            platform_crate: platform-macos
+            owner_crates: ""
             extra_crates: ""
             features: ""
             suffix: ""
@@ -112,7 +112,10 @@ jobs:
         env:
           SOURCE_REF: ${{ inputs.source_ref || github.sha }}
         run: |
-          test "$(git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD)" = "$SOURCE_REF"
+          # Debian's security-backported Git reads safe.directory from global config,
+          # not command-scoped -c. This runner/container is disposable.
+          git config --global --add safe.directory "$(pwd -P)"
+          test "$(git rev-parse HEAD)" = "$SOURCE_REF"
           mkdir -p libs/cua-driver/rust/build-evidence/licenses
           git -c safe.directory="$GITHUB_WORKSPACE" rev-parse HEAD > libs/cua-driver/rust/build-evidence/source-sha.txt
           rustc --version --verbose > libs/cua-driver/rust/build-evidence/rustc.txt
@@ -124,7 +127,7 @@ jobs:
         working-directory: libs/cua-driver/rust
         run: |
           set -o pipefail
-          cargo test --locked -p cua-driver-contract -p cua-driver-core -p ${{ matrix.platform_crate }} --lib \
+          cargo test --locked -p cua-driver-contract -p cua-driver-core ${{ matrix.owner_crates }} --lib \
             2>&1 | tee build-evidence/tests.log
       - name: Build the native MCP runtime
         working-directory: libs/cua-driver/rust
