@@ -100,11 +100,13 @@ pub fn resize_png_if_needed(png_bytes: &[u8], max_dim: u32) -> Result<Vec<u8>> {
     let new_w = (w as f64 * scale).round() as u32;
     let new_h = (h as f64 * scale).round() as u32;
 
+    let decode = crate::native_observe_profile::Span::new("image.PNG_decode");
     let cursor = std::io::Cursor::new(png_bytes);
     let decoder = image::codecs::png::PngDecoder::new(cursor)?;
     let color = decoder.color_type();
     let mut buf = vec![0u8; decoder.total_bytes() as usize];
     decoder.read_image(&mut buf)?;
+    drop(decode);
 
     let img = match color {
         ColorType::Rgba8 => DynamicImage::ImageRgba8(
@@ -116,9 +118,9 @@ pub fn resize_png_if_needed(png_bytes: &[u8], max_dim: u32) -> Result<Vec<u8>> {
         _ => bail!("unsupported color type for resize: {color:?}"),
     };
 
-    let resized = img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3);
+    let resized = crate::native_observe_profile::timed("image.Lanczos3", || img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3));
     let mut out = Vec::new();
-    resized.write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png)?;
+    crate::native_observe_profile::timed("image.resized_PNG_encode", || resized.write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png))?;
     Ok(out)
 }
 
@@ -300,8 +302,11 @@ pub fn encode_rgba_to_png(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
             rgba.len()
         );
     }
+    let buffer = crate::native_observe_profile::Span::new("image.RGBA_buffer");
     let buf: ImageBuffer<image::Rgba<u8>, Vec<u8>> = ImageBuffer::from_raw(w, h, rgba.to_vec())
         .ok_or_else(|| anyhow!("invalid RGBA buffer for w={w} h={h}"))?;
+    drop(buffer);
+    let _encode = crate::native_observe_profile::Span::new("image.native_PNG_encode");
     let mut out = Vec::new();
     DynamicImage::ImageRgba8(buf)
         .write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png)?;
@@ -313,10 +318,12 @@ pub fn encode_rgba_to_png(rgba: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
 /// Windows GDI gives us BGRA; we swap channels in-place then defer to
 /// [`encode_rgba_to_png`]. Caller guarantees the buffer's size invariant.
 pub fn encode_bgra_to_png(bgra: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
+    let conversion = crate::native_observe_profile::Span::new("image.channel_conversion");
     let mut rgba = bgra.to_vec();
     for px in rgba.chunks_exact_mut(4) {
         px.swap(0, 2); // B ↔ R
     }
+    drop(conversion);
     encode_rgba_to_png(&rgba, w, h)
 }
 
@@ -328,16 +335,20 @@ pub fn encode_bgra_to_png_resized(bgra: &[u8], w: u32, h: u32, max_dim: u32) -> 
     if bgra.len() as u64 != (w as u64) * (h as u64) * 4 {
         bail!("encode_bgra_to_png_resized: invalid buffer for w={w} h={h}");
     }
+    let conversion = crate::native_observe_profile::Span::new("image.channel_conversion");
     let mut rgba = bgra.to_vec();
     for px in rgba.chunks_exact_mut(4) {
         px.swap(0, 2);
     }
+    drop(conversion);
+    let buffer = crate::native_observe_profile::Span::new("image.RGBA_buffer");
     let buf = ImageBuffer::from_raw(w, h, rgba)
         .ok_or_else(|| anyhow!("invalid RGBA buffer for w={w} h={h}"))?;
+    drop(buffer);
     let img = DynamicImage::ImageRgba8(buf);
     let img = resize_windows_overview(img, max_dim)?;
     let mut out = Vec::new();
-    img.write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png)?;
+    crate::native_observe_profile::timed("image.final_PNG_encode", || img.write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png))?;
     Ok(out)
 }
 
@@ -373,6 +384,7 @@ fn resize_windows_overview(img: DynamicImage, max_dim: u32) -> Result<DynamicIma
     let fit = (bounds.0 / w as f64).min(bounds.1 / h as f64);
     let new_w = ((w as f64 * fit).round() as u32).max(1);
     let new_h = ((h as f64 * fit).round() as u32).max(1);
+    let _resize = crate::native_observe_profile::Span::new("image.Bilinear");
     let pixel_type = match img.color() {
         ColorType::Rgba8 => fir::PixelType::U8x4,
         ColorType::Rgb8 => fir::PixelType::U8x3,

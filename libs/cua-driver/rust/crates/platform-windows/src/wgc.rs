@@ -54,6 +54,7 @@ pub fn screenshot_window_via_wgc(hwnd: u64) -> Result<(Vec<u8>, u32, u32)> {
 }
 
 unsafe fn wgc_capture_impl(hwnd: HWND) -> Result<(Vec<u8>, u32, u32)> {
+    let _capture = cua_driver_core::native_observe_profile::Span::new("wgc.total");
     if IsIconic(hwnd).as_bool() {
         bail!(
             "WGC cannot capture a minimized window (no rendered content). \
@@ -65,6 +66,7 @@ unsafe fn wgc_capture_impl(hwnd: HWND) -> Result<(Vec<u8>, u32, u32)> {
     }
 
     // 1. D3D11 device — feature level 11.0 + BGRA support (required by WGC).
+    let device = cua_driver_core::native_observe_profile::Span::new("wgc.device_setup");
     let mut d3d_device: Option<ID3D11Device> = None;
     let mut d3d_context: Option<ID3D11DeviceContext> = None;
     D3D11CreateDevice(
@@ -102,6 +104,7 @@ unsafe fn wgc_capture_impl(hwnd: HWND) -> Result<(Vec<u8>, u32, u32)> {
              requires Win10 1903+ and the target window must exist",
     )?;
     let item_size = item.Size().context("GraphicsCaptureItem::Size")?;
+    drop(device);
     if item_size.Width <= 0 || item_size.Height <= 0 {
         bail!(
             "WGC item size is {}x{} — target may be hidden/cloaked. \
@@ -124,6 +127,7 @@ unsafe fn wgc_capture_impl(hwnd: HWND) -> Result<(Vec<u8>, u32, u32)> {
     //    Frame count 2 — WGC docs recommend ≥2 to avoid GPU stalls
     //    while the consumer reads the previous frame. We only consume
     //    one but the GPU side is happier with breathing room.
+    let setup = cua_driver_core::native_observe_profile::Span::new("wgc.pool_session_setup");
     let pool = Direct3D11CaptureFramePool::CreateFreeThreaded(
         &direct3d_device,
         DirectXPixelFormat::B8G8R8A8UIntNormalized,
@@ -155,6 +159,8 @@ unsafe fn wgc_capture_impl(hwnd: HWND) -> Result<(Vec<u8>, u32, u32)> {
         .StartCapture()
         .context("GraphicsCaptureSession::StartCapture")?;
 
+    drop(setup);
+    let wait = cua_driver_core::native_observe_profile::Span::new("wgc.first_frame_wait");
     let deadline = std::time::Instant::now() + Duration::from_millis(1500);
     let mut frame_opt = None;
     while std::time::Instant::now() < deadline {
@@ -180,6 +186,8 @@ unsafe fn wgc_capture_impl(hwnd: HWND) -> Result<(Vec<u8>, u32, u32)> {
 
     // 8. Pull the underlying ID3D11Texture2D out of the WinRT frame
     //    surface via the IDirect3DDxgiInterfaceAccess shim.
+    drop(wait);
+    let staging_setup = cua_driver_core::native_observe_profile::Span::new("wgc.staging_setup");
     let surface = frame.Surface().context("frame.Surface")?;
     let access: IDirect3DDxgiInterfaceAccess = surface
         .cast()
@@ -200,6 +208,8 @@ unsafe fn wgc_capture_impl(hwnd: HWND) -> Result<(Vec<u8>, u32, u32)> {
         .CreateTexture2D(&desc, None, Some(&mut staging))
         .context("CreateTexture2D(staging)")?;
     let staging = staging.context("CreateTexture2D returned a None texture")?;
+    drop(staging_setup);
+    let readback = cua_driver_core::native_observe_profile::Span::new("wgc.copy_and_map");
     d3d_context.CopyResource(&staging, &frame_texture);
 
     // 10. Map the staging texture, copy BGRA out row-by-row (RowPitch may
@@ -208,6 +218,8 @@ unsafe fn wgc_capture_impl(hwnd: HWND) -> Result<(Vec<u8>, u32, u32)> {
     d3d_context
         .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
         .context("ID3D11DeviceContext::Map")?;
+    drop(readback);
+    let copy = cua_driver_core::native_observe_profile::Span::new("wgc.rows_to_bgra");
     let width = desc.Width as usize;
     let height = desc.Height as usize;
     let stride = mapped.RowPitch as usize;
@@ -221,10 +233,12 @@ unsafe fn wgc_capture_impl(hwnd: HWND) -> Result<(Vec<u8>, u32, u32)> {
         );
     }
     d3d_context.Unmap(&staging, 0);
+    drop(copy);
 
     // 11. Cleanup: close the session and pool explicitly. RAII would
     //     handle this but being explicit makes the lifetimes easier to
     //     audit. (No FrameArrived to unhook — we polled instead.)
+    let _cleanup = cua_driver_core::native_observe_profile::Span::new("wgc.cleanup");
     let _ = session.Close();
     let _ = pool.Close();
 

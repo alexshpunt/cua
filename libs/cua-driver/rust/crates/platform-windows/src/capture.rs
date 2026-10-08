@@ -377,6 +377,10 @@ fn screenshot_window_encoded<T>(
     hwnd: u64,
     encode: impl Fn(&[u8], u32, u32) -> Result<T> + Copy,
 ) -> Result<(T, bool, Option<FrameGeometry>)> {
+    // Diagnostic only: no screen-region fallback or fabricated geometry.
+    let (pixels, width, height) = crate::wgc::screenshot_window_via_wgc(hwnd)?;
+    return Ok((encode(&pixels, width, height)?, false, None));
+    #[allow(unreachable_code)]
     match unsafe { screenshot_window_bytes_with_occlusion_unsafe(hwnd, encode) } {
         Ok(capture) => Ok(capture),
         Err(primary_error) => {
@@ -434,6 +438,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     use windows::Win32::Foundation::RECT;
     use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic};
 
+    let _grab = cua_driver_core::native_observe_profile::Span::new("capture.windows_grab");
     let hwnd_raw = hwnd;
     let hwnd = HWND(hwnd as *mut _);
 
@@ -534,12 +539,14 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     let w = geometry.width;
     let h = geometry.height;
 
+    let setup = cua_driver_core::native_observe_profile::Span::new("capture.GDI_setup");
     let screen_dc = GetWindowDC(hwnd);
     let mem_dc = CreateCompatibleDC(screen_dc);
     let bitmap = CreateCompatibleBitmap(screen_dc, w, h);
     let old_bitmap = SelectObject(mem_dc, bitmap);
+    drop(setup);
 
-    let pw_ok = PrintWindow(hwnd, mem_dc, PW_RENDERFULLCONTENT);
+    let pw_ok = cua_driver_core::native_observe_profile::timed("capture.PrintWindow", || PrintWindow(hwnd, mem_dc, PW_RENDERFULLCONTENT));
     if !pw_ok.as_bool() {
         BitBlt(mem_dc, 0, 0, w, h, screen_dc, 0, 0, SRCCOPY)?;
     }
@@ -582,6 +589,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
         bmiColors: [RGBQUAD::default(); 1],
     };
 
+    let readback = cua_driver_core::native_observe_profile::Span::new("capture.readback_and_cleanup");
     let pixel_count = (w * h) as usize;
     let mut pixels = vec![0u8; pixel_count * 4];
     let ok = GetDIBits(
@@ -598,6 +606,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     let _ = DeleteObject(bitmap);
     let _ = DeleteDC(mem_dc);
     ReleaseDC(hwnd, screen_dc);
+    drop(readback);
 
     if ok == 0 {
         bail!("GetDIBits returned 0");
@@ -616,6 +625,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     // captured bitmap. A 1-px inset on each side removes the hairline
     // without losing actual UI content — anything that close to the
     // edge is window-frame chrome, not content.
+    let crop = cua_driver_core::native_observe_profile::Span::new("capture.DWM_crop");
     let cropped_geometry =
         geometry.cropped(dwm_rect.map(|dwm| (dwm.left, dwm.top, dwm.right, dwm.bottom)));
     let (pixels, w, h) = if cropped_geometry != geometry {
@@ -644,7 +654,8 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     //      not covered).
     // The WGC-first ordering covers backgrounded UWP targets the
     // screen-region path mishandles (returns covering window's pixels).
-    let mostly_black = is_mostly_black_bgra(&pixels);
+    drop(crop);
+    let mostly_black = cua_driver_core::native_observe_profile::timed("capture.black_check", || is_mostly_black_bgra(&pixels));
     if mostly_black {
         match crate::wgc::screenshot_window_via_wgc(hwnd_raw) {
             Ok((alt_pixels, w, h)) => {
