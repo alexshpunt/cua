@@ -1,5 +1,7 @@
 //! Read-only retained WGC experiment. No snapshot or input authority is published.
-use super::policy::{content_bytes, empty_frame_hresult, frame_timing, fresh_frame, qpc_100ns};
+use super::policy::{
+    content_bytes, empty_frame_hresult, frame_timing, fresh_frame, new_delivery, qpc_100ns,
+};
 use anyhow::{ensure, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -203,7 +205,7 @@ struct Capture {
     closed: Arc<AtomicBool>,
     closed_token: Option<EventRegistrationToken>,
     arrived_token: Option<EventRegistrationToken>,
-    arrived: mpsc::Receiver<()>,
+    arrived: mpsc::Receiver<i64>,
     device: ID3D11Device,
     context: ID3D11DeviceContext,
     direct: IDirect3DDevice,
@@ -301,7 +303,10 @@ impl Capture {
             Direct3D11CaptureFramePool,
             IInspectable,
         >::new(move |_, _| {
-            let _ = notify.try_send(());
+            // This is local delivery time, not WGC's possibly future presentation stamp.
+            if let Ok(arrival) = clock_100ns() {
+                let _ = notify.try_send(arrival);
+            }
             Ok(())
         }))?);
         let _ = capture.session.SetIsBorderRequired(false);
@@ -313,15 +318,50 @@ impl Capture {
         ensure!(!self.closed.load(Ordering::Acquire), "capture_item_closed");
         target.validate()
     }
-    fn next(&mut self, target: &Target, request_time: i64) -> Result<(Vec<u8>, u32, u32, Value)> {
+    fn next(
+        &mut self,
+        target: &Target,
+        request_time: i64,
+        next_delivery: bool,
+    ) -> Result<(Vec<u8>, u32, u32, Value)> {
         self.validate(target)?;
         let deadline = Instant::now() + FRAME_WAIT;
         let waiting = Instant::now();
         let mut discarded = 0;
         let mut recreations = 0;
+        let mut drained_before_wait = 0;
+        if next_delivery {
+            // Release retained pre-request surfaces before accepting a later arrival.
+            for _ in 0..8 {
+                match self.pool.TryGetNextFrame() {
+                    Ok(frame) => {
+                        drop(Frame(frame));
+                        drained_before_wait += 1;
+                    }
+                    Err(error) if empty_frame_hresult(error.code().0) => break,
+                    Err(error) => return Err(error).context("queue barrier drain failed"),
+                }
+            }
+            for _ in self.arrived.try_iter().take(8) {}
+        }
+        let mut barrier = clock_100ns()?;
+        let mut arrival_observed = None;
+        let mut wait_for_arrival = next_delivery;
         loop {
             ensure!(Instant::now() < deadline, "fresh_frame_timeout");
             self.validate(target)?;
+            if wait_for_arrival {
+                let remaining = deadline.saturating_duration_since(Instant::now());
+                let arrival = self
+                    .arrived
+                    .recv_timeout(remaining)
+                    .context("new_delivery_timeout")?;
+                if !new_delivery(arrival, barrier) {
+                    continue;
+                }
+                arrival_observed = Some(arrival);
+                wait_for_arrival = false;
+            }
             let mut newest: Option<(Frame, i64, i64)> = None;
             // Drain a bounded queue, closing every rejected or replaced frame.
             for _ in 0..8 {
@@ -367,6 +407,10 @@ impl Capture {
                     self.size = content;
                     self.staging = None;
                     recreations += 1;
+                    if next_delivery {
+                        barrier = clock_100ns()?;
+                        wait_for_arrival = true;
+                    }
                     continue;
                 }
                 let wait_ms = ms(waiting);
@@ -460,8 +504,13 @@ impl Capture {
                     pixels,
                     width,
                     height,
-                    json!({"wait_ms":wait_ms,"readback_ms":ms(reading),"dequeue_to_copy_ms":dequeue_to_copy_ms,"reported_frame_age_at_copy_ms":reported_frame_age_at_copy_ms,"frame_timestamp_100ns":time,"dequeued_100ns":dequeued,"copy_completed_100ns":completed,"frame_after_request_ms":(time-request_time) as f64/10_000.0,"discarded":discarded,"recreations":recreations}),
+                    json!({"wait_ms":wait_ms,"readback_ms":ms(reading),"dequeue_to_copy_ms":dequeue_to_copy_ms,"reported_frame_age_at_copy_ms":reported_frame_age_at_copy_ms,"frame_timestamp_100ns":time,"dequeued_100ns":dequeued,"copy_completed_100ns":completed,"frame_after_request_ms":(time-request_time) as f64/10_000.0,"discarded":discarded,"recreations":recreations,"drained_before_wait":drained_before_wait,"arrival_barrier_100ns":if next_delivery {Some(barrier)} else {None},"arrival_observed_100ns":arrival_observed}),
                 ));
+            }
+            if next_delivery {
+                barrier = clock_100ns()?;
+                wait_for_arrival = true;
+                continue;
             }
             // The event wakes this wait. A short bounded fallback also covers a missed wake.
             let remaining = deadline.saturating_duration_since(Instant::now());
@@ -523,7 +572,7 @@ pub(super) fn run() -> Result<()> {
         };
         let request: Request = serde_json::from_str(&line)?;
         ensure!(
-            ["printwindow", "wgc", "close"].contains(&request.route.as_str()),
+            ["printwindow", "wgc", "wgc_next_delivery", "close"].contains(&request.route.as_str()),
             "unknown_capture_route"
         );
         if request.route == "close" {
@@ -563,7 +612,7 @@ pub(super) fn run() -> Result<()> {
             let (pixels, width, height, mut stats) = capture
                 .as_mut()
                 .context("missing_capture")?
-                .next(&target, request_time)
+                .next(&target, request_time, request.route == "wgc_next_delivery")
                 .context("WGC fresh frame")?;
             let encoding = Instant::now();
             let png = cua_driver_core::image_utils::encode_bgra_to_png_resized(
@@ -574,7 +623,11 @@ pub(super) fn run() -> Result<()> {
             stats["total_ms"] = json!(ms(started));
             stats["native_width"] = json!(width);
             stats["native_height"] = json!(height);
-            stats["route"] = json!("persistent_wgc");
+            stats["route"] = json!(if request.route == "wgc_next_delivery" {
+                "persistent_wgc_next_delivery"
+            } else {
+                "persistent_wgc"
+            });
             Ok((png, stats))
         })();
         match result {

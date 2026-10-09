@@ -11,6 +11,11 @@ pub(super) fn fresh_frame(frame: i64, request: i64, previous: i64) -> bool {
     frame > request && frame > previous
 }
 
+/// A callback delivered before the local queue barrier cannot satisfy a new-delivery read.
+/// This proves delivery ordering only, never changed window content.
+pub(super) fn new_delivery(arrival: i64, barrier: i64) -> bool {
+    arrival > barrier
+}
 /// Convert QPC ticks to the 100ns clock used by WGC without intermediate overflow.
 pub(super) fn qpc_100ns(ticks: i64, frequency: i64) -> Option<i64> {
     if ticks < 0 || frequency <= 0 {
@@ -71,6 +76,13 @@ mod tests {
         assert!(fresh_frame(111, 100, 110));
     }
 
+    #[test]
+    fn a_future_stamp_does_not_replace_delivery_after_the_local_barrier() {
+        assert!(fresh_frame(120, 100, 90));
+        assert!(!new_delivery(99, 100));
+        assert!(!new_delivery(100, 100));
+        assert!(new_delivery(101, 100));
+    }
     #[test]
     fn future_presentation_time_is_diagnostic_not_a_local_clock_failure() {
         assert_eq!(frame_timing(120_000, 100_000, 110_000), Some((1.0, -1.0)));
