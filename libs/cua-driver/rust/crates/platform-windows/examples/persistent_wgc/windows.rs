@@ -45,7 +45,14 @@ use windows::{
                 RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED,
             },
         },
-        UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsIconic, IsWindow},
+        UI::{
+            HiDpi::{
+                AreDpiAwarenessContextsEqual, GetThreadDpiAwarenessContext,
+                SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT,
+                DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+            },
+            WindowsAndMessaging::{GetWindowThreadProcessId, IsIconic, IsWindow},
+        },
     },
 };
 
@@ -54,6 +61,35 @@ const IDLE_LIMIT: Duration = Duration::from_secs(5);
 const LIFE_LIMIT: Duration = Duration::from_secs(300);
 const MAX_REQUESTS: usize = 128;
 
+// The Driver executable's manifest is PMv2-aware; Cargo examples have no such manifest.
+// Match physical-pixel geometry on this owned worker and restore its prior thread context.
+struct PhysicalPixels(DPI_AWARENESS_CONTEXT);
+impl PhysicalPixels {
+    fn new() -> Result<Self> {
+        let previous =
+            unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+        ensure!(!previous.0.is_null(), "dpi_context_unavailable");
+        let guard = Self(previous);
+        ensure!(
+            unsafe {
+                AreDpiAwarenessContextsEqual(
+                    GetThreadDpiAwarenessContext(),
+                    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+                )
+            }
+            .as_bool(),
+            "physical_pixel_context_not_established"
+        );
+        Ok(guard)
+    }
+}
+impl Drop for PhysicalPixels {
+    fn drop(&mut self) {
+        unsafe {
+            SetThreadDpiAwarenessContext(self.0);
+        }
+    }
+}
 struct Apartment;
 impl Apartment {
     fn new() -> Result<Self> {
@@ -449,6 +485,7 @@ pub(super) fn run() -> Result<()> {
         args.len() == 3,
         "Usage: persistent-wgc-probe PID HWND OWNED_OUTPUT_DIRECTORY"
     );
+    let _physical_pixels = PhysicalPixels::new()?;
     let _apartment = Apartment::new()?;
     let target = Target::new(args[0].parse()?, args[1].parse()?)?;
     let directory = std::fs::canonicalize(&args[2])?;
@@ -472,7 +509,7 @@ pub(super) fn run() -> Result<()> {
     let mut count = 0;
     println!(
         "{}",
-        json!({"ready":true,"input_authority":false,"max_requests":MAX_REQUESTS,"idle_ms":IDLE_LIMIT.as_millis(),"lifetime_ms":LIFE_LIMIT.as_millis()})
+        json!({"ready":true,"input_authority":false,"dpi":"per_monitor_v2","max_requests":MAX_REQUESTS,"idle_ms":IDLE_LIMIT.as_millis(),"lifetime_ms":LIFE_LIMIT.as_millis()})
     );
     std::io::stdout().flush()?;
     while count < MAX_REQUESTS && lifetime.elapsed() < LIFE_LIMIT {
@@ -567,6 +604,24 @@ pub(super) fn run() -> Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn physical_pixel_context_is_scoped_to_the_probe_worker() {
+        let previous = unsafe { GetThreadDpiAwarenessContext() };
+        {
+            let _guard = PhysicalPixels::new().unwrap();
+            assert!(unsafe {
+                AreDpiAwarenessContextsEqual(
+                    GetThreadDpiAwarenessContext(),
+                    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+                )
+            }
+            .as_bool());
+        }
+        assert!(
+            unsafe { AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(), previous) }
+                .as_bool()
+        );
+    }
     #[test]
     fn windows_binding_reports_a_successful_null_interface_as_an_empty_error() {
         let result: windows::core::Result<Direct3D11CaptureFrame> =
