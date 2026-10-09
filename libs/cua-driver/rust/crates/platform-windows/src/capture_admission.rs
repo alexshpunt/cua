@@ -1,8 +1,12 @@
-use std::sync::Arc;
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 use cua_driver_core::capture_runtime::{
-    CaptureActionRequest, CapturePublication, CaptureService, CaptureTarget,
-    EncodedScreenshotDimensions, NativeActionDimensions, ScreenshotToActionTransform,
+    CaptureActionRequest, CaptureBinding, CaptureId, CapturePublication, CaptureService,
+    CaptureTarget, EncodedScreenshotDimensions, NativeActionDimensions,
+    ScreenshotToActionTransform,
 };
 use serde_json::Value;
 
@@ -67,13 +71,85 @@ pub(crate) fn round_action_point(x: f64, y: f64) -> anyhow::Result<(i32, i32)> {
 
 pub(crate) struct WindowsCaptureBridge {
     service: Arc<CaptureService>,
+    // Only metadata is retained; PNG ownership/expiry remains in CaptureService.
+    wgc: Mutex<HashMap<(String, u32, u64), (CaptureId, CaptureBinding)>>,
 }
 
 impl WindowsCaptureBridge {
     pub(crate) fn new(service: Arc<CaptureService>) -> Arc<Self> {
-        Arc::new(Self { service })
+        Arc::new(Self {
+            service,
+            wgc: Mutex::new(HashMap::new()),
+        })
     }
 
+    pub(crate) fn mark_wgc(
+        &self,
+        args: &Value,
+        pid: u32,
+        window: u64,
+        id: &str,
+    ) -> anyhow::Result<()> {
+        let binding = self.service.binding_from_args(args)?;
+        let id: CaptureId = id.parse()?;
+        let published = self.service.read_for_perception(id, &binding)?;
+        anyhow::ensure!(
+            published.target()
+                == &CaptureTarget::Window {
+                    pid,
+                    window_id: window
+                },
+            "wgc_capture_target_mismatch"
+        );
+        let mut frames = self.wgc.lock().unwrap();
+        frames.retain(|_, (id, binding)| self.service.read_for_perception(*id, binding).is_ok());
+        anyhow::ensure!(frames.len() < 512, "wgc_capture_metadata_limit");
+        let key = (binding.session_id().to_owned(), pid, window);
+        if let Some((old, owner)) = frames.insert(key, (id, binding)) {
+            if old != id {
+                let _ = self.service.retire_capture(old, &owner);
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn close_session(&self, session: &str) {
+        self.wgc
+            .lock()
+            .unwrap()
+            .retain(|(owner, _, _), _| owner != session);
+    }
+
+    fn current_geometry(
+        &self,
+        args: &Value,
+        target: WindowsCaptureTarget,
+    ) -> anyhow::Result<CaptureGeometry> {
+        let retained = args
+            .get("capture_id")
+            .and_then(Value::as_str)
+            .and_then(|id| id.parse::<CaptureId>().ok())
+            .is_some_and(|id| {
+                self.wgc
+                    .lock()
+                    .unwrap()
+                    .values()
+                    .any(|(stored, _)| *stored == id)
+            });
+        if retained {
+            use cua_driver_core::capture_runtime::{CaptureActionError, CaptureLookupError};
+            let id: CaptureId = args["capture_id"].as_str().unwrap().parse()?;
+            let binding = self.service.binding_from_args(args)?;
+            let frame = self
+                .service
+                .read_for_perception(id, &binding)
+                .map_err(CaptureActionError::Lookup)?;
+            if frame.target() != &target.core() {
+                return Err(CaptureActionError::Lookup(CaptureLookupError::TargetMismatch).into());
+            }
+        }
+        live_geometry_for_backend(target, retained)
+    }
     pub(crate) fn publish(
         &self,
         args: &Value,
@@ -116,7 +192,7 @@ impl WindowsCaptureBridge {
         if args.get("capture_id").and_then(Value::as_str).is_none() {
             return Ok(None);
         }
-        let current_geometry = live_geometry(target)?;
+        let current_geometry = self.current_geometry(args, target)?;
         self.admit_click_with_geometry(args, target, current_geometry, screenshot_x, screenshot_y)
     }
 
@@ -131,7 +207,7 @@ impl WindowsCaptureBridge {
             .get("capture_id")
             .and_then(Value::as_str)
             .ok_or_else(|| anyhow::anyhow!("capture_id must be a string"))?;
-        let current_geometry = live_geometry(target)?;
+        let current_geometry = self.current_geometry(args, target)?;
         let admission = self.service.admit_drag(
             CaptureActionRequest {
                 capture_id: capture_id.parse()?,
@@ -180,7 +256,10 @@ impl WindowsCaptureBridge {
 }
 
 #[cfg(target_os = "windows")]
-fn live_geometry(target: WindowsCaptureTarget) -> anyhow::Result<CaptureGeometry> {
+fn live_geometry_for_backend(
+    target: WindowsCaptureTarget,
+    retained: bool,
+) -> anyhow::Result<CaptureGeometry> {
     let png = match target {
         WindowsCaptureTarget::Window { pid, window_id } => {
             use windows::Win32::Foundation::HWND;
@@ -196,6 +275,10 @@ fn live_geometry(target: WindowsCaptureTarget) -> anyhow::Result<CaptureGeometry
                 owner_pid == pid,
                 "native window owner changed after capture"
             );
+            if retained {
+                let (width, height) = crate::persistent_wgc::mapped_dimensions(window_id)?;
+                return CaptureGeometry::new(width, height, width, height);
+            }
             crate::capture::screenshot_window_bytes(window_id)?
         }
         WindowsCaptureTarget::PrimaryDesktop => crate::capture::screenshot_display_bytes()?,
@@ -205,7 +288,10 @@ fn live_geometry(target: WindowsCaptureTarget) -> anyhow::Result<CaptureGeometry
 }
 
 #[cfg(not(target_os = "windows"))]
-fn live_geometry(_target: WindowsCaptureTarget) -> anyhow::Result<CaptureGeometry> {
+fn live_geometry_for_backend(
+    _target: WindowsCaptureTarget,
+    _retained: bool,
+) -> anyhow::Result<CaptureGeometry> {
     anyhow::bail!("live Windows capture validation is unavailable on this platform")
 }
 
@@ -246,6 +332,46 @@ mod tests {
             .unwrap()
     }
 
+    #[test]
+    fn retained_capture_refuses_foreign_sessions_and_targets_before_native_reads() {
+        let bridge = WindowsCaptureBridge::new(Arc::new(CaptureService::default()));
+        let target = WindowsCaptureTarget::Window {
+            pid: 7,
+            window_id: 70,
+        };
+        let id = publish(&bridge, target);
+        bridge.mark_wgc(&args(), 7, 70, &id).unwrap();
+        let foreign = json!({"capture_id":id,"_session_id":"other"});
+        let error = bridge.admit_click(&foreign, target, 0.0, 0.0).unwrap_err();
+        assert_eq!(admission_error_code(&error), "capture_generation_mismatch");
+        let own = json!({"capture_id":id,"_session_id":"capture-test"});
+        let error = bridge
+            .admit_click(
+                &own,
+                WindowsCaptureTarget::Window {
+                    pid: 7,
+                    window_id: 71,
+                },
+                0.0,
+                0.0,
+            )
+            .unwrap_err();
+        assert_eq!(admission_error_code(&error), "capture_target_mismatch");
+        let next = publish(&bridge, target);
+        bridge.mark_wgc(&args(), 7, 70, &next).unwrap();
+        let error = bridge
+            .admit_click_with_geometry(
+                &own,
+                target,
+                CaptureGeometry::new(1, 1, 1, 1).unwrap(),
+                0.0,
+                0.0,
+            )
+            .unwrap_err();
+        assert_eq!(admission_error_code(&error), "capture_not_found");
+        bridge.close_session("capture-test");
+        assert!(bridge.wgc.lock().unwrap().is_empty());
+    }
     #[test]
     fn resized_capture_maps_each_axis_into_native_window_pixels() {
         let geometry = CaptureGeometry::new(800, 450, 1600, 900).unwrap();

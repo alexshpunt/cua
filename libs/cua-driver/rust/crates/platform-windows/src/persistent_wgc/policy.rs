@@ -1,0 +1,135 @@
+//! Decisions shared by the isolated probe and its hermetic tests.
+
+/// windows-core 0.58 wraps a successful null interface as Error::empty (HRESULT 0).
+/// A failing HRESULT is not an empty queue and must stop the probe.
+pub(super) fn empty_frame_hresult(code: i32) -> bool {
+    code == 0
+}
+
+/// Require a newer WGC stamp; actual pixel freshness needs an independent witness.
+pub(super) fn fresh_frame(frame: i64, request: i64, previous: i64) -> bool {
+    frame > request && frame > previous
+}
+
+/// A callback delivered before the local queue barrier cannot satisfy a new-delivery read.
+/// This proves delivery ordering only, never changed window content.
+pub(super) fn new_delivery(arrival: i64, barrier: i64) -> bool {
+    arrival > barrier
+}
+/// Convert QPC ticks to the 100ns clock used by WGC without intermediate overflow.
+pub(super) fn qpc_100ns(ticks: i64, frequency: i64) -> Option<i64> {
+    if ticks < 0 || frequency <= 0 {
+        return None;
+    }
+    i64::try_from(i128::from(ticks) * 10_000_000 / i128::from(frequency)).ok()
+}
+
+/// Measure local delivery separately from WGC's possibly future presentation stamp.
+/// The signed reported age is diagnostic, not proof of when the pixels changed.
+pub(super) fn frame_timing(frame: i64, dequeued: i64, completed: i64) -> Option<(f64, f64)> {
+    if frame < 0 || dequeued < 0 || completed < dequeued {
+        return None;
+    }
+    Some((
+        (i128::from(completed) - i128::from(dequeued)) as f64 / 10_000.0,
+        (i128::from(completed) - i128::from(frame)) as f64 / 10_000.0,
+    ))
+}
+/// Bound CPU reads to valid content, allocated texture extent and real row pitch.
+pub(super) fn content_bytes(
+    width: i32,
+    height: i32,
+    allocated_width: u32,
+    allocated_height: u32,
+    stride: u32,
+) -> Option<usize> {
+    let (width, height) = (u32::try_from(width).ok()?, u32::try_from(height).ok()?);
+    if width == 0 || height == 0 || width > allocated_width || height > allocated_height {
+        return None;
+    }
+    let row = width.checked_mul(4)?;
+    if row > stride {
+        return None;
+    }
+    let bytes = usize::try_from(row)
+        .ok()?
+        .checked_mul(usize::try_from(height).ok()?)?;
+    (bytes <= 64 * 1024 * 1024).then_some(bytes)
+}
+
+/// Accept only exact DWM physical extents; the existing action domain omits one pixel per edge.
+pub(super) fn mapped_crop(
+    bounds: (i32, i32, i32, i32),
+    width: u32,
+    height: u32,
+) -> Option<(u32, u32)> {
+    let physical_width = u32::try_from(bounds.2.checked_sub(bounds.0)?).ok()?;
+    let physical_height = u32::try_from(bounds.3.checked_sub(bounds.1)?).ok()?;
+    (width == physical_width && height == physical_height && width > 2 && height > 2)
+        .then(|| (width - 2, height - 2))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_exact_physical_frame_bounds_can_map_wgc_pixels_to_bitmap_actions() {
+        assert_eq!(
+            mapped_crop((-100, 20, 300, 320), 400, 300),
+            Some((398, 298))
+        );
+        assert_eq!(mapped_crop((-100, 20, 300, 320), 402, 300), None);
+        assert_eq!(mapped_crop((-100, 20, 300, 320), 400, 302), None);
+        assert_eq!(mapped_crop((0, 0, 2, 2), 2, 2), None);
+        assert_eq!(mapped_crop((i32::MIN, 0, i32::MAX, 300), 400, 300), None);
+    }
+
+    #[test]
+    fn only_success_with_a_null_frame_is_an_empty_queue() {
+        assert!(empty_frame_hresult(0));
+        assert!(!empty_frame_hresult(0x80004003_u32 as i32)); // E_POINTER is a real failure.
+        assert!(!empty_frame_hresult(0x887A0026_u32 as i32)); // DXGI access loss.
+        assert!(!empty_frame_hresult(-1));
+    }
+    #[test]
+    fn queued_or_repeated_frames_are_not_new_observations() {
+        assert!(!fresh_frame(100, 100, 90));
+        assert!(!fresh_frame(99, 100, 90));
+        assert!(!fresh_frame(110, 100, 110));
+        assert!(fresh_frame(111, 100, 110));
+    }
+
+    #[test]
+    fn a_future_stamp_does_not_replace_delivery_after_the_local_barrier() {
+        assert!(fresh_frame(120, 100, 90));
+        assert!(!new_delivery(99, 100));
+        assert!(!new_delivery(100, 100));
+        assert!(new_delivery(101, 100));
+    }
+    #[test]
+    fn future_presentation_time_is_diagnostic_not_a_local_clock_failure() {
+        assert_eq!(frame_timing(120_000, 100_000, 110_000), Some((1.0, -1.0)));
+        assert_eq!(frame_timing(90_000, 100_000, 110_000), Some((1.0, 2.0)));
+        assert_eq!(frame_timing(120_000, 100_000, 99_999), None);
+        assert_eq!(frame_timing(-1, 100_000, 110_000), None);
+    }
+    #[test]
+    fn qpc_conversion_does_not_overflow_or_accept_an_invalid_clock() {
+        assert_eq!(qpc_100ns(30, 3), Some(100_000_000));
+        assert_eq!(qpc_100ns(i64::MAX, 10_000_000), Some(i64::MAX));
+        assert_eq!(qpc_100ns(1, 0), None);
+        assert_eq!(qpc_100ns(-1, 10), None);
+        assert_eq!(qpc_100ns(i64::MAX, 1), None);
+    }
+
+    #[test]
+    fn only_real_content_inside_the_allocated_texture_is_read() {
+        assert_eq!(content_bytes(3, 2, 4, 4, 16), Some(24));
+        assert_eq!(content_bytes(5, 2, 4, 4, 16), None);
+        assert_eq!(content_bytes(3, 5, 4, 4, 16), None);
+        assert_eq!(content_bytes(3, 2, 4, 4, 8), None);
+        assert_eq!(content_bytes(0, 2, 4, 4, 16), None);
+        assert_eq!(content_bytes(-1, 2, 4, 4, 16), None);
+        assert_eq!(content_bytes(8192, 8192, 8192, 8192, 32768), None);
+    }
+}
