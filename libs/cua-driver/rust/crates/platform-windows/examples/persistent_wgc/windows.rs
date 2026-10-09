@@ -452,7 +452,11 @@ impl Capture {
                 drop(frame);
                 self.validate(target)?;
                 let completed = clock_100ns()?;
-                ensure!(completed >= time, "incompatible_frame_clock");
+                ensure!(
+                    completed >= time,
+                    "incompatible_frame_clock: request_100ns={request_time}, frame_100ns={time}, copy_completed_100ns={completed}, ahead_100ns={}",
+                    i128::from(time) - i128::from(completed)
+                );
                 self.last_frame = time;
                 return Ok((
                     pixels,
