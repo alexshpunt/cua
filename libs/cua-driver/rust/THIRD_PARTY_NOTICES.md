@@ -1,6 +1,6 @@
 # Third-party notices
 
-Parts of the Cua Driver Rust workspace are derived from these MIT-licensed
+The Cua Driver Rust workspace uses or derives code from these MIT-licensed
 projects. Each project's copyright notice is below, followed by the MIT
 License text they share.
 
@@ -9,6 +9,7 @@ License text they share.
 | [trope-cua](https://github.com/voctory/trope-cua)               | Copyright (c) 2026 Victor Vannara    | `crates/cursor-overlay/src/motion.rs`, `crates/cursor-overlay/src/bezier.rs`; `crates/platform-windows` (`src/overlay.rs`, `src/input/`, `src/tools/impl_.rs`) | Agent-cursor motion and timing configuration and Bezier segment math; Windows cursor overlay, background input and layered pixel-click dispatch |
 | [Interface-Agent](https://github.com/francedot/Interface-Agent) | Copyright (c) 2024 Francesco Bonacci | `crates/platform-windows` (`src/uia/`, `src/win32/`, `src/tools/impl_.rs`)                                                                                     | Windows UI Automation tree walk, app and window enumeration, InvokePattern click and ValuePattern set-value                                     |
 | [yabai](https://github.com/koekeishiya/yabai)                   | Copyright (c) 2019 Åsmund Vikane     | `crates/platform-macos/src/input/skylight.rs` (`activate_without_raise`)                                                                                       | The focus-without-raise SkyLight event-record sequence                                                                                          |
+| [fast_image_resize 6.1.0](https://github.com/Cykooz/fast_image_resize) | Copyright (c) 2021 Kirill Kuzminykh | `crates/cua-driver-core/src/image_utils.rs` | SIMD Bilinear resize for Windows window and display overviews; used under its MIT license option |
 
 ## MIT License
 

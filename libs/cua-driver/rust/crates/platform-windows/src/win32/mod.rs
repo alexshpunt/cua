@@ -4,6 +4,7 @@ pub mod apps;
 pub mod installed_apps;
 pub mod windows;
 
+pub(crate) use apps::process_name;
 pub use apps::{list_descendants, list_processes, related_processes, ProcessInfo};
 pub use installed_apps::{list_installed_apps, InstalledApp};
 pub(crate) use windows::{

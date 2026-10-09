@@ -1275,6 +1275,7 @@ dependencies = [
  "ciborium",
  "coset",
  "cua-driver-contract",
+ "fast_image_resize",
  "fs2",
  "futures-util",
  "getrandom 0.4.2",
@@ -1689,6 +1690,18 @@ dependencies = [
  "bit-set",
  "regex-automata",
  "regex-syntax",
+]
+
+[[package]]
+name = "fast_image_resize"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9c50201dc184ba6553da1695aac20a042efffbe2d84542cee31917c86c3ab1e"
+dependencies = [
+ "cfg-if",
+ "document-features",
+ "num-traits",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

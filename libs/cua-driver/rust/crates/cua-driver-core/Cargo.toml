@@ -26,6 +26,8 @@ regorus = { version = "0.10.1", optional = true }
 # helpers extracted from `platform-{macos,windows,linux}/src/capture.rs` so
 # all three platforms call the same code path.
 image = { workspace = true }
+# Windows overview resizing. SIMD is selected at runtime; no worker thread pool.
+fast_image_resize = { version = "=6.1.0", default-features = false, features = ["std"] }
 # Compatibility constraint for image's zune-jpeg decoder. This dependency is
 # intentionally direct so SDK consumers without this workspace lockfile cannot
 # resolve the incompatible zune-core 0.5.2 release.

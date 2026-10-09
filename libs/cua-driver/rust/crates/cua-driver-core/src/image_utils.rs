@@ -1,6 +1,6 @@
 //! Cross-platform PNG / JPEG / crosshair / resize helpers.
 //!
-//! These functions are pure consumers of the [`image`] crate with no
+//! These functions use [`image`] and, for Windows overviews, SIMD Bilinear with no
 //! platform-specific dependencies, so they were perfect candidates for
 //! deduplication. Until 2026-05 they lived as near-identical copies in
 //! `platform-{macos,windows,linux}/src/capture.rs` — see
@@ -320,10 +320,10 @@ pub fn encode_bgra_to_png(bgra: &[u8], w: u32, h: u32) -> Result<Vec<u8>> {
     encode_rgba_to_png(&rgba, w, h)
 }
 
-/// Resize top-down BGRA pixels before encoding one final PNG.
+/// Resize Windows top-down BGRA overview pixels before encoding one final PNG.
 ///
-/// A zero cap keeps native size. Channel order, alpha, aspect rounding and
-/// Lanczos3 match the legacy BGRA-to-PNG then PNG-resize path.
+/// A zero cap keeps native size. Capped images use SIMD Bilinear with the
+/// legacy aspect rounding and independent color/alpha channel filtering.
 pub fn encode_bgra_to_png_resized(bgra: &[u8], w: u32, h: u32, max_dim: u32) -> Result<Vec<u8>> {
     if bgra.len() as u64 != (w as u64) * (h as u64) * 4 {
         bail!("encode_bgra_to_png_resized: invalid buffer for w={w} h={h}");
@@ -335,19 +335,68 @@ pub fn encode_bgra_to_png_resized(bgra: &[u8], w: u32, h: u32, max_dim: u32) -> 
     let buf = ImageBuffer::from_raw(w, h, rgba)
         .ok_or_else(|| anyhow!("invalid RGBA buffer for w={w} h={h}"))?;
     let img = DynamicImage::ImageRgba8(buf);
-    let img = if max_dim != 0 && (w > max_dim || h > max_dim) {
-        let scale = max_dim as f64 / w.max(h) as f64;
-        let new_w = (w as f64 * scale).round() as u32;
-        let new_h = (h as f64 * scale).round() as u32;
-        img.resize(new_w, new_h, image::imageops::FilterType::Lanczos3)
-    } else {
-        img
-    };
+    let img = resize_windows_overview(img, max_dim)?;
     let mut out = Vec::new();
     img.write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png)?;
     Ok(out)
 }
 
+/// Downscale a Windows display overview PNG with SIMD Bilinear.
+///
+/// Native-size and within-cap PNG bytes stay unchanged. Other platforms and
+/// detail/recording paths keep using `resize_png_if_needed`.
+pub fn resize_windows_overview_png(png_bytes: &[u8], max_dim: u32) -> Result<Vec<u8>> {
+    if max_dim == 0 {
+        return Ok(png_bytes.to_vec());
+    }
+    let (w, h) = png_dimensions(png_bytes)?;
+    if w <= max_dim && h <= max_dim {
+        return Ok(png_bytes.to_vec());
+    }
+    let img = image::load_from_memory_with_format(png_bytes, ImageFormat::Png)?;
+    let img = resize_windows_overview(img, max_dim)?;
+    let mut out = Vec::new();
+    img.write_to(&mut std::io::Cursor::new(&mut out), ImageFormat::Png)?;
+    Ok(out)
+}
+
+fn resize_windows_overview(img: DynamicImage, max_dim: u32) -> Result<DynamicImage> {
+    use fast_image_resize as fir;
+    let (w, h) = (img.width(), img.height());
+    if max_dim == 0 || (w <= max_dim && h <= max_dim) {
+        return Ok(img);
+    }
+    // Keep both rounding steps of the legacy DynamicImage::resize call,
+    // including its one-pixel minimum when a narrow dimension rounds to zero.
+    let scale = max_dim as f64 / w.max(h) as f64;
+    let bounds = ((w as f64 * scale).round(), (h as f64 * scale).round());
+    let fit = (bounds.0 / w as f64).min(bounds.1 / h as f64);
+    let new_w = ((w as f64 * fit).round() as u32).max(1);
+    let new_h = ((h as f64 * fit).round() as u32).max(1);
+    let pixel_type = match img.color() {
+        ColorType::Rgba8 => fir::PixelType::U8x4,
+        ColorType::Rgb8 => fir::PixelType::U8x3,
+        color => bail!("unsupported color type for resize: {color:?}"),
+    };
+    let source = fir::images::ImageRef::new(w, h, img.as_bytes(), pixel_type)?;
+    let mut resized = fir::images::Image::new(new_w, new_h, pixel_type);
+    let options = fir::ResizeOptions::new()
+        .resize_alg(fir::ResizeAlg::Convolution(fir::FilterType::Bilinear))
+        // Match existing channel filtering; do not introduce premultiplication.
+        .use_alpha(false);
+    fir::Resizer::new().resize(&source, &mut resized, &options)?;
+    let bytes = resized.into_vec();
+    match img.color() {
+        ColorType::Rgba8 => Ok(DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(new_w, new_h, bytes)
+                .ok_or_else(|| anyhow!("invalid resized RGBA buffer"))?,
+        )),
+        _ => Ok(DynamicImage::ImageRgb8(
+            ImageBuffer::from_raw(new_w, new_h, bytes)
+                .ok_or_else(|| anyhow!("invalid resized RGB buffer"))?,
+        )),
+    }
+}
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -477,7 +526,7 @@ mod tests {
     }
 }
 
-// Appended to the pinned core owner by prepare-native-single-png.mjs.
+// Windows overview resize and single-PNG capture contracts.
 #[cfg(test)]
 mod single_png_tests {
     use super::*;
@@ -496,16 +545,29 @@ mod single_png_tests {
     }
 
     #[test]
-    fn single_png_matches_legacy_decoded_pixels_and_dimensions() {
+    fn single_png_uses_fast_bilinear_with_legacy_dimensions_and_channels() {
+        use fast_image_resize as fir;
         for (w, h) in [(37, 19), (19, 37), (65, 65), (400, 1), (1, 400)] {
             let bgra = pixels(w, h);
             let native = encode_bgra_to_png(&bgra, w, h).unwrap();
+            let rgba = image::load_from_memory(&native).unwrap().to_rgba8();
             for cap in [0, 1, 7, 17, 37, 500] {
-                let old = resize_png_if_needed(&native, cap).unwrap();
+                let legacy = resize_png_if_needed(&native, cap).unwrap();
+                let dimensions = png_dimensions(&legacy).unwrap();
+                let source =
+                    fir::images::ImageRef::new(w, h, rgba.as_raw(), fir::PixelType::U8x4).unwrap();
+                let mut expected =
+                    fir::images::Image::new(dimensions.0, dimensions.1, fir::PixelType::U8x4);
+                let options = fir::ResizeOptions::new()
+                    .resize_alg(fir::ResizeAlg::Convolution(fir::FilterType::Bilinear))
+                    .use_alpha(false);
+                fir::Resizer::new()
+                    .resize(&source, &mut expected, &options)
+                    .unwrap();
                 let new = encode_bgra_to_png_resized(&bgra, w, h, cap).unwrap();
-                let old = image::load_from_memory(&old).unwrap().to_rgba8();
                 let new = image::load_from_memory(&new).unwrap().to_rgba8();
-                assert_eq!(new, old, "{w}x{h}, cap={cap}");
+                assert_eq!(new.dimensions(), dimensions, "{w}x{h}, cap={cap}");
+                assert_eq!(new.as_raw(), expected.buffer(), "{w}x{h}, cap={cap}");
             }
         }
     }
@@ -529,10 +591,69 @@ mod single_png_tests {
     }
 
     #[test]
+    fn bilinear_filters_transparent_color_channels_without_premultiplying() {
+        let bgra = [0, 0, 0, 0, 40, 80, 120, 160];
+        let native = encode_bgra_to_png(&bgra, 2, 1).unwrap();
+        for png in [
+            encode_bgra_to_png_resized(&bgra, 2, 1, 1).unwrap(),
+            resize_windows_overview_png(&native, 1).unwrap(),
+        ] {
+            let decoded = image::load_from_memory(&png).unwrap().to_rgba8();
+            assert_eq!(decoded.dimensions(), (1, 1));
+            assert_eq!(decoded.as_raw(), &[60, 40, 20, 80]);
+        }
+    }
+
+    #[test]
+    fn display_overview_matches_raw_window_resize_and_keeps_uncapped_bytes() {
+        for (w, h) in [(37, 19), (19, 37), (65, 65), (400, 1), (1, 400)] {
+            let bgra = pixels(w, h);
+            let native = encode_bgra_to_png(&bgra, w, h).unwrap();
+            for cap in [0, 1, 7, 17, 37, 500] {
+                let display = resize_windows_overview_png(&native, cap).unwrap();
+                let window = encode_bgra_to_png_resized(&bgra, w, h, cap).unwrap();
+                assert_eq!(display, window, "{w}x{h}, cap={cap}");
+                if cap == 0 || w.max(h) <= cap {
+                    assert_eq!(display, native);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn display_overview_preserves_rgb_channels_and_refuses_unsupported_color() {
+        let img = DynamicImage::ImageRgb8(
+            ImageBuffer::from_raw(2, 1, vec![0, 0, 0, 120, 80, 40]).unwrap(),
+        );
+        let mut native = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut native), ImageFormat::Png)
+            .unwrap();
+        let png = resize_windows_overview_png(&native, 1).unwrap();
+        let decoded = image::load_from_memory(&png).unwrap();
+        assert_eq!(decoded.color(), ColorType::Rgb8);
+        assert_eq!(decoded.as_bytes(), &[60, 40, 20]);
+        let mut gray = Vec::new();
+        DynamicImage::ImageLuma8(ImageBuffer::from_raw(2, 1, vec![0, 255]).unwrap())
+            .write_to(&mut std::io::Cursor::new(&mut gray), ImageFormat::Png)
+            .unwrap();
+        assert_eq!(
+            resize_windows_overview_png(&gray, 1)
+                .unwrap_err()
+                .to_string(),
+            "unsupported color type for resize: L8"
+        );
+    }
+    #[test]
     fn single_png_rejects_invalid_buffer_before_encoding() {
         for cap in [0, 1, 500] {
-            assert!(encode_bgra_to_png_resized(&[0; 3], 1, 1, cap).is_err());
-            assert!(encode_bgra_to_png_resized(&[0; 8], 1, 1, cap).is_err());
+            for invalid in [&[0; 3][..], &[0; 8][..]] {
+                assert_eq!(
+                    encode_bgra_to_png_resized(invalid, 1, 1, cap)
+                        .unwrap_err()
+                        .to_string(),
+                    "encode_bgra_to_png_resized: invalid buffer for w=1 h=1"
+                );
+            }
         }
     }
 }

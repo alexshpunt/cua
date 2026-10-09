@@ -175,6 +175,7 @@ fn is_scoped_action(tool_name: &str) -> bool {
             | "press_key"
             | "hotkey"
             | "set_value"
+            | "semantic_action"
     )
 }
 
@@ -330,6 +331,20 @@ mod tests {
         format!("capture-scope-{prefix}-{}", std::process::id())
     }
 
+    #[test]
+    fn semantic_input_requires_window_capture_scope() {
+        let session = fresh("semantic");
+        bind_session(&session, Some(CaptureScopePolicy::Desktop)).unwrap();
+        assert_eq!(
+            enforce_tool(
+                "semantic_action",
+                &json!({"session":session,"pid":42,"window_id":7})
+            )
+            .unwrap_err()
+            .code,
+            "window_scope_disabled"
+        );
+    }
     #[test]
     fn selected_display_reads_keep_desktop_capture_scope() {
         let window = fresh("selected-display-window");

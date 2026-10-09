@@ -68,6 +68,23 @@ jobs:
           cargo test --locked -p cua-driver-contract -p cua-driver-core -p platform-windows --lib 2>&1 |
             Tee-Object build-evidence/tests.log
           if ($LASTEXITCODE -ne 0) { throw "cargo test failed: $LASTEXITCODE" }
+      - name: Build isolated persistent WGC probe when present
+        if: hashFiles('libs/cua-driver/rust/crates/platform-windows/examples/persistent-wgc-probe.rs') != ''
+        run: |
+          cargo test --locked -p platform-windows --example persistent-wgc-probe 2>&1 |
+            Tee-Object build-evidence/persistent-wgc-tests.log
+          if ($LASTEXITCODE -ne 0) { throw "probe policy tests failed: $LASTEXITCODE" }
+          cargo build --locked -p platform-windows --example persistent-wgc-probe --release --target x86_64-pc-windows-msvc 2>&1 |
+            Tee-Object build-evidence/persistent-wgc-build.log
+          if ($LASTEXITCODE -ne 0) { throw "probe build failed: $LASTEXITCODE" }
+          $probe = 'build-evidence/probe'
+          New-Item -ItemType Directory -Force -Path $probe | Out-Null
+          Copy-Item 'target/x86_64-pc-windows-msvc/release/examples/persistent-wgc-probe.exe' "$probe/persistent-wgc-probe.exe"
+          Get-FileHash "$probe/persistent-wgc-probe.exe" -Algorithm SHA256 |
+            Select-Object @{Name='name';Expression={Split-Path $_.Path -Leaf}}, Hash |
+            ConvertTo-Json | Set-Content build-evidence/probe-hash.json
+          'Read-only experiment. Not a Driver runtime. No capture or input qualification.' |
+            Set-Content "$probe/BUILD-NOTICE.txt"
       - name: Run protocol and schema tests
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"

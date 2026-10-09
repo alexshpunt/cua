@@ -56,7 +56,7 @@ fn normalize_schema(value: &mut Value) {
     }
 }
 
-fn string_schema(generator: &mut SchemaGenerator) -> Schema {
+pub(crate) fn string_schema(generator: &mut SchemaGenerator) -> Schema {
     String::json_schema(generator)
 }
 
@@ -64,7 +64,7 @@ fn nonempty_string_schema(_: &mut SchemaGenerator) -> Schema {
     json_schema!({ "type": "string", "minLength": 1 })
 }
 
-fn element_token_schema(_: &mut SchemaGenerator) -> Schema {
+pub(crate) fn element_token_schema(_: &mut SchemaGenerator) -> Schema {
     json_schema!({ "type": "string", "pattern": "^s[0-9a-f]{8}:[0-9]+$" })
 }
 
