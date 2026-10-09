@@ -34,6 +34,8 @@ windows = { version = "0.58", features = [
     "Win32_UI_Accessibility",
     "Win32_UI_WindowsAndMessaging",
     "Win32_System_Threading",
+    # QPC timestamps in the isolated retained-WGC example; no normal route change.
+    "Win32_System_Performance",
     # CreatePipe: the result pipe of the standard-user shell launch helper.
     "Win32_System_Pipes",
     "Win32_System_SystemInformation",
