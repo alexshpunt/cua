@@ -1,5 +1,11 @@
 //! Decisions shared by the isolated probe and its hermetic tests.
 
+/// windows-core 0.58 wraps a successful null interface as Error::empty (HRESULT 0).
+/// A failing HRESULT is not an empty queue and must stop the probe.
+pub(super) fn empty_frame_hresult(code: i32) -> bool {
+    code == 0
+}
+
 /// Accept only a new compositor frame, not a cached answer from before this request.
 pub(super) fn fresh_frame(frame: i64, request: i64, previous: i64) -> bool {
     frame > request && frame > previous
@@ -39,6 +45,13 @@ pub(super) fn content_bytes(
 mod tests {
     use super::*;
 
+    #[test]
+    fn only_success_with_a_null_frame_is_an_empty_queue() {
+        assert!(empty_frame_hresult(0));
+        assert!(!empty_frame_hresult(0x80004003_u32 as i32)); // E_POINTER is a real failure.
+        assert!(!empty_frame_hresult(0x887A0026_u32 as i32)); // DXGI access loss.
+        assert!(!empty_frame_hresult(-1));
+    }
     #[test]
     fn queued_or_repeated_frames_are_not_new_observations() {
         assert!(!fresh_frame(100, 100, 90));

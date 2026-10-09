@@ -1,5 +1,5 @@
 //! Read-only retained WGC experiment. No snapshot or input authority is published.
-use super::policy::{content_bytes, fresh_frame, qpc_100ns};
+use super::policy::{content_bytes, empty_frame_hresult, fresh_frame, qpc_100ns};
 use anyhow::{ensure, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -23,7 +23,7 @@ use windows::{
         SizeInt32,
     },
     Win32::{
-        Foundation::{CloseHandle, E_POINTER, FILETIME, HANDLE, HWND, WAIT_TIMEOUT},
+        Foundation::{CloseHandle, FILETIME, HANDLE, HWND, WAIT_TIMEOUT},
         Graphics::{
             Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_11_0},
             Direct3D11::{
@@ -291,8 +291,8 @@ impl Capture {
             for _ in 0..8 {
                 let frame = match self.pool.TryGetNextFrame() {
                     Ok(value) => Frame(value),
-                    Err(error) if error.code() == E_POINTER => break,
-                    Err(error) => return Err(error.into()),
+                    Err(error) if empty_frame_hresult(error.code().0) => break,
+                    Err(error) => return Err(error).context("TryGetNextFrame failed"),
                 };
                 let time = frame.0.SystemRelativeTime()?.Duration;
                 if fresh_frame(time, request_time, self.last_frame)
@@ -518,13 +518,14 @@ pub(super) fn run() -> Result<()> {
             let mut setup_ms = 0.0;
             if capture.is_none() {
                 let setup = Instant::now();
-                capture = Some(Capture::new(&target)?);
+                capture = Some(Capture::new(&target).context("WGC setup")?);
                 setup_ms = ms(setup);
             }
             let (pixels, width, height, mut stats) = capture
                 .as_mut()
                 .context("missing_capture")?
-                .next(&target, request_time)?;
+                .next(&target, request_time)
+                .context("WGC fresh frame")?;
             let encoding = Instant::now();
             let png = cua_driver_core::image_utils::encode_bgra_to_png_resized(
                 &pixels, width, height, 500,
@@ -549,7 +550,7 @@ pub(super) fn run() -> Result<()> {
                 drop(capture.take());
                 println!(
                     "{}",
-                    json!({"id":request.id,"ok":false,"error":error.to_string(),"capture_dropped":true})
+                    json!({"id":request.id,"ok":false,"error":format!("{error:#}"),"capture_dropped":true})
                 );
                 std::io::stdout().flush()?;
                 return Ok(());
@@ -560,4 +561,18 @@ pub(super) fn run() -> Result<()> {
     println!("{}", json!({"closed":true,"requests":count}));
     std::io::stdout().flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn windows_binding_reports_a_successful_null_interface_as_an_empty_error() {
+        let result: windows::core::Result<Direct3D11CaptureFrame> =
+            unsafe { windows::core::Type::from_abi(std::ptr::null_mut()) };
+        let error = result.unwrap_err();
+        assert_eq!(error.code().0, 0);
+        assert!(super::super::policy::empty_frame_hresult(error.code().0));
+    }
 }
