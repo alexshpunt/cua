@@ -28,4 +28,12 @@ Capture-bound input for a retained frame validates the current exact target and 
 
 Geometry mapping was red before implementation (`8885729078dc`). Removing cancellation detection made the retained-resource owner test fail (`2807c393a1ee`); the mutation was restored. The complete Linux Windows-stub owner suite passed 118 tests, formatting and diff checks (`42a3e981eb0a`). These are hermetic contracts, not Windows native evidence.
 
-An exact Windows build, isolated native fixtures, production tools, actual TUI, session isolation, mapped click, transition/failure checks and cleanup are still required. No speed improvement or acceptance pass is claimed yet. Normal runtime/config remain unchanged.
+Candidate `841dad7e11619bf7ecba3f98e1c20319cbeb7e52` passed Windows build [37929917740](https://github.com/alexshpunt/cua/actions/runs/37929917740): Windows owners, protocol/schema tests and release packaging. Its driver SHA256 is `cf45f42407b06da75c20d21e45da0c68093ccc43afeeaf460a5c6a286794d20d`.
+
+Two disposable native fixtures passed 27 reads covering cold/warm image/full, five-second idle expiry, move/shrink/grow/cover, one capture-bound pixel hit with application pointer/click events, minimized/closed refusal and owner isolation. Some changed markers needed a second successful read; increasing stamps did not prove current pixels.
+
+After adapter reload, production tools passed explicit image/full/image WGC reads, warm reuse, one grounded Save click and independent pointer/click events with counter1. UI-only inherited no pixels; invalid UI+WGC and unsupported native detail refused without fallback. The actual human TUI was readable. Adapter checks passed 378 unit tests, typecheck and 26 real-Pi tests.
+
+Owned fixtures/profiles and peers were closed; task loading was removed and normal startup origins restored. Exact temporary candidate files were removed. External PowerShell process queries could not launch, so no independent Windows process-absence claim is made. No installed runtime/config, permissions or dependencies changed. This qualifies only the Windows opt-in fork contract, not a universal speed improvement or full cross-platform desktop matrix.
+
+The tested executable source remains `841dad7e`; this qualification-note update changes no native behavior.
