@@ -6,7 +6,7 @@ pub(super) fn empty_frame_hresult(code: i32) -> bool {
     code == 0
 }
 
-/// Accept only a new compositor frame, not a cached answer from before this request.
+/// Require a newer WGC stamp; actual pixel freshness needs an independent witness.
 pub(super) fn fresh_frame(frame: i64, request: i64, previous: i64) -> bool {
     frame > request && frame > previous
 }
@@ -19,6 +19,17 @@ pub(super) fn qpc_100ns(ticks: i64, frequency: i64) -> Option<i64> {
     i64::try_from(i128::from(ticks) * 10_000_000 / i128::from(frequency)).ok()
 }
 
+/// Measure local delivery separately from WGC's possibly future presentation stamp.
+/// The signed reported age is diagnostic, not proof of when the pixels changed.
+pub(super) fn frame_timing(frame: i64, dequeued: i64, completed: i64) -> Option<(f64, f64)> {
+    if frame < 0 || dequeued < 0 || completed < dequeued {
+        return None;
+    }
+    Some((
+        (i128::from(completed) - i128::from(dequeued)) as f64 / 10_000.0,
+        (i128::from(completed) - i128::from(frame)) as f64 / 10_000.0,
+    ))
+}
 /// Bound CPU reads to valid content, allocated texture extent and real row pitch.
 pub(super) fn content_bytes(
     width: i32,
@@ -60,6 +71,13 @@ mod tests {
         assert!(fresh_frame(111, 100, 110));
     }
 
+    #[test]
+    fn future_presentation_time_is_diagnostic_not_a_local_clock_failure() {
+        assert_eq!(frame_timing(120_000, 100_000, 110_000), Some((1.0, -1.0)));
+        assert_eq!(frame_timing(90_000, 100_000, 110_000), Some((1.0, 2.0)));
+        assert_eq!(frame_timing(120_000, 100_000, 99_999), None);
+        assert_eq!(frame_timing(-1, 100_000, 110_000), None);
+    }
     #[test]
     fn qpc_conversion_does_not_overflow_or_accept_an_invalid_clock() {
         assert_eq!(qpc_100ns(30, 3), Some(100_000_000));

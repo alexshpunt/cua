@@ -1,5 +1,5 @@
 //! Read-only retained WGC experiment. No snapshot or input authority is published.
-use super::policy::{content_bytes, empty_frame_hresult, fresh_frame, qpc_100ns};
+use super::policy::{content_bytes, empty_frame_hresult, frame_timing, fresh_frame, qpc_100ns};
 use anyhow::{ensure, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -322,7 +322,7 @@ impl Capture {
         loop {
             ensure!(Instant::now() < deadline, "fresh_frame_timeout");
             self.validate(target)?;
-            let mut newest: Option<(Frame, i64)> = None;
+            let mut newest: Option<(Frame, i64, i64)> = None;
             // Drain a bounded queue, closing every rejected or replaced frame.
             for _ in 0..8 {
                 let frame = match self.pool.TryGetNextFrame() {
@@ -330,18 +330,19 @@ impl Capture {
                     Err(error) if empty_frame_hresult(error.code().0) => break,
                     Err(error) => return Err(error).context("TryGetNextFrame failed"),
                 };
+                let dequeued = clock_100ns()?;
                 let time = frame.0.SystemRelativeTime()?.Duration;
                 if fresh_frame(time, request_time, self.last_frame)
                     && newest
                         .as_ref()
-                        .is_none_or(|(_, newest_time)| time > *newest_time)
+                        .is_none_or(|(_, newest_time, _)| time > *newest_time)
                 {
-                    newest = Some((frame, time));
+                    newest = Some((frame, time, dequeued));
                 } else {
                     discarded += 1;
                 }
             }
-            if let Some((frame, time)) = newest {
+            if let Some((frame, time, dequeued)) = newest {
                 let content = frame.0.ContentSize()?;
                 if content != self.size {
                     ensure!(recreations < 3, "capture_resize_did_not_settle");
@@ -452,17 +453,14 @@ impl Capture {
                 drop(frame);
                 self.validate(target)?;
                 let completed = clock_100ns()?;
-                ensure!(
-                    completed >= time,
-                    "incompatible_frame_clock: request_100ns={request_time}, frame_100ns={time}, copy_completed_100ns={completed}, ahead_100ns={}",
-                    i128::from(time) - i128::from(completed)
-                );
+                let (dequeue_to_copy_ms, reported_frame_age_at_copy_ms) =
+                    frame_timing(time, dequeued, completed).context("invalid_local_frame_clock")?;
                 self.last_frame = time;
                 return Ok((
                     pixels,
                     width,
                     height,
-                    json!({"wait_ms":wait_ms,"readback_ms":ms(reading),"frame_age_at_copy_ms":(completed-time) as f64/10_000.0,"frame_after_request_ms":(time-request_time) as f64/10_000.0,"discarded":discarded,"recreations":recreations}),
+                    json!({"wait_ms":wait_ms,"readback_ms":ms(reading),"dequeue_to_copy_ms":dequeue_to_copy_ms,"reported_frame_age_at_copy_ms":reported_frame_age_at_copy_ms,"frame_timestamp_100ns":time,"dequeued_100ns":dequeued,"copy_completed_100ns":completed,"frame_after_request_ms":(time-request_time) as f64/10_000.0,"discarded":discarded,"recreations":recreations}),
                 ));
             }
             // The event wakes this wait. A short bounded fallback also covers a missed wake.
