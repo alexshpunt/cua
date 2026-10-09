@@ -1,5 +1,5 @@
 //! Isolated read-only capture experiment. This executable is not a Driver runtime.
-#[path = "persistent_wgc/policy.rs"]
+#[path = "../src/persistent_wgc/policy.rs"]
 mod policy;
 
 #[cfg(target_os = "windows")]

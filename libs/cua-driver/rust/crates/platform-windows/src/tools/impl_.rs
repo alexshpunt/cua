@@ -627,6 +627,7 @@ pub struct ToolState {
     pub cursor_registry: Arc<CursorRegistry>,
     pub config: Arc<RwLock<DriverConfig>>,
     capture_bridge: Option<Arc<crate::capture_admission::WindowsCaptureBridge>>,
+    persistent_wgc: Arc<crate::persistent_wgc::Manager>,
 }
 
 impl ToolState {
@@ -637,6 +638,7 @@ impl ToolState {
             snapshots: Arc::new(Snapshots::new()),
             cursor_registry: Arc::new(CursorRegistry::new()),
             config: Arc::new(RwLock::new(load_driver_config())),
+            persistent_wgc: Arc::new(crate::persistent_wgc::Manager::new()),
             capture_bridge: capture_service
                 .map(crate::capture_admission::WindowsCaptureBridge::new),
         })
@@ -1234,6 +1236,7 @@ impl Tool for GetWindowStateTool {
                 "pid":{"type":"integer","description":"Process ID from `list_apps`."},
                 "window_id":{"type":"integer","description":"HWND of the target window. Must belong to `pid`. Enumerate via `list_windows` or read from `launch_app`'s `windows` array."},
                 "capture_mode": cua_driver_core::capture_mode::capture_mode_schema(),
+                "capture_backend":{"type":"string","enum":["default","wgc"],"description":"Windows opt-in: retain WGC resources for this runtime session and exact window. Default preserves existing capture. WGC requires a screenshot, refuses unmapped geometry or failure without another backend, and does not prove changed pixels."},
                 "include_accessibility_tree":{"type":"boolean","description":"Default true — walk the UIA tree and return `elements` + `tree_markdown` alongside the screenshot. Set false to SKIP the UIA walk entirely and return just the screenshot plus window metadata (window_bounds, app_name, window_title) — the capture-only path for a live window preview / picture-in-picture. Mirrors include_screenshot. Setting BOTH include_accessibility_tree:false AND include_screenshot:false is an error (nothing to return)."},
                 "include_screenshot":{"type":"boolean","description":"Default true — returns a grounding screenshot alongside the tree. Set false to skip the grab and return tree only (the cheap path for re-indexing before an element ax action)."},
                 "screenshot_out_file":{"type":"string","description":"When set, write the PNG to this file path instead of embedding base64 in the response. The structured output will contain `screenshot_file_path` instead."},
@@ -1393,6 +1396,17 @@ impl Tool for GetWindowStateTool {
             );
         }
 
+        let retained_wgc = match crate::persistent_wgc::requested(
+            args.get("capture_backend"),
+            do_shot,
+            session_id.as_deref(),
+        ) {
+            Ok(value) => value,
+            Err(error) => {
+                return ToolResult::error(error.to_string())
+                    .with_structured(json!({"code": error.to_string()}))
+            }
+        };
         let state = self.state.clone();
         let q = query.clone();
         let out_file = screenshot_out_file.clone();
@@ -1444,6 +1458,34 @@ impl Tool for GetWindowStateTool {
         } else {
             None
         };
+        let retained =
+            if retained_wgc {
+                match tokio::time::timeout(
+                    UIA_SCREENSHOT_TIMEOUT,
+                    state.persistent_wgc.capture(
+                        crate::persistent_wgc::Target {
+                            session: session_id.clone().unwrap(),
+                            pid,
+                            window: hwnd,
+                        },
+                        max_dim,
+                    ),
+                )
+                .await
+                {
+                    Ok(Ok(frame)) => Some(frame),
+                    Ok(Err(error)) => return ToolResult::error(error.to_string()).with_structured(
+                        json!({"code":"wgc_capture_failed","screenshot_error":error.to_string()}),
+                    ),
+                    Err(_) => {
+                        return ToolResult::error("wgc_capture_timeout")
+                            .with_structured(json!({"code":"wgc_capture_timeout"}))
+                    }
+                }
+            } else {
+                None
+            };
+        let capture_metadata = retained.as_ref().map(|frame| frame.metadata.clone());
         let blocking = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
             // Capture screenshot AND any error message so the response can
             // surface *why* there's no image (the iconic-window guard from
@@ -1453,7 +1495,11 @@ impl Tool for GetWindowStateTool {
             // The previous `Err(_) => None` silently dropped the error and
             // upstream agents saw an empty response with no signal.
             let (screenshot, screenshot_err) = if do_shot {
-                match crate::capture::screenshot_window_overview(hwnd, max_dim) {
+                let captured = match retained {
+                    Some(frame) => Ok((frame.png, frame.width, frame.height)),
+                    None => crate::capture::screenshot_window_overview(hwnd, max_dim),
+                };
+                match captured {
                     Ok((png, native_w, native_h)) => {
                         let (w, h) = crate::capture::png_dimensions_pub(&png)?;
                         // `screenshot_out_file` set (any mode) → write to disk and
@@ -1675,7 +1721,20 @@ impl Tool for GetWindowStateTool {
                                 },
                                 geometry,
                             ) {
-                                Ok(capture_id) => capture_id,
+                                Ok(capture_id) => {
+                                    if retained_wgc {
+                                        if let Some(id) = capture_id.as_deref() {
+                                            if let Err(error) =
+                                                bridge.mark_wgc(&args, pid, hwnd, id)
+                                            {
+                                                return ToolResult::error(format!(
+                                                    "WGC capture binding failed: {error}"
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    capture_id
+                                }
                                 Err(error) => {
                                     return ToolResult::error(format!(
                                         "Window capture publication failed: {error}"
@@ -1701,6 +1760,11 @@ impl Tool for GetWindowStateTool {
                         )));
                     }
                     structured["screenshot_width"] = json!(w);
+                    structured["screenshot_original_width"] = json!(native_w);
+                    structured["screenshot_original_height"] = json!(native_h);
+                    if let Some(metadata) = capture_metadata {
+                        structured["capture_backend"] = metadata;
+                    }
                     structured["screenshot_height"] = json!(h);
                     // Surface 7: mirror the MCP image part's `mimeType` onto
                     // the structured payload so consumers don't have to sniff
@@ -10337,9 +10401,15 @@ pub fn build_registry_with_provider(
     // `register_all` session_end hook (platform-macos/src/tools/mod.rs).
     let cursor_registry = state.cursor_registry.clone();
     let snapshots = state.snapshots.clone();
+    let persistent_wgc = state.persistent_wgc.clone();
+    let capture_bridge = state.capture_bridge.clone();
     let session_end_hook =
         cua_driver_core::session::register_scoped_session_end_hook(move |session_id| {
             snapshots.retire_session_screenshots(session_id);
+            persistent_wgc.close_session(session_id);
+            if let Some(bridge) = &capture_bridge {
+                bridge.close_session(session_id);
+            }
             cursor_registry.remove(session_id);
             crate::overlay::remove_cursor(session_id.to_owned());
         });

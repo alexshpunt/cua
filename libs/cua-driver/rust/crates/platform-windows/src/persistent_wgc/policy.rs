@@ -57,9 +57,32 @@ pub(super) fn content_bytes(
     (bytes <= 64 * 1024 * 1024).then_some(bytes)
 }
 
+/// Accept only exact DWM physical extents; the existing action domain omits one pixel per edge.
+pub(super) fn mapped_crop(
+    bounds: (i32, i32, i32, i32),
+    width: u32,
+    height: u32,
+) -> Option<(u32, u32)> {
+    let physical_width = u32::try_from(bounds.2.checked_sub(bounds.0)?).ok()?;
+    let physical_height = u32::try_from(bounds.3.checked_sub(bounds.1)?).ok()?;
+    (width == physical_width && height == physical_height && width > 2 && height > 2)
+        .then(|| (width - 2, height - 2))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_exact_physical_frame_bounds_can_map_wgc_pixels_to_bitmap_actions() {
+        assert_eq!(
+            mapped_crop((-100, 20, 300, 320), 400, 300),
+            Some((398, 298))
+        );
+        assert_eq!(mapped_crop((-100, 20, 300, 320), 402, 300), None);
+        assert_eq!(mapped_crop((-100, 20, 300, 320), 400, 302), None);
+        assert_eq!(mapped_crop((0, 0, 2, 2), 2, 2), None);
+        assert_eq!(mapped_crop((i32::MIN, 0, i32::MAX, 300), 400, 300), None);
+    }
 
     #[test]
     fn only_success_with_a_null_frame_is_an_empty_queue() {
