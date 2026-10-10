@@ -68,6 +68,16 @@ jobs:
           cargo test --locked -p cua-driver-contract -p cua-driver-core -p platform-windows --lib 2>&1 |
             Tee-Object build-evidence/tests.log
           if ($LASTEXITCODE -ne 0) { throw "cargo test failed: $LASTEXITCODE" }
+      - name: Run native pointer contract and execution tests
+        env:
+          CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
+        run: |
+          cargo test --locked -p cua-driver-contract --test pointer_contract 2>&1 |
+            Tee-Object build-evidence/pointer-contract-tests.log
+          if ($LASTEXITCODE -ne 0) { throw "pointer contract tests failed: $LASTEXITCODE" }
+          cargo test --locked -p cua-driver-core --test pointer_execution 2>&1 |
+            Tee-Object build-evidence/pointer-execution-tests.log
+          if ($LASTEXITCODE -ne 0) { throw "pointer execution tests failed: $LASTEXITCODE" }
       - name: Build isolated persistent WGC probe when present
         if: hashFiles('libs/cua-driver/rust/crates/platform-windows/examples/persistent-wgc-probe.rs') != ''
         run: |

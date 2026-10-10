@@ -170,6 +170,7 @@ fn is_scoped_action(tool_name: &str) -> bool {
             | "mouse_drag"
             | "parallel_mouse_drag"
             | "move_cursor"
+            | "move_pointer"
             | "type_text"
             | "type_text_chars"
             | "press_key"
@@ -332,18 +333,17 @@ mod tests {
     }
 
     #[test]
-    fn semantic_input_requires_window_capture_scope() {
-        let session = fresh("semantic");
+    fn native_pointer_and_semantic_input_require_window_capture_scope() {
+        let session = fresh("native-input");
         bind_session(&session, Some(CaptureScopePolicy::Desktop)).unwrap();
-        assert_eq!(
-            enforce_tool(
-                "semantic_action",
-                &json!({"session":session,"pid":42,"window_id":7})
-            )
-            .unwrap_err()
-            .code,
-            "window_scope_disabled"
-        );
+        for tool in ["semantic_action", "move_pointer"] {
+            assert_eq!(
+                enforce_tool(tool, &json!({"session":session,"pid":42,"window_id":7}))
+                    .unwrap_err()
+                    .code,
+                "window_scope_disabled"
+            );
+        }
     }
     #[test]
     fn selected_display_reads_keep_desktop_capture_scope() {

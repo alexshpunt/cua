@@ -3,6 +3,8 @@
 use async_trait::async_trait;
 use cua_driver_core::action_record::ActionTransport;
 
+mod pointer;
+
 /// Pin the agent-cursor overlay above `hwnd` in the z-order, normalising to
 /// the **root** ancestor so the pin lands on the window that actually appears
 /// in the global z-stack.
@@ -10552,6 +10554,12 @@ pub fn build_registry_with_provider(
         state: state.clone(),
     }));
     r.register(Box::new(GetCursorPositionTool));
+    r.register(pid_window_guarded(
+        pointer::MovePointerTool {
+            state: state.clone(),
+        },
+        &pid_window_candidates,
+    ));
     r.register(Box::new(MoveCursorTool {
         state: state.clone(),
     }));
