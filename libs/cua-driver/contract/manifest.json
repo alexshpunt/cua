@@ -3639,6 +3639,196 @@
       }
     },
     {
+      "name": "move_pointer",
+      "description": "Move the real pointer once against an exact admitted Windows window, with optional bounded hover dwell. No button or key events. Background refuses; explicit foreground leaves the target active and pointer in place. Completion is native delivery, not proof of an application hover effect; observe again.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "input.pointer.move",
+        "input.delivery_mode",
+        "accessibility.element_tokens"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false,
+        "open_world": true
+      },
+      "schema_mode": "canonical_runtime",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "One capture-bound point or snapshot token belonging to an exact Windows window.",
+        "oneOf": [
+          {
+            "not": {
+              "required": [
+                "element_token"
+              ]
+            },
+            "required": [
+              "capture_id",
+              "x",
+              "y"
+            ]
+          },
+          {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "capture_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "x"
+                  ]
+                },
+                {
+                  "required": [
+                    "y"
+                  ]
+                }
+              ]
+            },
+            "required": [
+              "element_token"
+            ]
+          }
+        ],
+        "properties": {
+          "capture_id": {
+            "description": "Current capture authority; required with x/y and forbidden with an element token.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "delivery_mode": {
+            "default": "background",
+            "description": "Background refuses. Explicit foreground leaves the target and pointer in place.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "dwell_ms": {
+            "default": 0,
+            "description": "Zero moves only; positive values request bounded dwell at the target.",
+            "maximum": 10000,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "element_token": {
+            "description": "Current snapshot element token; cannot be combined with capture coordinates.",
+            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
+            "type": "string"
+          },
+          "pid": {
+            "description": "Process that owns the exact target window.",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session": {
+            "description": "Public session label, or omit for the authenticated transport's implicit session.",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "Exact top-level native window identifier.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "x": {
+            "description": "Horizontal point in the admitted overview image, not desktop or detail pixels.",
+            "minimum": 0,
+            "type": "number"
+          },
+          "y": {
+            "description": "Vertical point in the same admitted overview image.",
+            "minimum": 0,
+            "type": "number"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id"
+        ],
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "attempted": {
+            "type": "boolean"
+          },
+          "delivered": {
+            "type": "boolean"
+          },
+          "delivery_mode": {
+            "enum": [
+              "foreground"
+            ],
+            "type": "string"
+          },
+          "dwell_elapsed_ms": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "dwell_ms": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "effect": {
+            "enum": [
+              "unverifiable"
+            ],
+            "type": "string"
+          },
+          "foreground_at_target": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "foreground_changed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "pointer_at_target": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "pointer_changed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "route": {
+            "enum": [
+              "native"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "attempted",
+          "delivered",
+          "route",
+          "effect",
+          "delivery_mode",
+          "dwell_ms",
+          "dwell_elapsed_ms"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "parse_visual_regions",
       "description": "Parse one immutable registered capture into model-neutral text and icon regions.",
       "platforms": [

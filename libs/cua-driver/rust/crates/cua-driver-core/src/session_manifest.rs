@@ -980,6 +980,7 @@ pub fn load_manifest(path: &Path) -> Result<SessionManifest, String> {
                 "double_click",
                 "right_click",
                 "drag",
+                "move_pointer",
                 "scroll",
                 "type_text",
                 "press_key",
@@ -1988,7 +1989,7 @@ allow:
         assert!(loaded.is_idle_expired());
         assert!(loaded.commit_authorized_dispatch().is_err());
 
-        for bypass_tool in ["page", "verify_state", "semantic_action"] {
+        for bypass_tool in ["page", "verify_state", "semantic_action", "move_pointer"] {
             let policy = format!(
                 r#"
 version: 1
@@ -2002,11 +2003,9 @@ allow:
   tools: [browser_navigate, {bypass_tool}]
 "#
             );
-            assert!(
-                manifest(&policy)
-                    .unwrap_err()
-                    .contains("bypasses the typed browser origin adapter"),
-                "{bypass_tool} must not bypass origin-scoped browser policy"
+            assert_eq!(
+                manifest(&policy).unwrap_err(),
+                format!("origin-scoped capability manifests cannot allow '{bypass_tool}' because it bypasses the typed browser origin adapter")
             );
         }
     }

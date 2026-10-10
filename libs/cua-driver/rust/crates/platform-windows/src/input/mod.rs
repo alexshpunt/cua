@@ -14,6 +14,7 @@ pub mod inject;
 pub mod keyboard;
 pub mod mouse;
 pub(crate) mod path;
+pub(crate) mod pointer;
 
 pub(crate) use inject::{force_foreground_assisted, force_foreground_attached};
 pub use inject::{

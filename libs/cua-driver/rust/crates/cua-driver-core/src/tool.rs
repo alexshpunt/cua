@@ -2878,6 +2878,7 @@ fn is_physical_desktop_action(tool: &str) -> bool {
             | "drag"
             | "mouse_drag"
             | "parallel_mouse_drag"
+            | "move_pointer"
             | "move_cursor"
             | "mouse_button_down"
             | "mouse_button_up"
@@ -5505,6 +5506,21 @@ resources:
             task.await.unwrap();
         }
         assert_eq!(max_active.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn native_foreground_pointer_motion_keeps_desktop_coordination() {
+        let args = serde_json::json!({"pid":10,"window_id":20,"delivery_mode":"foreground"});
+        assert!(super::requires_desktop_coordination(
+            "move_pointer",
+            &args,
+            true
+        ));
+        assert!(super::requires_desktop_coordination(
+            "move_pointer",
+            &args,
+            false
+        ));
     }
 
     #[test]

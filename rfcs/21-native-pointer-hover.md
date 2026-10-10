@@ -7,8 +7,9 @@ created: 2026-10-10
 last_updated: 2026-10-10
 status: accepted
 discussion: https://github.com/alexshpunt/cua/issues/21
-rfc_pr:
-implementation: []
+rfc_pr: https://github.com/alexshpunt/cua/pull/22
+implementation:
+  - https://github.com/alexshpunt/cua/pull/22
 supersedes:
 superseded_by:
 ---
@@ -56,6 +57,12 @@ repeat movement to fight user input. Cancellation cannot retract inserted OS
 input. A receipt records the attempted/delivered prefix, elapsed dwell and
 focus/pointer effects; it does not claim that a tooltip appeared. Observe again.
 
+Win32 hit testing and global `SendInput` are not atomic. External desktop
+changes can race the final check; this route cannot promise OS-level input
+isolation. Confirm arrival within a bounded readback, validate the actual
+window owner despite pixel quantization, and never replay a missed movement.
+Subsequent dwell checks use the confirmed physical position. The agent overlay
+does not move during this operation; the real system pointer is the witness.
 Only Windows advertises this experimental tool. Other platforms' existing
 `move_cursor` is not evidence of this capability.
 

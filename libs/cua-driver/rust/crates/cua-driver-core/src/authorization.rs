@@ -274,6 +274,7 @@ const DESKTOP_INPUT_OPERATIONS: &[&str] = &[
     "right_click",
     "drag",
     "scroll",
+    "move_pointer",
     "move_cursor",
     "mouse_button_down",
     "mouse_button_up",
@@ -888,6 +889,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         | "right_click"
         | "drag"
         | "scroll"
+        | "move_pointer"
         | "move_cursor"
         | "mouse_button_down"
         | "mouse_button_up"
@@ -1202,6 +1204,7 @@ fn enforce_hard_invariants(
             | "press_key"
             | "hotkey"
             | "hold_keys"
+            | "move_pointer"
             | "set_value"
             | "semantic_action"
             | "kill_app"
@@ -1881,6 +1884,34 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("outside the capability manifest"));
+    }
+
+    #[test]
+    fn native_pointer_input_uses_desktop_authorization_and_refuses_its_own_process() {
+        let args = serde_json::json!({"pid":42,"window_id":7,"capture_id":"current","x":1,"y":2});
+        assert_eq!(
+            enforcement_adapters_for_call("move_pointer", &args)
+                .into_iter()
+                .map(|a| a.id)
+                .collect::<Vec<_>>(),
+            vec!["desktop_input"]
+        );
+        assert_eq!(
+            classify_tool_call("move_pointer", &args).class,
+            RiskClass::R1
+        );
+        let error = enforce_hard_invariants(
+            "move_pointer",
+            &serde_json::json!({"pid":std::process::id()}),
+        )
+        .unwrap_err();
+        match error {
+            crate::policy::AuthorizationError::Denied(reason) => assert_eq!(
+                reason,
+                "Cua Driver refuses operations that target its own authorization process"
+            ),
+            other => panic!("unexpected refusal: {other:?}"),
+        }
     }
 
     #[test]

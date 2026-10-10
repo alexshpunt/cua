@@ -85,6 +85,7 @@ pub mod page;
 pub mod perception_client;
 pub mod perception_tools;
 pub mod pip_hook;
+pub mod pointer;
 pub mod pointer_shape;
 pub mod policy;
 pub mod protocol;
