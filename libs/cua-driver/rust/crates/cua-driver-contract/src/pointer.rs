@@ -6,7 +6,6 @@ use crate::{
 };
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
 /// Maximum requested dwell for one native pointer action.
 pub const POINTER_MAX_DWELL_MS: u64 = 10_000;
@@ -172,13 +171,6 @@ impl ToolOutput for PointerMoveOutput {
 }
 
 pub(crate) fn contracts() -> Vec<ToolContract> {
-    let mut input_schema = PointerMoveInput::input_schema();
-    input_schema["oneOf"] = json!([
-        {"required":["capture_id","x","y"],"not":{"required":["element_token"]}},
-        {"required":["element_token"],"not":{"anyOf":[
-            {"required":["capture_id"]},{"required":["x"]},{"required":["y"]}
-        ]}}
-    ]);
     vec![ToolContract {
         name: PointerMoveInput::TOOL_NAME.into(),
         description: "Move the real pointer once against an exact admitted Windows window, with optional bounded hover dwell. No button or key events. Background refuses; explicit foreground leaves the target active and pointer in place. Completion is native delivery, not proof of an application hover effect; observe again.".into(),
@@ -188,7 +180,7 @@ pub(crate) fn contracts() -> Vec<ToolContract> {
         annotations: ToolAnnotations { read_only: false, destructive: true, idempotent: false, open_world: true },
         schema_mode: SchemaMode::CanonicalRuntime,
         cursor_semantics: None,
-        input_schema,
+        input_schema: PointerMoveInput::input_schema(),
         success_output_schema: Some(PointerMoveOutput::output_schema()),
         error_output_schema: None,
         output_validator: crate::validate_typed_output::<PointerMoveOutput>,

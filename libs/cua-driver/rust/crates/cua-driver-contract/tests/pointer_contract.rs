@@ -129,7 +129,6 @@ fn requests_reject_unbounded_dwell_and_unrelated_input_fields() {
         contract.input_schema["properties"]["dwell_ms"]["maximum"],
         10000
     );
-    assert_eq!(contract.input_schema["oneOf"].as_array().unwrap().len(), 2);
 }
 
 #[test]

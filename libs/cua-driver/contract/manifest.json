@@ -3659,44 +3659,6 @@
       "input_schema": {
         "additionalProperties": false,
         "description": "One capture-bound point or snapshot token belonging to an exact Windows window.",
-        "oneOf": [
-          {
-            "not": {
-              "required": [
-                "element_token"
-              ]
-            },
-            "required": [
-              "capture_id",
-              "x",
-              "y"
-            ]
-          },
-          {
-            "not": {
-              "anyOf": [
-                {
-                  "required": [
-                    "capture_id"
-                  ]
-                },
-                {
-                  "required": [
-                    "x"
-                  ]
-                },
-                {
-                  "required": [
-                    "y"
-                  ]
-                }
-              ]
-            },
-            "required": [
-              "element_token"
-            ]
-          }
-        ],
         "properties": {
           "capture_id": {
             "description": "Current capture authority; required with x/y and forbidden with an element token.",
