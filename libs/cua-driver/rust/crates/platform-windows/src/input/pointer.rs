@@ -94,7 +94,7 @@ struct NativePointer {
     origin: (i32, i32),
     bounds: RECT,
     cancelled: Arc<AtomicBool>,
-    started: Instant,
+    started: Option<Instant>,
     delivered_point: Option<(i32, i32)>,
     arrival_pending: bool,
 }
@@ -142,6 +142,7 @@ impl NativePointer {
                         ));
                     }
                     self.delivered_point = Some(actual);
+                    self.started = Some(Instant::now());
                     self.arrival_pending = false;
                     return Ok(());
                 }
@@ -276,7 +277,7 @@ impl Backend for NativePointer {
         if self.cancelled.load(Ordering::Acquire) {
             return Err(failure("cancelled", "Cancelled before movement insertion"));
         }
-        self.started = Instant::now();
+        self.started = None;
         let inserted = unsafe {
             SendInput(
                 &[INPUT {
@@ -307,16 +308,24 @@ impl Backend for NativePointer {
     }
 
     fn wait_until(&mut self, elapsed_ms: u64) -> Result<(), Failure> {
+        let started = self.started.ok_or_else(|| {
+            failure(
+                "pointer_arrival_unproven",
+                "Dwell requires confirmed native arrival",
+            )
+        })?;
         let deadline = Duration::from_millis(elapsed_ms);
-        while self.started.elapsed() < deadline {
+        while started.elapsed() < deadline {
             self.check_target()?;
-            sleep((deadline - self.started.elapsed().min(deadline)).min(Duration::from_millis(10)));
+            sleep((deadline - started.elapsed().min(deadline)).min(Duration::from_millis(10)));
         }
         Ok(())
     }
 
     fn elapsed_ms(&self) -> u64 {
-        self.started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64
+        self.started
+            .map(|started| started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64)
+            .unwrap_or(0)
     }
 }
 
@@ -343,7 +352,7 @@ pub(crate) fn send_motion(
             map,
             bounds: geometry.bounds,
             cancelled,
-            started: Instant::now(),
+            started: None,
             delivered_point: None,
             arrival_pending: false,
         };

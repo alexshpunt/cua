@@ -14,11 +14,11 @@ pub struct Failure {
 pub trait Backend {
     /// Check cancellation, exact target, geometry and any live input interference.
     fn check_target(&mut self) -> Result<(), Failure>;
-    /// Insert exactly one native movement; reset the elapsed clock at insertion.
+    /// Insert exactly one native movement. Dwell starts once delivery is confirmed.
     fn move_once(&mut self) -> Result<(), Failure>;
     /// Wait to the monotonic offset after movement, stopping on interference.
     fn wait_until(&mut self, elapsed_ms: u64) -> Result<(), Failure>;
-    /// Monotonic elapsed milliseconds since movement, or zero before movement.
+    /// Monotonic dwell milliseconds since confirmed delivery, or zero before confirmation.
     fn elapsed_ms(&self) -> u64;
 }
 

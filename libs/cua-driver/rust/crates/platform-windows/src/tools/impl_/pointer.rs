@@ -106,7 +106,7 @@ impl Tool for MovePointerTool {
             return refusal("invalid_arguments", detail);
         }
         if args["delivery_mode"] != "foreground" {
-            return refusal("background_unavailable", "Real Windows pointer motion requires explicit foreground delivery after this refusal")
+            return ToolResult::error("Real Windows pointer motion requires explicit foreground delivery after this refusal")
                 .with_structured(json!({
                     "status":"refused", "code":"background_unavailable", "effect":"refused",
                     "attempted":false, "delivered":false, "activation_attempted":false,
