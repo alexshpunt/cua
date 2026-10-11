@@ -362,6 +362,9 @@ impl cua_driver_core::scroll::Backend for NativePointer {
         };
         // Insertion is deliberately separate per axis so cancellation retains a precise prefix.
         // Native ownership checking and SendInput are not atomic against external desktop changes.
+        if self.cancelled.load(Ordering::Acquire) {
+            return Err(failure("cancelled", "Cancelled before wheel insertion"));
+        }
         let inserted = unsafe {
             SendInput(
                 &[INPUT {
