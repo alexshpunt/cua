@@ -62,7 +62,8 @@ pub struct PointerMoveInput {
     /// Background refuses. Explicit foreground leaves the target and pointer in place.
     #[serde(default = "background")]
     pub delivery_mode: InputDeliveryMode,
-    /// Public session label, or omit for the authenticated transport's implicit session.
+    /// For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
+    /// Omit for the authenticated transport's implicit session.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(schema_with = "string_schema")]
     pub session: Option<String>,
