@@ -4857,7 +4857,7 @@
             "type": "integer"
           },
           "session": {
-            "description": "Repeat the same public session label for related calls, or omit for the implicit session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
             "type": "string"
           },
           "unit": {
