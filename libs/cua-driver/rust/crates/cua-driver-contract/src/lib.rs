@@ -22,6 +22,8 @@ mod displays;
 pub use displays::*;
 mod inputs;
 mod outputs;
+mod pointer;
+pub use pointer::*;
 mod semantic;
 #[cfg(test)]
 mod semantic_tests;
@@ -238,6 +240,7 @@ pub fn manifest() -> ContractManifest {
     tools.extend(desktop::contracts());
     tools.extend(displays::contracts());
     tools.extend(semantic::contracts());
+    tools.extend(pointer::contracts());
     tools.extend(cursor_tools::contracts());
     tools.extend(verification::contracts());
     tools.extend(visual::contracts());

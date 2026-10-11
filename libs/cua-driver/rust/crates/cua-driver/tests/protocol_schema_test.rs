@@ -218,6 +218,8 @@ fn tools_list_schema_shape() {
         "drag",
         #[cfg(target_os = "windows")]
         "hold_keys",
+        #[cfg(target_os = "windows")]
+        "move_pointer",
         "type_text",
         "press_key",
         "hotkey",
