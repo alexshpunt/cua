@@ -171,6 +171,7 @@ fn is_scoped_action(tool_name: &str) -> bool {
             | "parallel_mouse_drag"
             | "move_cursor"
             | "move_pointer"
+            | "scroll_at"
             | "type_text"
             | "type_text_chars"
             | "press_key"
@@ -336,7 +337,7 @@ mod tests {
     fn native_pointer_and_semantic_input_require_window_capture_scope() {
         let session = fresh("native-input");
         bind_session(&session, Some(CaptureScopePolicy::Desktop)).unwrap();
-        for tool in ["semantic_action", "move_pointer"] {
+        for tool in ["semantic_action", "move_pointer", "scroll_at"] {
             assert_eq!(
                 enforce_tool(tool, &json!({"session":session,"pid":42,"window_id":7}))
                     .unwrap_err()

@@ -1,4 +1,4 @@
-//! One exact-window native mouse move, followed by bounded hover dwell.
+//! Exact-window native mouse motion, followed by bounded dwell or checked wheel axes.
 //! Unlike click/drag helpers, this operation leaves focus and pointer in place.
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -10,8 +10,9 @@ use cua_driver_core::pointer::{self, Backend, Failure, Report};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE,
-    MOUSEEVENTF_MOVE, MOUSEEVENTF_MOVE_NOCOALESCE, MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VK_LBUTTON,
-    VK_MBUTTON, VK_RBUTTON, VK_XBUTTON1, VK_XBUTTON2,
+    MOUSEEVENTF_HWHEEL, MOUSEEVENTF_MOVE, MOUSEEVENTF_MOVE_NOCOALESCE, MOUSEEVENTF_VIRTUALDESK,
+    MOUSEEVENTF_WHEEL, MOUSEINPUT, VK_CONTROL, VK_LBUTTON, VK_LWIN, VK_MBUTTON, VK_MENU,
+    VK_RBUTTON, VK_RWIN, VK_SHIFT, VK_XBUTTON1, VK_XBUTTON2,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowRect,
@@ -76,8 +77,8 @@ impl PointerGeometry {
     }
 }
 /// Native delivery prefix plus independently measured pointer/focus effects.
-pub(crate) struct Outcome {
-    pub report: Report,
+pub(crate) struct Outcome<R = Report> {
+    pub report: R,
     pub activation_attempted: bool,
     pub foreground_before: u64,
     pub foreground_after: u64,
@@ -97,6 +98,7 @@ struct NativePointer {
     started: Option<Instant>,
     delivered_point: Option<(i32, i32)>,
     arrival_pending: bool,
+    block_modifiers: bool,
 }
 
 impl NativePointer {
@@ -208,6 +210,16 @@ impl NativePointer {
             return Err(failure(
                 "window_geometry_changed",
                 "Window geometry changed during pointer delivery",
+            ));
+        }
+        if self.block_modifiers
+            && [VK_CONTROL, VK_MENU, VK_SHIFT, VK_LWIN, VK_RWIN]
+                .iter()
+                .any(|key| unsafe { GetAsyncKeyState(i32::from(key.0)) } as u16 & 0x8000 != 0)
+        {
+            return Err(failure(
+                "input_busy",
+                "A modifier is held; wheel input could become zoom or another gesture",
             ));
         }
         if [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON, VK_XBUTTON1, VK_XBUTTON2]
@@ -329,36 +341,89 @@ impl Backend for NativePointer {
     }
 }
 
-/// Use one native admission. Never restore focus/pointer or synthesize keys/buttons.
-pub(crate) fn send_motion(
+impl cua_driver_core::scroll::Backend for NativePointer {
+    fn check_target(&mut self) -> Result<(), Failure> {
+        Backend::check_target(self)
+    }
+
+    fn move_once(&mut self) -> Result<(), Failure> {
+        Backend::move_once(self)
+    }
+
+    fn scroll_once(
+        &mut self,
+        axis: cua_driver_contract::ScrollAxis,
+        detents: i32,
+    ) -> Result<(), Failure> {
+        Backend::check_target(self)?;
+        let (flag, signed_delta) = match axis {
+            cua_driver_contract::ScrollAxis::X => (MOUSEEVENTF_HWHEEL, detents * 120),
+            cua_driver_contract::ScrollAxis::Y => (MOUSEEVENTF_WHEEL, -detents * 120),
+        };
+        // Insertion is deliberately separate per axis so cancellation retains a precise prefix.
+        // Native ownership checking and SendInput are not atomic against external desktop changes.
+        let inserted = unsafe {
+            SendInput(
+                &[INPUT {
+                    r#type: INPUT_MOUSE,
+                    Anonymous: INPUT_0 {
+                        mi: MOUSEINPUT {
+                            mouseData: signed_delta as u32,
+                            dwFlags: flag,
+                            ..Default::default()
+                        },
+                    },
+                }],
+                std::mem::size_of::<INPUT>() as i32,
+            )
+        };
+        if inserted != 1 {
+            return Err(failure(
+                "scroll_input_failed",
+                "SendInput inserted 0/1 wheel events",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn native_pointer(
     hwnd: u64,
     pid: u32,
     local_point: (i32, i32),
-    dwell_ms: u64,
     geometry: PointerGeometry,
     cancelled: Arc<AtomicBool>,
     map: MapPoint,
-) -> Outcome {
+    block_modifiers: bool,
+) -> NativePointer {
+    NativePointer {
+        hwnd,
+        pid,
+        local_point,
+        origin: geometry.origin,
+        map,
+        bounds: geometry.bounds,
+        cancelled,
+        started: None,
+        delivered_point: None,
+        arrival_pending: false,
+        block_modifiers,
+    }
+}
+
+fn run_operation<R>(
+    mut native: NativePointer,
+    execute: impl FnOnce(&mut NativePointer) -> R,
+    refused: impl FnOnce(Failure) -> R,
+) -> Outcome<R> {
     let foreground_before = foreground_window();
     let pointer_before = cursor_position();
     let mut activation_attempted = false;
     let mut pointer_target = None;
     let result = (|| {
-        let mut native = NativePointer {
-            hwnd,
-            pid,
-            local_point,
-            origin: geometry.origin,
-            map,
-            bounds: geometry.bounds,
-            cancelled,
-            started: None,
-            delivered_point: None,
-            arrival_pending: false,
-        };
         native.check_identity()?;
         pointer_target = Some(native.screen_point()?);
-        if let Some(error) = crate::input::post_message_blocked_by_uipi(hwnd) {
+        if let Some(error) = crate::input::post_message_blocked_by_uipi(native.hwnd) {
             return Err(failure("input_integrity_denied", error));
         }
         native.check_identity()?;
@@ -369,30 +434,24 @@ pub(crate) fn send_motion(
                 "Cancelled before foreground activation",
             ));
         }
-        if foreground_before != hwnd {
+        if foreground_before != native.hwnd {
             activation_attempted = true;
-            // The assisted helper injects VK_NONAME. Pointer-only actions must not.
-            if !unsafe { crate::input::force_foreground_attached(HWND(hwnd as *mut _)) } {
+            // The assisted helper injects VK_NONAME. These actions never inject keys.
+            if !unsafe { crate::input::force_foreground_attached(HWND(native.hwnd as *mut _)) } {
                 return Err(failure(
                     "foreground_unavailable",
                     "Exact target did not become foreground",
                 ));
             }
         }
-        let report = pointer::execute(dwell_ms, &mut native);
+        let report = execute(&mut native);
         if let Some(confirmed) = native.delivered_point {
             pointer_target = Some(confirmed);
         }
         Ok(report)
     })();
-    let report = result.unwrap_or_else(|error| Report {
-        attempted: false,
-        delivered: false,
-        dwell_elapsed_ms: 0,
-        failure: Some(error),
-    });
     Outcome {
-        report,
+        report: result.unwrap_or_else(refused),
         activation_attempted,
         foreground_before,
         foreground_after: foreground_window(),
@@ -400,4 +459,49 @@ pub(crate) fn send_motion(
         pointer_after: cursor_position(),
         pointer_target,
     }
+}
+
+/// Use one native admission. Never restore focus/pointer or synthesize keys/buttons.
+pub(crate) fn send_motion(
+    hwnd: u64,
+    pid: u32,
+    local_point: (i32, i32),
+    dwell_ms: u64,
+    geometry: PointerGeometry,
+    cancelled: Arc<AtomicBool>,
+    map: MapPoint,
+) -> Outcome {
+    run_operation(
+        native_pointer(hwnd, pid, local_point, geometry, cancelled, map, false),
+        |native| pointer::execute(dwell_ms, native),
+        |error| Report {
+            attempted: false,
+            delivered: false,
+            dwell_elapsed_ms: 0,
+            failure: Some(error),
+        },
+    )
+}
+
+/// Move once to an admitted point, then insert bounded wheel deltas with no restoration.
+pub(crate) fn send_scroll(
+    hwnd: u64,
+    pid: u32,
+    local_point: (i32, i32),
+    deltas: (i32, i32),
+    geometry: PointerGeometry,
+    cancelled: Arc<AtomicBool>,
+    map: MapPoint,
+) -> Outcome<cua_driver_core::scroll::Report> {
+    run_operation(
+        native_pointer(hwnd, pid, local_point, geometry, cancelled, map, true),
+        |native| cua_driver_core::scroll::execute(deltas.0, deltas.1, native),
+        |error| cua_driver_core::scroll::Report {
+            pointer_attempted: false,
+            pointer_delivered: false,
+            attempted_axes: Vec::new(),
+            delivered_axes: Vec::new(),
+            failure: Some(error),
+        },
+    )
 }
