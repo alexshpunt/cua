@@ -981,6 +981,7 @@ pub fn load_manifest(path: &Path) -> Result<SessionManifest, String> {
                 "right_click",
                 "drag",
                 "move_pointer",
+                "scroll_at",
                 "scroll",
                 "type_text",
                 "press_key",
@@ -1989,7 +1990,13 @@ allow:
         assert!(loaded.is_idle_expired());
         assert!(loaded.commit_authorized_dispatch().is_err());
 
-        for bypass_tool in ["page", "verify_state", "semantic_action", "move_pointer"] {
+        for bypass_tool in [
+            "page",
+            "verify_state",
+            "semantic_action",
+            "move_pointer",
+            "scroll_at",
+        ] {
             let policy = format!(
                 r#"
 version: 1

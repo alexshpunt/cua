@@ -220,6 +220,8 @@ fn tools_list_schema_shape() {
         "hold_keys",
         #[cfg(target_os = "windows")]
         "move_pointer",
+        #[cfg(target_os = "windows")]
+        "scroll_at",
         "type_text",
         "press_key",
         "hotkey",
