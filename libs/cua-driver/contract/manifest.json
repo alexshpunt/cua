@@ -2317,6 +2317,91 @@
       }
     },
     {
+      "name": "get_window_status",
+      "description": "Use get_window_status to read minimized, visible, foreground and separately measured keyboard-focus state of one exact Windows window without capturing pixels, walking a UI tree or changing activation. The returned state reference grants one-use restore authority, not pixel or typing authority.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "window.state"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": true
+      },
+      "schema_mode": "canonical_runtime",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Read native state without pixels, a UI tree, activation or input.",
+        "properties": {
+          "pid": {
+            "description": "Process that owns the exact target window.",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "Exact top-level native window identifier.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id"
+        ],
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "foreground_at_target": {
+            "type": "boolean"
+          },
+          "keyboard_focus_at_target": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "minimized": {
+            "type": "boolean"
+          },
+          "pid": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "state_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "visible": {
+            "type": "boolean"
+          },
+          "window_id": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id",
+          "state_id",
+          "minimized",
+          "visible",
+          "foreground_at_target"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "hotkey",
       "description": "Press a key chord in the foreground desktop application.",
       "platforms": [
@@ -4529,6 +4614,137 @@
         "required": [
           "effect",
           "route"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "restore_window",
+      "description": "Use restore_window to restore and explicitly activate one exact Windows window. Native restoration and activation inject no keyboard or pointer input. Success leaves the target active. Do not replay an interrupted or uncertain request. Read the target again for pixels; native state confirmation does not establish fresh paint.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "window.restore"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false,
+        "open_world": true
+      },
+      "schema_mode": "canonical_runtime",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "One fresh, narrowly scoped state reference; no screenshot coordinates are accepted.",
+        "properties": {
+          "pid": {
+            "description": "Process that owns the exact target window.",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
+            "type": "string"
+          },
+          "state_id": {
+            "description": "Fresh one-use native window-state admission, not a capture or element token.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "window_id": {
+            "description": "Exact top-level native window identifier.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id",
+          "state_id"
+        ],
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "activation_attempted": {
+            "type": "boolean"
+          },
+          "activation_succeeded": {
+            "type": "boolean"
+          },
+          "effect": {
+            "enum": [
+              "confirmed"
+            ],
+            "type": "string"
+          },
+          "foreground_at_target": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "foreground_changed": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "keyboard_focus_at_target": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "pid": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "restore_attempted": {
+            "type": "boolean"
+          },
+          "restore_requested": {
+            "type": "boolean"
+          },
+          "restored": {
+            "type": "boolean"
+          },
+          "route": {
+            "enum": [
+              "native"
+            ],
+            "type": "string"
+          },
+          "state_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "visible": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "window_id": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id",
+          "state_id",
+          "restore_attempted",
+          "restore_requested",
+          "restored",
+          "activation_attempted",
+          "activation_succeeded",
+          "route",
+          "effect"
         ],
         "type": "object"
       }

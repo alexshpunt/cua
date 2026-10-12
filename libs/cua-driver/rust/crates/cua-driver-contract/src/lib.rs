@@ -34,8 +34,10 @@ pub use semantic::*;
 mod shell_desktop;
 mod verification;
 mod visual;
+mod window_restore;
 mod windows;
 pub use shell_desktop::{DesktopQueryError, DesktopQueryErrorCode, VirtualDesktopMembership};
+pub use window_restore::*;
 pub use windows::*;
 
 pub(crate) fn schema_settings() -> SchemaSettings {
@@ -243,6 +245,7 @@ pub fn manifest() -> ContractManifest {
     tools.extend(displays::contracts());
     tools.extend(semantic::contracts());
     tools.extend(pointer::contracts());
+    tools.extend(window_restore::contracts());
     tools.extend(scroll::contracts());
     tools.extend(cursor_tools::contracts());
     tools.extend(verification::contracts());

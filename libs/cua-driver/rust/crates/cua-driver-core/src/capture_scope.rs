@@ -195,6 +195,8 @@ fn tool_scope(tool_name: &str, args: &Value) -> ToolScope {
     if matches!(
         tool_name,
         "get_window_state"
+            | "get_window_status"
+            | "restore_window"
             | "verify_state"
             | "get_accessibility_tree"
             | "get_app_state"
@@ -337,7 +339,13 @@ mod tests {
     fn native_pointer_and_semantic_input_require_window_capture_scope() {
         let session = fresh("native-input");
         bind_session(&session, Some(CaptureScopePolicy::Desktop)).unwrap();
-        for tool in ["semantic_action", "move_pointer", "scroll_at"] {
+        for tool in [
+            "semantic_action",
+            "move_pointer",
+            "scroll_at",
+            "get_window_status",
+            "restore_window",
+        ] {
             assert_eq!(
                 enforce_tool(tool, &json!({"session":session,"pid":42,"window_id":7}))
                     .unwrap_err()

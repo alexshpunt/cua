@@ -135,6 +135,8 @@ mod capture_admission;
 mod clipboard;
 #[cfg(any(target_os = "windows", test))]
 mod persistent_wgc;
+#[cfg(any(target_os = "windows", test))]
+mod window_restore_state;
 
 #[cfg(target_os = "windows")]
 pub mod wgc;
