@@ -290,6 +290,7 @@ const DESKTOP_INPUT_OPERATIONS: &[&str] = &[
     "set_value",
     "semantic_action",
     "bring_to_front",
+    "restore_window",
     "set_window_frame",
 ];
 const DESKTOP_INPUT_SCOPE_KEYS: &[&str] = &[
@@ -874,6 +875,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         // Public driver/OS metadata with no user-content payload.
         "get_screen_size"
         | "get_cursor_position"
+        | "get_window_status"
         | "get_config"
         | "get_session"
         | "list_sessions"
@@ -907,6 +909,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         | "invoke_menu"
         | "launch_app"
         | "bring_to_front"
+        | "restore_window"
         | "set_window_frame"
         | "start_session"
         | "end_session"
@@ -1212,6 +1215,8 @@ fn enforce_hard_invariants(
             | "semantic_action"
             | "kill_app"
             | "bring_to_front"
+            | "restore_window"
+            | "get_window_status"
             | "get_accessibility_tree"
             | "get_window_state"
             | "verify_state"
@@ -1892,7 +1897,7 @@ mod tests {
     #[test]
     fn native_pointer_input_uses_desktop_authorization_and_refuses_its_own_process() {
         let args = serde_json::json!({"pid":42,"window_id":7,"capture_id":"current","x":1,"y":2});
-        for tool in ["move_pointer", "scroll_at"] {
+        for tool in ["move_pointer", "scroll_at", "restore_window"] {
             assert_eq!(
                 enforcement_adapters_for_call(tool, &args)
                     .into_iter()

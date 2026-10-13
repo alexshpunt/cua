@@ -5,6 +5,7 @@ use cua_driver_core::action_record::ActionTransport;
 
 mod pointer;
 mod scroll;
+mod window_restore;
 
 /// Pin the agent-cursor overlay above `hwnd` in the z-order, normalising to
 /// the **root** ancestor so the pin lands on the window that actually appears
@@ -631,6 +632,7 @@ pub struct ToolState {
     pub config: Arc<RwLock<DriverConfig>>,
     capture_bridge: Option<Arc<crate::capture_admission::WindowsCaptureBridge>>,
     persistent_wgc: Arc<crate::persistent_wgc::Manager>,
+    window_status: Arc<window_restore::Manager>,
 }
 
 impl ToolState {
@@ -642,6 +644,7 @@ impl ToolState {
             cursor_registry: Arc::new(CursorRegistry::new()),
             config: Arc::new(RwLock::new(load_driver_config())),
             persistent_wgc: Arc::new(crate::persistent_wgc::Manager::new()),
+            window_status: Arc::new(window_restore::Manager::new()),
             capture_bridge: capture_service
                 .map(crate::capture_admission::WindowsCaptureBridge::new),
         })
@@ -10457,6 +10460,18 @@ pub fn build_registry_with_provider(
     r.register(Box::new(KillAppTool));
     let pid_window_candidates: WindowTargetCandidates = Arc::new(pid_window_target_candidates);
     r.register(pid_window_guarded(BringToFrontTool, &pid_window_candidates));
+    r.register(pid_window_guarded(
+        window_restore::GetWindowStatusTool {
+            state: state.clone(),
+        },
+        &pid_window_candidates,
+    ));
+    r.register(pid_window_guarded(
+        window_restore::RestoreWindowTool {
+            state: state.clone(),
+        },
+        &pid_window_candidates,
+    ));
     r.register(Box::new(SetWindowFrameTool));
     r.register(Box::new(InvokeMenuTool));
     r.register(Box::new(DebugWindowInfoTool));
