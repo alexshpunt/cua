@@ -1948,7 +1948,10 @@
                 "type": "integer"
               },
               "keyboard_focus_at_target": {
-                "type": "boolean"
+                "type": [
+                  "boolean",
+                  "null"
+                ]
               },
               "maximized": {
                 "type": "boolean"
@@ -3874,7 +3877,10 @@
                 "type": "integer"
               },
               "keyboard_focus_at_target": {
-                "type": "boolean"
+                "type": [
+                  "boolean",
+                  "null"
+                ]
               },
               "maximized": {
                 "type": "boolean"
@@ -3993,7 +3999,10 @@
               "foreground_window",
               "virtual_desktop"
             ],
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "effect": {
             "enum": [
@@ -4059,7 +4068,10 @@
                 "type": "integer"
               },
               "keyboard_focus_at_target": {
-                "type": "boolean"
+                "type": [
+                  "boolean",
+                  "null"
+                ]
               },
               "maximized": {
                 "type": "boolean"
@@ -4178,7 +4190,10 @@
               "foreground_window",
               "virtual_desktop"
             ],
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "operation": {
             "enum": [
@@ -4224,7 +4239,10 @@
               "width",
               "height"
             ],
-            "type": "object"
+            "type": [
+              "object",
+              "null"
+            ]
           },
           "route": {
             "enum": [

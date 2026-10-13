@@ -220,6 +220,100 @@ mod tests {
         );
     }
 
+    fn window_control_sample() -> Value {
+        json!({
+            "bounds": {"x": 139, "y": 120, "width": 840, "height": 1000},
+            "bounds_source": "dwm_visible_frame",
+            "coordinate_space": "windows_desktop_pixels",
+            "minimized": false, "maximized": false, "visible": true,
+            "foreground_at_target": true, "foreground_window": 91,
+            "keyboard_focus_at_target": null,
+            "virtual_desktop": {
+                "desktop_id": "40497ffa-fd1a-4f18-8ae0-bcdf44d1dc26",
+                "desktop_id_error": null, "on_current_desktop": true,
+                "on_current_desktop_error": null, "sampled_at_unix_ms": 1
+            }
+        })
+    }
+
+    fn management_receipt(operation: &str) -> Value {
+        let before = window_control_sample();
+        let mut observed = before.clone();
+        if operation == "minimize" {
+            observed["minimized"] = json!(true);
+        } else if operation == "maximize" {
+            observed["maximized"] = json!(true);
+        }
+        json!({
+            "pid": 42, "window_id": 91, "state_id": "management-wire-test",
+            "operation": operation, "requested_bounds": null,
+            "mutation_attempted": true, "mutation_accepted": true,
+            "postcondition_confirmed": true, "before": before, "observed": observed,
+            "route": "native", "effect": "confirmed"
+        })
+    }
+
+    fn window_success(structured: Value) -> Value {
+        json!({"content": [], "isError": false, "structuredContent": structured})
+    }
+
+    #[test]
+    fn window_management_wire_accepts_unknown_keyboard_focus() {
+        let success = window_success(json!({
+            "pid": 42, "window_id": 91, "state_id": "management-wire-test",
+            "state": window_control_sample()
+        }));
+        let result = conforming_tool_result("get_window_control_state", success.clone());
+        assert_conforms("get_window_control_state", &result);
+        assert_eq!(result, success);
+    }
+
+    #[test]
+    fn window_management_wire_accepts_non_frame_receipts() {
+        for operation in ["focus", "minimize", "maximize"] {
+            for focus in [Value::Null, json!(true)] {
+                let mut structured = management_receipt(operation);
+                structured["before"]["keyboard_focus_at_target"] = focus.clone();
+                structured["observed"]["keyboard_focus_at_target"] = focus;
+                assert!(validate_success_output("manage_window", structured.clone()).is_ok());
+                let success = window_success(structured);
+                let result = conforming_tool_result("manage_window", success.clone());
+                assert_conforms("manage_window", &result);
+                assert_eq!(result, success, "valid {operation} receipt rejected");
+            }
+        }
+    }
+
+    #[test]
+    fn window_management_wire_requires_nullable_keys_and_valid_postconditions() {
+        let mut cases = Vec::new();
+        for key in ["requested_bounds", "before", "observed"] {
+            let mut receipt = management_receipt("focus");
+            receipt.as_object_mut().unwrap().remove(key);
+            cases.push(receipt);
+        }
+        let mut missing_focus = management_receipt("focus");
+        missing_focus["observed"]
+            .as_object_mut()
+            .unwrap()
+            .remove("keyboard_focus_at_target");
+        cases.push(missing_focus);
+        let mut missing_before = management_receipt("focus");
+        missing_before["before"] = Value::Null;
+        cases.push(missing_before);
+        let mut wrong_postcondition = management_receipt("minimize");
+        wrong_postcondition["observed"]["minimized"] = json!(false);
+        cases.push(wrong_postcondition);
+        for receipt in cases {
+            let result = conforming_tool_result("manage_window", window_success(receipt));
+            assert_conforms("manage_window", &result);
+            assert_eq!(result["isError"], true);
+            assert_eq!(
+                result["structuredContent"]["code"],
+                TOOL_OUTPUT_INVALID_CODE
+            );
+        }
+    }
     /// The shape this boundary exists for: the bare diagnostic the transport
     /// paths invent satisfies neither arm, which is what produced the `-32602`
     /// reports.

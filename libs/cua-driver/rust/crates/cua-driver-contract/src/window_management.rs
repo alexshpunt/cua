@@ -16,6 +16,15 @@ where
     Option::<T>::deserialize(deserializer)
 }
 
+fn nullable_bool_schema(generator: &mut SchemaGenerator) -> Schema {
+    Option::<bool>::json_schema(generator)
+}
+fn nullable_bounds_schema(generator: &mut SchemaGenerator) -> Schema {
+    Option::<DesktopWindowBounds>::json_schema(generator)
+}
+fn nullable_sample_schema(generator: &mut SchemaGenerator) -> Schema {
+    Option::<WindowControlSample>::json_schema(generator)
+}
 fn validate_identity(pid: u32, window_id: u64) -> Result<(), String> {
     if pid == 0 || pid > i32::MAX as u32 || window_id == 0 {
         return Err("Exact positive PID and window ID are required".into());
@@ -119,7 +128,7 @@ pub struct WindowControlSample {
     pub foreground_at_target: bool,
     /// Whether native keyboard focus belongs to the target; null means unavailable.
     #[serde(deserialize_with = "required_nullable")]
-    #[schemars(required)]
+    #[schemars(required, schema_with = "nullable_bool_schema")]
     pub keyboard_focus_at_target: Option<bool>,
     /// Independently measured foreground HWND; zero means no foreground window.
     pub foreground_window: u64,
@@ -318,7 +327,7 @@ pub struct ManagementOutput {
     pub operation: WindowManagementOperation,
     /// Complete requested frame in the before sample's bounds source; null for non-frame operations.
     #[serde(deserialize_with = "required_nullable")]
-    #[schemars(required)]
+    #[schemars(required, schema_with = "nullable_bounds_schema")]
     pub requested_bounds: Option<DesktopWindowBounds>,
     /// A native mutation was submitted or its submission outcome is uncertain.
     pub mutation_attempted: bool,
@@ -328,11 +337,11 @@ pub struct ManagementOutput {
     pub postcondition_confirmed: bool,
     /// Pre-request native measurements; no retained pixel authority is implied.
     #[serde(deserialize_with = "required_nullable")]
-    #[schemars(required)]
+    #[schemars(required, schema_with = "nullable_sample_schema")]
     pub before: Option<WindowControlSample>,
     /// Post-request measured native effects, not fresh paint or permanent foreground.
     #[serde(deserialize_with = "required_nullable")]
-    #[schemars(required)]
+    #[schemars(required, schema_with = "nullable_sample_schema")]
     pub observed: Option<WindowControlSample>,
     /// Native window APIs, without input fallback.
     pub route: WindowManagementRoute,
