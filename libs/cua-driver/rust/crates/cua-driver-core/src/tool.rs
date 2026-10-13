@@ -276,7 +276,7 @@ fn advertised_runtime_input_schema(tool_name: &str, schema: &Value) -> Value {
 ///   `accessibility.element_tokens` (Surface 6 — tool accepts the
 ///   opaque `element_token` arg)
 /// - `app.launch`, `app.list`, `app.kill`, `window.list`,
-///   `window.activate`, `window.state`, `window.restore`, `window.frame.set`, `window.debug_info`
+///   `window.activate`, `window.state`, `window.manage`, `window.restore`, `window.frame.set`, `window.debug_info`
 /// - `system.permissions.tcc`,
 ///   `system.permissions.tcc.accessibility`,
 ///   `system.permissions.tcc.screen_recording`
@@ -2157,7 +2157,10 @@ impl ToolRegistry {
             // checked against its approved manifest.
             return Ok(());
         }
-        let delivery_mode = if matches!(tool_name, "bring_to_front" | "restore_window") {
+        let delivery_mode = if matches!(
+            tool_name,
+            "bring_to_front" | "restore_window" | "manage_window"
+        ) {
             "foreground"
         } else {
             args.get("delivery_mode")
@@ -2891,6 +2894,7 @@ fn is_physical_desktop_action(tool: &str) -> bool {
             | "semantic_action"
             | "bring_to_front"
             | "restore_window"
+            | "manage_window"
             | "set_window_frame"
     )
 }
@@ -2899,8 +2903,8 @@ fn requires_desktop_coordination(tool: &str, args: &Value, independent_lane: boo
     if !is_physical_desktop_action(tool) {
         return false;
     }
-    // Restoration is explicitly foreground even without an input-delivery parameter.
-    if tool == "restore_window" {
+    // Window-state transitions share the desktop lane even without an input-delivery parameter.
+    if matches!(tool, "restore_window" | "manage_window") {
         return true;
     }
     // Only an implementation-attested, exact-window background route can
@@ -5523,25 +5527,21 @@ resources:
         }
     }
 
-    // Restoration explicitly activates and must never be admitted as independent background input.
+    // State changes can affect foreground even without a delivery-mode parameter.
     #[test]
-    fn native_restore_always_keeps_desktop_coordination() {
+    fn native_window_management_always_keeps_desktop_coordination() {
         let args = serde_json::json!({"pid":10,"window_id":20,"state_id":"current"});
-        assert!(super::requires_desktop_coordination(
-            "restore_window",
-            &args,
-            true
-        ));
-        assert!(super::requires_desktop_coordination(
-            "restore_window",
-            &args,
-            false
-        ));
-        assert!(!super::requires_desktop_coordination(
-            "get_window_status",
-            &args,
-            false
-        ));
+        for tool in ["restore_window", "manage_window"] {
+            for operation in ["move", "resize", "minimize", "maximize", "focus"] {
+                let mut request = args.clone();
+                request["operation"] = serde_json::json!(operation);
+                assert!(super::requires_desktop_coordination(tool, &request, true));
+                assert!(super::requires_desktop_coordination(tool, &request, false));
+            }
+        }
+        for tool in ["get_window_status", "get_window_control_state"] {
+            assert!(!super::requires_desktop_coordination(tool, &args, false));
+        }
     }
     #[test]
     fn independent_input_requires_adapter_attestation_and_an_exact_background_window() {
@@ -6016,7 +6016,9 @@ mod capability_tests {
         "list_windows",
         "bring_to_front",
         "get_window_status",
+        "get_window_control_state",
         "restore_window",
+        "manage_window",
         "set_window_frame",
         "debug_window_info",
         // permissions / config
@@ -6104,6 +6106,7 @@ mod capability_tests {
         "window.list",
         "window.activate",
         "window.state",
+        "window.manage",
         "window.restore",
         "window.frame.set",
         "window.debug_info",

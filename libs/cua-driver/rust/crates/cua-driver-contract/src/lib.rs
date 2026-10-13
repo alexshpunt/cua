@@ -34,7 +34,9 @@ pub use semantic::*;
 mod shell_desktop;
 mod verification;
 mod visual;
+mod window_management;
 mod window_restore;
+pub use window_management::*;
 mod windows;
 pub use shell_desktop::{DesktopQueryError, DesktopQueryErrorCode, VirtualDesktopMembership};
 pub use window_restore::*;
@@ -246,6 +248,7 @@ pub fn manifest() -> ContractManifest {
     tools.extend(semantic::contracts());
     tools.extend(pointer::contracts());
     tools.extend(window_restore::contracts());
+    tools.extend(window_management::contracts());
     tools.extend(scroll::contracts());
     tools.extend(cursor_tools::contracts());
     tools.extend(verification::contracts());

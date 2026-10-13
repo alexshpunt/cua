@@ -23,6 +23,8 @@ pub(crate) struct Target {
 pub(crate) struct Admission<L> {
     pub target: Target,
     pub minimized: bool,
+    /// Only a control-state Read admits management; restore-only state cannot borrow it.
+    pub allow_management: bool,
     pub lifetime: L,
 }
 
@@ -37,6 +39,7 @@ pub(crate) enum Refusal {
     Missing,
     TargetMismatch,
     Expired,
+    NotControl,
 }
 
 impl Refusal {
@@ -45,6 +48,7 @@ impl Refusal {
             Self::Missing => "window_state_unavailable",
             Self::TargetMismatch => "window_state_target_mismatch",
             Self::Expired => "window_state_expired",
+            Self::NotControl => "window_control_state_required",
         }
     }
 }
@@ -73,6 +77,14 @@ impl<L: Lifetime> Store<L> {
         }
     }
 
+    /// Consume only management authority. A restore-only lease is retired on refusal.
+    pub fn consume_control(&mut self, id: &str, target: &Target) -> Result<Admission<L>, Refusal> {
+        let admitted = self.consume(id, target)?;
+        if !admitted.allow_management {
+            return Err(Refusal::NotControl);
+        }
+        Ok(admitted)
+    }
     /// Consume a matching reference once, then check the retained native lifetime.
     /// A foreign session cannot consume or discover another session's reference.
     pub fn consume(&mut self, id: &str, target: &Target) -> Result<Admission<L>, Refusal> {
@@ -126,6 +138,7 @@ mod tests {
             Admission {
                 target,
                 minimized: true,
+                allow_management: false,
                 lifetime: Lease {
                     alive: alive.clone(),
                     drops: drops.clone(),
@@ -136,6 +149,50 @@ mod tests {
         )
     }
 
+    #[test]
+    fn restore_only_state_cannot_authorize_management_and_is_consumed_on_refusal() {
+        let mut store = Store::default();
+        let owner = target("transport-a", 10);
+        let (state, _, drops) = lease(owner.clone());
+        store.issue("restore".into(), state);
+        assert!(matches!(
+            store.consume_control("restore", &owner),
+            Err(Refusal::NotControl)
+        ));
+        assert_eq!(Refusal::NotControl.code(), "window_control_state_required");
+        assert_eq!(drops.get(), 1);
+        assert!(matches!(
+            store.consume("restore", &owner),
+            Err(Refusal::Missing)
+        ));
+    }
+
+    #[test]
+    fn control_state_uses_the_same_cache_for_management_or_existing_restore_once() {
+        let mut store = Store::default();
+        let owner = target("transport-a", 10);
+        let (mut control, _, _) = lease(owner.clone());
+        control.allow_management = true;
+        store.issue("control".into(), control);
+        assert!(
+            store
+                .consume_control("control", &owner)
+                .unwrap()
+                .allow_management
+        );
+        assert!(matches!(
+            store.consume("control", &owner),
+            Err(Refusal::Missing)
+        ));
+        let (mut restore, _, _) = lease(owner.clone());
+        restore.allow_management = true;
+        store.issue("restore".into(), restore);
+        assert!(store.consume("restore", &owner).unwrap().minimized);
+        assert!(matches!(
+            store.consume_control("restore", &owner),
+            Err(Refusal::Missing)
+        ));
+    }
     #[test]
     fn consumed_lifetime_stays_owned_until_the_worker_drops_it() {
         let mut store = Store::default();

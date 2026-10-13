@@ -5,6 +5,7 @@ on:
     branches:
       - feat/lpt-730-coordinate-scroll
       - feat/lpt-703-window-restore
+      - feat/lpt-731-window-management
   workflow_dispatch:
     inputs:
       source_ref:
@@ -103,6 +104,16 @@ jobs:
           cargo test --locked -p cua-driver-core --test window_restore_execution 2>&1 |
             Tee-Object build-evidence/window-restore-execution-tests.log
           if ($LASTEXITCODE -ne 0) { throw "window restore execution tests failed: $LASTEXITCODE" }
+      - name: Run window management contract and execution tests
+        env:
+          CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
+        run: |
+          cargo test --locked -p cua-driver-contract --test window_management_contract 2>&1 |
+            Tee-Object build-evidence/window-management-contract-tests.log
+          if ($LASTEXITCODE -ne 0) { throw "window management contract tests failed: $LASTEXITCODE" }
+          cargo test --locked -p cua-driver-core --test window_management_execution 2>&1 |
+            Tee-Object build-evidence/window-management-execution-tests.log
+          if ($LASTEXITCODE -ne 0) { throw "window management execution tests failed: $LASTEXITCODE" }
       - name: Build isolated persistent WGC probe when present
         if: hashFiles('libs/cua-driver/rust/crates/platform-windows/examples/persistent-wgc-probe.rs') != ''
         run: |
