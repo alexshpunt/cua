@@ -983,7 +983,9 @@ pub fn load_manifest(path: &Path) -> Result<SessionManifest, String> {
                 "move_pointer",
                 "scroll_at",
                 "get_window_status",
+                "get_window_control_state",
                 "restore_window",
+                "manage_window",
                 "scroll",
                 "type_text",
                 "press_key",
@@ -1999,7 +2001,9 @@ allow:
             "move_pointer",
             "scroll_at",
             "get_window_status",
+            "get_window_control_state",
             "restore_window",
+            "manage_window",
         ] {
             let policy = format!(
                 r#"

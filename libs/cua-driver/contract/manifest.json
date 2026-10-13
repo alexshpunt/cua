@@ -1847,6 +1847,247 @@
       }
     },
     {
+      "name": "get_window_control_state",
+      "description": "Use get_window_control_state to read exact Windows window geometry and state without pixels, a UI walk, activation or input. The one-use management state grants neither pointer nor typing authority.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "window.state"
+      ],
+      "annotations": {
+        "read_only": true,
+        "destructive": false,
+        "idempotent": false,
+        "open_world": true
+      },
+      "schema_mode": "canonical_runtime",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "Read exact-window metadata and issue one management admission without capture or activation.",
+        "properties": {
+          "pid": {
+            "description": "Process that owns the exact sampled window.",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
+            "type": "string"
+          },
+          "window_id": {
+            "description": "Exact top-level native window identifier; do not substitute another window of the process.",
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id"
+        ],
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "pid": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "state": {
+            "additionalProperties": false,
+            "properties": {
+              "bounds": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "width": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "x": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "y": {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "type": "object"
+              },
+              "bounds_source": {
+                "enum": [
+                  "dwm_visible_frame",
+                  "window_rect"
+                ],
+                "type": "string"
+              },
+              "coordinate_space": {
+                "enum": [
+                  "windows_desktop_pixels"
+                ],
+                "type": "string"
+              },
+              "foreground_at_target": {
+                "type": "boolean"
+              },
+              "foreground_window": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "keyboard_focus_at_target": {
+                "type": "boolean"
+              },
+              "maximized": {
+                "type": "boolean"
+              },
+              "minimized": {
+                "type": "boolean"
+              },
+              "virtual_desktop": {
+                "additionalProperties": false,
+                "properties": {
+                  "desktop_id": {
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "desktop_id_error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "com_initialization_failed",
+                          "manager_unavailable",
+                          "window_unavailable",
+                          "desktop_id_query_failed",
+                          "current_desktop_query_failed",
+                          "invalid_desktop_id",
+                          "query_worker_failed"
+                        ],
+                        "type": "string"
+                      },
+                      "hresult": {
+                        "format": "int32",
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ],
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "on_current_desktop": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "on_current_desktop_error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "com_initialization_failed",
+                          "manager_unavailable",
+                          "window_unavailable",
+                          "desktop_id_query_failed",
+                          "current_desktop_query_failed",
+                          "invalid_desktop_id",
+                          "query_worker_failed"
+                        ],
+                        "type": "string"
+                      },
+                      "hresult": {
+                        "format": "int32",
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ],
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "sampled_at_unix_ms": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "desktop_id",
+                  "on_current_desktop",
+                  "desktop_id_error",
+                  "on_current_desktop_error",
+                  "sampled_at_unix_ms"
+                ],
+                "type": "object"
+              },
+              "visible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "bounds",
+              "bounds_source",
+              "coordinate_space",
+              "minimized",
+              "maximized",
+              "visible",
+              "foreground_at_target",
+              "keyboard_focus_at_target",
+              "foreground_window",
+              "virtual_desktop"
+            ],
+            "type": "object"
+          },
+          "state_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "window_id": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id",
+          "state_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "get_window_state",
       "description": "Observe an exact native window with snapshot-bound elements and optional screenshots.",
       "platforms": [
@@ -3471,6 +3712,548 @@
         },
         "required": [
           "windows"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "manage_window",
+      "description": "Use manage_window to move, resize, minimize, maximize or focus one admitted Windows window through native APIs. Focus never restores a minimized target or injects keys. No implicit desktop switch or previous foreground restoration occurs. Retain interrupted prefixes, never replay an uncertain request, and read state again before deciding.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "window.manage"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": true,
+        "idempotent": false,
+        "open_world": true
+      },
+      "schema_mode": "canonical_runtime",
+      "input_schema": {
+        "additionalProperties": false,
+        "description": "A source-bound one-use operation, with no input-event, delivery-mode or sequence fields.",
+        "properties": {
+          "height": {
+            "description": "For resize, supply the height between 1 and 32767 desktop pixels. Omit for other operations.",
+            "maximum": 32767,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "operation": {
+            "description": "Choose one native operation. Focus never restores a minimized window; maximize may activate it.",
+            "enum": [
+              "move",
+              "resize",
+              "minimize",
+              "maximize",
+              "focus"
+            ],
+            "type": "string"
+          },
+          "pid": {
+            "description": "Process that owns the admitted exact window.",
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session": {
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
+            "type": "string"
+          },
+          "state_id": {
+            "description": "Submit the fresh one-use get_window_control_state reference, not a screenshot or element token.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "unit": {
+            "description": "For move or resize, supply windows_desktop_pixels and use the state's declared bounds source. Omit otherwise; overview and CSS coordinates are not accepted.",
+            "enum": [
+              "windows_desktop_pixels"
+            ],
+            "type": "string"
+          },
+          "width": {
+            "description": "For resize, supply the width between 1 and 32767 desktop pixels. Omit for other operations.",
+            "maximum": 32767,
+            "minimum": 1,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "window_id": {
+            "description": "Exact native window from the sampled control state.",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "x": {
+            "description": "For move, supply the left desktop-pixel position between -100000 and 100000. Omit for other operations.",
+            "maximum": 100000,
+            "minimum": -100000,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "y": {
+            "description": "For move, supply the top desktop-pixel position between -100000 and 100000. Omit for other operations.",
+            "maximum": 100000,
+            "minimum": -100000,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "pid",
+          "window_id",
+          "state_id",
+          "operation"
+        ],
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": true,
+        "properties": {
+          "before": {
+            "additionalProperties": false,
+            "properties": {
+              "bounds": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "width": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "x": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "y": {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "type": "object"
+              },
+              "bounds_source": {
+                "enum": [
+                  "dwm_visible_frame",
+                  "window_rect"
+                ],
+                "type": "string"
+              },
+              "coordinate_space": {
+                "enum": [
+                  "windows_desktop_pixels"
+                ],
+                "type": "string"
+              },
+              "foreground_at_target": {
+                "type": "boolean"
+              },
+              "foreground_window": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "keyboard_focus_at_target": {
+                "type": "boolean"
+              },
+              "maximized": {
+                "type": "boolean"
+              },
+              "minimized": {
+                "type": "boolean"
+              },
+              "virtual_desktop": {
+                "additionalProperties": false,
+                "properties": {
+                  "desktop_id": {
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "desktop_id_error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "com_initialization_failed",
+                          "manager_unavailable",
+                          "window_unavailable",
+                          "desktop_id_query_failed",
+                          "current_desktop_query_failed",
+                          "invalid_desktop_id",
+                          "query_worker_failed"
+                        ],
+                        "type": "string"
+                      },
+                      "hresult": {
+                        "format": "int32",
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ],
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "on_current_desktop": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "on_current_desktop_error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "com_initialization_failed",
+                          "manager_unavailable",
+                          "window_unavailable",
+                          "desktop_id_query_failed",
+                          "current_desktop_query_failed",
+                          "invalid_desktop_id",
+                          "query_worker_failed"
+                        ],
+                        "type": "string"
+                      },
+                      "hresult": {
+                        "format": "int32",
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ],
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "sampled_at_unix_ms": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "desktop_id",
+                  "on_current_desktop",
+                  "desktop_id_error",
+                  "on_current_desktop_error",
+                  "sampled_at_unix_ms"
+                ],
+                "type": "object"
+              },
+              "visible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "bounds",
+              "bounds_source",
+              "coordinate_space",
+              "minimized",
+              "maximized",
+              "visible",
+              "foreground_at_target",
+              "keyboard_focus_at_target",
+              "foreground_window",
+              "virtual_desktop"
+            ],
+            "type": "object"
+          },
+          "effect": {
+            "enum": [
+              "confirmed"
+            ],
+            "type": "string"
+          },
+          "mutation_accepted": {
+            "type": "boolean"
+          },
+          "mutation_attempted": {
+            "type": "boolean"
+          },
+          "observed": {
+            "additionalProperties": false,
+            "properties": {
+              "bounds": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "width": {
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "x": {
+                    "format": "int32",
+                    "type": "integer"
+                  },
+                  "y": {
+                    "format": "int32",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "type": "object"
+              },
+              "bounds_source": {
+                "enum": [
+                  "dwm_visible_frame",
+                  "window_rect"
+                ],
+                "type": "string"
+              },
+              "coordinate_space": {
+                "enum": [
+                  "windows_desktop_pixels"
+                ],
+                "type": "string"
+              },
+              "foreground_at_target": {
+                "type": "boolean"
+              },
+              "foreground_window": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "keyboard_focus_at_target": {
+                "type": "boolean"
+              },
+              "maximized": {
+                "type": "boolean"
+              },
+              "minimized": {
+                "type": "boolean"
+              },
+              "virtual_desktop": {
+                "additionalProperties": false,
+                "properties": {
+                  "desktop_id": {
+                    "not": {
+                      "const": "00000000-0000-0000-0000-000000000000"
+                    },
+                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "desktop_id_error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "com_initialization_failed",
+                          "manager_unavailable",
+                          "window_unavailable",
+                          "desktop_id_query_failed",
+                          "current_desktop_query_failed",
+                          "invalid_desktop_id",
+                          "query_worker_failed"
+                        ],
+                        "type": "string"
+                      },
+                      "hresult": {
+                        "format": "int32",
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ],
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "on_current_desktop": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "on_current_desktop_error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "enum": [
+                          "com_initialization_failed",
+                          "manager_unavailable",
+                          "window_unavailable",
+                          "desktop_id_query_failed",
+                          "current_desktop_query_failed",
+                          "invalid_desktop_id",
+                          "query_worker_failed"
+                        ],
+                        "type": "string"
+                      },
+                      "hresult": {
+                        "format": "int32",
+                        "type": [
+                          "integer",
+                          "null"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "code"
+                    ],
+                    "type": [
+                      "object",
+                      "null"
+                    ]
+                  },
+                  "sampled_at_unix_ms": {
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "desktop_id",
+                  "on_current_desktop",
+                  "desktop_id_error",
+                  "on_current_desktop_error",
+                  "sampled_at_unix_ms"
+                ],
+                "type": "object"
+              },
+              "visible": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "bounds",
+              "bounds_source",
+              "coordinate_space",
+              "minimized",
+              "maximized",
+              "visible",
+              "foreground_at_target",
+              "keyboard_focus_at_target",
+              "foreground_window",
+              "virtual_desktop"
+            ],
+            "type": "object"
+          },
+          "operation": {
+            "enum": [
+              "move",
+              "resize",
+              "minimize",
+              "maximize",
+              "focus"
+            ],
+            "type": "string"
+          },
+          "pid": {
+            "maximum": 2147483647,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "postcondition_confirmed": {
+            "type": "boolean"
+          },
+          "requested_bounds": {
+            "additionalProperties": false,
+            "properties": {
+              "height": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "width": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "x": {
+                "format": "int32",
+                "type": "integer"
+              },
+              "y": {
+                "format": "int32",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "route": {
+            "enum": [
+              "native"
+            ],
+            "type": "string"
+          },
+          "state_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "window_id": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "pid",
+          "window_id",
+          "state_id",
+          "operation",
+          "requested_bounds",
+          "mutation_attempted",
+          "mutation_accepted",
+          "postcondition_confirmed",
+          "before",
+          "observed",
+          "route",
+          "effect"
         ],
         "type": "object"
       }

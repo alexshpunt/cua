@@ -114,6 +114,7 @@ pub mod video;
 pub mod video_ffmpeg;
 pub mod walk_budget;
 pub mod window_inspection;
+pub mod window_management;
 pub mod window_observation;
 pub mod window_restore;
 pub mod window_target;
