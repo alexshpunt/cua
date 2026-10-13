@@ -151,6 +151,7 @@ mod tests {
                 config: Arc::new(std::sync::RwLock::new(super::super::DriverConfig::default())),
                 capture_bridge: None,
                 persistent_wgc: Arc::new(crate::persistent_wgc::Manager::new()),
+                window_status: Arc::new(crate::tools::impl_::window_restore::Manager::new()),
             }),
         }
     }
