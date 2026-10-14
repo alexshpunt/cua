@@ -338,6 +338,41 @@ impl BrowserStore {
         }
     }
 
+    /// Resolve a current readonly DOM inspection capability. Semantic action
+    /// and legacy refs cannot be silently promoted into DOM scope authority.
+    pub(crate) fn resolve_dom_ref(
+        &self,
+        session: &str,
+        target_id: &str,
+        tab_id: &str,
+        external: &str,
+    ) -> Result<RefEntry, BrowserRefusal> {
+        let entry = self.resolve_ref(session, target_id, tab_id, external)?;
+        let target = self.get_target(session, target_id)?;
+        let (id, _) = parse_ref(external).ok_or_else(|| {
+            BrowserRefusal::new(
+                BrowserRefusalCode::BrowserRefStale,
+                "malformed readonly DOM ref",
+            )
+        })?;
+        let snapshot = target
+            .tabs
+            .get(tab_id)
+            .and_then(|tab| tab.snapshots.get(&id));
+        if !entry.semantic
+            || !entry.actions.is_empty()
+            || entry.frame.identity.is_none()
+            || !snapshot.is_some_and(|snapshot| {
+                snapshot.semantic.is_none() && snapshot.semantic_root_identity.is_some()
+            })
+        {
+            return Err(BrowserRefusal::new(
+                BrowserRefusalCode::BrowserRefStale,
+                "this ref does not carry readonly DOM inspection authority",
+            ));
+        }
+        Ok(entry)
+    }
     /// Resolve an external page ref to a backendNodeId within one tab's
     /// live snapshot namespace.
     pub fn resolve_ref(

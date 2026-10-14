@@ -6,6 +6,7 @@ on:
       - feat/lpt-730-coordinate-scroll
       - feat/lpt-703-window-restore
       - feat/lpt-731-window-management
+      - feat/lpt-733-window-dom-inspection
   workflow_dispatch:
     inputs:
       source_ref:
