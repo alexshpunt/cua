@@ -2598,16 +2598,86 @@ impl BrowserEngine {
         &self,
         validated: &ValidatedTab,
     ) -> Result<(), BrowserRefusal> {
+        let root = self
+            .local_frame_tree(&validated.conn, &validated.cdp_session)
+            .await
+            .map_err(|_| {
+                route_err(
+                    "selected-document identity unavailable",
+                    "an attested root frame and loader are required",
+                )
+            })?
+            .main_identity();
+        if root.frame_id.is_empty() || root.loader_id.is_empty() {
+            return Err(route_err(
+                "selected-document identity unavailable",
+                "an attested root frame and loader are required",
+            ));
+        }
+        // Page scripts can shadow visibilityState in their own world. Read
+        // browser state through a driver-owned wrapper, never the page world.
+        let world = dom_read(
+            &validated.conn,
+            &validated.cdp_session,
+            "Page.createIsolatedWorld",
+            json!({
+                "frameId":root.frame_id,
+                "worldName":"cua-driver-selected-document",
+                "grantUniveralAccess":false
+            }),
+        )
+        .await?;
+        let context_id = world
+            .get("executionContextId")
+            .and_then(Value::as_i64)
+            .filter(|id| *id > 0)
+            .ok_or_else(|| {
+                route_err(
+                    "isolated selected-document context unavailable",
+                    "a positive execution context identity is required; no page-world fallback",
+                )
+            })?;
+        let current = self
+            .local_frame_tree(&validated.conn, &validated.cdp_session)
+            .await
+            .map_err(|_| {
+                refuse(
+                    BrowserRefusalCode::BrowserRefStale,
+                    "document identity unavailable after isolated context creation",
+                )
+            })?;
+        if current.main_identity() != root {
+            return Err(refuse(
+                BrowserRefusalCode::BrowserRefStale,
+                "document changed during isolated context creation",
+            ));
+        }
         let visibility = dom_read(
             &validated.conn,
             &validated.cdp_session,
             "Runtime.evaluate",
             json!({
                 "expression":"document.visibilityState === 'visible'",
+                "contextId":context_id,
                 "returnByValue":true,"awaitPromise":false
             }),
         )
         .await?;
+        let current = self
+            .local_frame_tree(&validated.conn, &validated.cdp_session)
+            .await
+            .map_err(|_| {
+                refuse(
+                    BrowserRefusalCode::BrowserRefStale,
+                    "document identity unavailable after isolated visibility read",
+                )
+            })?;
+        if current.main_identity() != root {
+            return Err(refuse(
+                BrowserRefusalCode::BrowserRefStale,
+                "document changed during isolated visibility read",
+            ));
+        }
         if visibility.pointer("/result/value").and_then(Value::as_bool) != Some(true) {
             return Err(refuse(
                 BrowserRefusalCode::BrowserWrongTargetRefused,
