@@ -38,6 +38,7 @@ use super::binding::{
     CdpWindowCandidate,
 };
 use super::cdp_ws::{CdpConnection, CdpPool};
+use super::dom_inspection;
 use super::grant::{ExistingProfileGrant, ExistingProfileGrants, GrantLookup};
 use super::mutation::{MutationGates, MutationKey};
 use super::platform::{
@@ -2444,6 +2445,439 @@ impl BrowserEngine {
         Ok(document)
     }
 
+    /// Inspect the selected, exactly bound document without granting any input
+    /// rights. Dropping this future prevents subsequent CDP dispatch; already
+    /// dispatched reads cannot be withdrawn and are never replayed.
+    pub(crate) async fn snapshot_tab_dom(
+        &self,
+        session: &str,
+        target_id: &str,
+        tab_id: &str,
+        locator: &dom_inspection::DomLocator,
+        scope_ref: Option<&str>,
+        include_hidden: bool,
+        max_nodes: usize,
+        max_depth: usize,
+    ) -> Result<Value, BrowserRefusal> {
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            self.snapshot_tab_dom_inner(
+                session,
+                target_id,
+                tab_id,
+                locator,
+                scope_ref,
+                include_hidden,
+                max_nodes,
+                max_depth,
+            ),
+        )
+        .await;
+        match result {
+            Ok(result) => result,
+            Err(_) => {
+                self.store
+                    .invalidate_tab_snapshots(session, target_id, tab_id);
+                Err(refuse(
+                    BrowserRefusalCode::BrowserRouteUnavailable,
+                    "bounded DOM inspection timed out; no input was dispatched",
+                ))
+            }
+        }
+    }
+
+    async fn require_selected_dom_tab(
+        &self,
+        validated: &ValidatedTab,
+    ) -> Result<(), BrowserRefusal> {
+        let visibility = dom_read(
+            &validated.conn,
+            &validated.cdp_session,
+            "Runtime.evaluate",
+            json!({
+                "expression":"document.visibilityState === 'visible'",
+                "returnByValue":true,"awaitPromise":false
+            }),
+        )
+        .await?;
+        if visibility.pointer("/result/value").and_then(Value::as_bool) != Some(true) {
+            return Err(refuse(
+                BrowserRefusalCode::BrowserWrongTargetRefused,
+                "the admitted tab is not proven selected; inspection never activates a tab",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn snapshot_tab_dom_inner(
+        &self,
+        session: &str,
+        target_id: &str,
+        tab_id: &str,
+        locator: &dom_inspection::DomLocator,
+        scope_ref: Option<&str>,
+        include_hidden: bool,
+        max_nodes: usize,
+        max_depth: usize,
+    ) -> Result<Value, BrowserRefusal> {
+        use dom_inspection::{collect, project};
+        // Serialize against typed browser actions, but never activate/focus or
+        // renew a scope capability merely by reading its cached address.
+        let _interval = self.lock_mutation(session, target_id, tab_id).await?;
+        let validated = self
+            .revalidate_for_mutation(session, target_id, Some(tab_id))
+            .await?;
+        self.require_selected_dom_tab(&validated).await?;
+        let scoped = scope_ref
+            .map(|reference| {
+                self.store
+                    .resolve_dom_ref(session, target_id, tab_id, reference)
+            })
+            .transpose()?;
+        if let Some(entry) = &scoped {
+            let frame_session = self
+                .frame_session_for_mutation(session, target_id, tab_id, &validated, &entry.frame)
+                .await?;
+            let node = dom_read(
+                &validated.conn,
+                &frame_session,
+                "DOM.describeNode",
+                json!({"backendNodeId":entry.backend_node_id,"depth":0}),
+            )
+            .await;
+            if !node.ok().is_some_and(|node| {
+                node.pointer("/node/backendNodeId").and_then(Value::as_i64)
+                    == Some(entry.backend_node_id)
+            }) {
+                self.store
+                    .invalidate_tab_snapshots(session, target_id, tab_id);
+                return Err(refuse(
+                    BrowserRefusalCode::BrowserRefStale,
+                    "the scoped node is detached or no longer inspectable",
+                ));
+            }
+        }
+        // From this point every older ref is retired even if collection fails.
+        self.store
+            .invalidate_tab_snapshots(session, target_id, tab_id);
+        let tree = self
+            .local_frame_tree(&validated.conn, &validated.cdp_session)
+            .await
+            .map_err(|_| {
+                refuse(
+                    BrowserRefusalCode::BrowserRouteUnavailable,
+                    "DOM inspection requires a provable frame/document tree",
+                )
+            })?;
+        let root_identity = tree.main_identity();
+        let document = dom_read(
+            &validated.conn,
+            &validated.cdp_session,
+            "DOM.getDocument",
+            json!({"depth":max_depth,"pierce":true}),
+        )
+        .await?;
+        let mut sources = Vec::new();
+        let mut omitted = DomNativeOmissions::default();
+        dom_sources(
+            document,
+            &tree,
+            None,
+            &validated.cdp_session,
+            &mut sources,
+            &mut omitted,
+        )?;
+        match self
+            .attached_iframe_children(&validated.conn, &validated.cdp_session)
+            .await
+        {
+            Ok(children) => {
+                for child in children.into_iter().take(9) {
+                    if sources.len() >= 8 {
+                        omitted.frames += 1;
+                        break;
+                    }
+                    let child_tree = match self
+                        .local_frame_tree(&validated.conn, &child.session_id)
+                        .await
+                    {
+                        Ok(tree) => tree,
+                        Err(_) => {
+                            omitted.frames += 1;
+                            continue;
+                        }
+                    };
+                    let child_document = match dom_read(
+                        &validated.conn,
+                        &child.session_id,
+                        "DOM.getDocument",
+                        json!({"depth":max_depth,"pierce":true}),
+                    )
+                    .await
+                    {
+                        Ok(document) => document,
+                        Err(_) => {
+                            omitted.frames += 1;
+                            continue;
+                        }
+                    };
+                    dom_sources(
+                        child_document,
+                        &child_tree,
+                        Some(&child.target_id),
+                        &child.session_id,
+                        &mut sources,
+                        &mut omitted,
+                    )?;
+                }
+            }
+            Err(_) => omitted.frames += 1,
+        }
+        for identity in tree.identities() {
+            if !sources
+                .iter()
+                .any(|source| source.frame.identity.as_ref() == Some(&identity))
+            {
+                omitted.frames += 1;
+            }
+        }
+        let mut records = Vec::new();
+        let mut frame_refs = HashMap::new();
+        let mut css_matches = HashSet::new();
+        let mut scope = None;
+        let mut collection_complete = omitted.frames == 0 && omitted.nodes == 0;
+        let mut visited = 0;
+        for source in &sources {
+            if visited >= 2_000 {
+                omitted.nodes += 1;
+                collection_complete = false;
+                break;
+            }
+            let (mut rows, coverage) =
+                collect(&source.document, &source.key, 2_000 - visited, max_depth);
+            visited += coverage.visited;
+            omitted.nodes += coverage.node_omitted;
+            omitted.depth += coverage.depth_omitted;
+            omitted.text += coverage.text_truncated;
+            collection_complete &= coverage.complete;
+            let ax = dom_read(
+                &validated.conn,
+                &source.session,
+                "Accessibility.getFullAXTree",
+                json!({"frameId":source.frame.identity.as_ref().unwrap().frame_id}),
+            )
+            .await;
+            let layout = dom_read(
+                &validated.conn,
+                &source.session,
+                "DOMSnapshot.captureSnapshot",
+                json!({
+                    "computedStyles":["display","visibility","opacity"],"includeDOMRects":true
+                }),
+            )
+            .await;
+            let collected_rows = rows.len();
+            match (ax, layout) {
+                (Ok(ax), Ok(layout)) => {
+                    if !dom_enrich(&mut rows, &ax, &layout, &source.frame) {
+                        omitted.metadata += collected_rows;
+                        collection_complete = false;
+                    }
+                }
+                _ => {
+                    omitted.metadata += rows.len();
+                    collection_complete = false;
+                }
+            }
+            omitted.text += rows
+                .iter()
+                .filter(|row| row.text_truncated)
+                .count()
+                .saturating_sub(coverage.text_truncated);
+            if let Some(selector) = &locator.css {
+                // Query the admitted document and every admitted open shadow
+                // root. Chromium parses CSS; there is no local selector emulation.
+                for node_id in &source.query_roots {
+                    let response = dom_read(
+                        &validated.conn,
+                        &source.session,
+                        "DOM.querySelectorAll",
+                        json!({"nodeId":node_id,"selector":selector}),
+                    )
+                    .await?;
+                    let ids = response
+                        .get("nodeIds")
+                        .and_then(Value::as_array)
+                        .ok_or_else(|| {
+                            refuse(
+                                BrowserRefusalCode::BrowserRouteUnavailable,
+                                "malformed native CSS query response",
+                            )
+                        })?;
+                    if ids
+                        .iter()
+                        .any(|id| id.as_i64().is_none_or(|value| value <= 0))
+                    {
+                        return Err(refuse(
+                            BrowserRefusalCode::BrowserRouteUnavailable,
+                            "invalid native CSS node identity",
+                        ));
+                    }
+                    if ids.len() > 2_000 {
+                        collection_complete = false;
+                        omitted.nodes += ids.len() - 2_000;
+                    }
+                    for id in ids.iter().take(2_000).filter_map(Value::as_i64) {
+                        if let Some(row) = rows.iter().find(|row| row.node_id == id) {
+                            css_matches.insert((source.key.clone(), row.backend_node_id));
+                        } else {
+                            omitted.nodes += 1;
+                            collection_complete = false;
+                        }
+                    }
+                }
+            }
+            if let Some(entry) = &scoped {
+                if entry.frame.identity == source.frame.identity
+                    && entry.frame.oopif_target_id == source.frame.oopif_target_id
+                {
+                    if scope
+                        .replace((source.key.clone(), entry.backend_node_id))
+                        .is_some()
+                    {
+                        return Err(refuse(
+                            BrowserRefusalCode::BrowserRefStale,
+                            "ambiguous document scope",
+                        ));
+                    }
+                }
+            }
+            frame_refs.insert(source.key.clone(), source.frame.clone());
+            records.extend(rows);
+        }
+        if scoped.is_some() && scope.is_none() {
+            return Err(refuse(
+                BrowserRefusalCode::BrowserRefStale,
+                "the scoped frame/document was replaced or detached",
+            ));
+        }
+        // Re-prove every collected source after collection, including loaders
+        // of same-process and contained OOPIF frames. No stale geometry is minted.
+        for source in &sources {
+            self.frame_session_for_mutation(session, target_id, tab_id, &validated, &source.frame)
+                .await?;
+        }
+        let title = live_title(
+            &validated.conn,
+            &validated.tab.cdp_target_id,
+            &validated.tab.title,
+        )
+        .await;
+        let final_validated = self
+            .revalidate_for_mutation(session, target_id, Some(tab_id))
+            .await?;
+        let current_tree = self
+            .local_frame_tree(&final_validated.conn, &final_validated.cdp_session)
+            .await
+            .map_err(|_| {
+                refuse(
+                    BrowserRefusalCode::BrowserRefStale,
+                    "document identity unavailable after inspection",
+                )
+            })?;
+        if !current_tree.proves(&root_identity) {
+            return Err(refuse(
+                BrowserRefusalCode::BrowserRefStale,
+                "document navigated during inspection",
+            ));
+        }
+        self.require_selected_dom_tab(&final_validated).await?;
+        let mut identities = HashSet::new();
+        if records
+            .iter()
+            .any(|row| !identities.insert((row.frame_key.clone(), row.backend_node_id)))
+        {
+            return Err(refuse(
+                BrowserRefusalCode::BrowserRouteUnavailable,
+                "ambiguous duplicate DOM node identity",
+            ));
+        }
+        let visibility_complete =
+            include_hidden || records.iter().all(|row| row.visibility != "unknown");
+        let matched = project(
+            &records,
+            locator,
+            scope.as_ref().map(|(key, id)| (key.as_str(), *id)),
+            locator.css.as_ref().map(|_| &css_matches),
+            2_000,
+        )
+        .map_err(|message| refuse(BrowserRefusalCode::BrowserRefStale, message))?;
+        let hidden_filtered = matched
+            .iter()
+            .filter(|row| !include_hidden && row.visibility != "visible")
+            .count();
+        let matched = matched
+            .into_iter()
+            .filter(|row| include_hidden || row.visibility == "visible")
+            .collect::<Vec<_>>();
+        let matched_count = matched.len();
+        let truncated = matched_count > max_nodes;
+        let snapshot_id = self.store.mint_snapshot_id();
+        let mut refs = HashMap::new();
+        let mut elements = Vec::new();
+        for (index, row) in matched.into_iter().take(max_nodes).enumerate() {
+            let frame = frame_refs[&row.frame_key].clone();
+            refs.insert(
+                index as u32,
+                RefEntry {
+                    backend_node_id: row.backend_node_id,
+                    node_name: row.tag.clone(),
+                    label: row.name.clone(),
+                    actions: Vec::new(),
+                    visibility: None,
+                    semantic: true,
+                    frame: frame.clone(),
+                },
+            );
+            elements.push(json!({"ref":format_ref(snapshot_id,index as u32),
+                "frame":{"ref":row.frame_key,"kind":frame.kind.as_str()},"tag":row.tag,
+                "attributes":row.attributes,"text":row.text,"text_truncated":row.text_truncated,
+                "role":row.role,"name":row.name,"value":row.value,"states":row.states,
+                "visibility":row.visibility,"bounds_css":row.bounds,"coordinate_space":"document_css_pixels"}));
+        }
+        let url = sources
+            .first()
+            .and_then(|source| source.document.pointer("/root/documentURL"))
+            .and_then(Value::as_str)
+            .unwrap_or(&final_validated.tab.url)
+            .to_owned();
+        self.store.update_target(session, target_id, |target| {
+            if let Some(tab) = target.tabs.get_mut(tab_id) {
+                tab.snapshots.clear();
+                tab.snapshots.insert(
+                    snapshot_id,
+                    SnapshotRecord {
+                        id: snapshot_id,
+                        generation: final_validated.record.generation,
+                        url: url.clone(),
+                        refs,
+                        semantic: None,
+                        semantic_root_identity: Some(root_identity),
+                        continuations: HashMap::new(),
+                    },
+                );
+            }
+        });
+        Ok(
+            json!({"status":"ok","mode":"snapshot","target_id":target_id,"tab_id":tab_id,
+            "page":{"url":url,"title":title},"snapshot":{"id":format!("p{snapshot_id}"),"format":"dom_inspect_v1",
+                "complete":collection_complete && visibility_complete && !truncated,"collection_complete":collection_complete,
+                "matched_count":matched_count,"returned_count":elements.len(),"truncated":truncated,
+                "omitted":{"nodes":omitted.nodes,"depth":omitted.depth,"frames":omitted.frames,
+                    "metadata":omitted.metadata,"text":omitted.text,"hidden_filtered":hidden_filtered},
+                "scope":if scoped.is_some(){"subtree"}else{"document"}},"elements":elements}),
+        )
+    }
     // These values form one semantic snapshot envelope; keeping them explicit
     // makes the stored reference index and reported metadata auditable together.
     #[allow(clippy::too_many_arguments)]
@@ -2792,6 +3226,330 @@ impl BrowserEngine {
     }
 }
 
+// DOM inspection never accepts a caller-provided script. The only evaluation
+// above is a fixed readonly visibility proof; selectors use Chromium's parser.
+const DOM_READ_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+async fn dom_read(
+    conn: &CdpConnection,
+    session: &str,
+    method: &str,
+    args: Value,
+) -> Result<Value, BrowserRefusal> {
+    let value = conn
+        .call_bounded(Some(session), method, args, DOM_READ_MAX_BYTES)
+        .await
+        .map_err(|error| route_err(method, error))?;
+    Ok(value)
+}
+
+#[derive(Default)]
+struct DomNativeOmissions {
+    nodes: usize,
+    depth: usize,
+    frames: usize,
+    metadata: usize,
+    text: usize,
+}
+struct DomSource {
+    key: String,
+    frame: FrameRef,
+    session: String,
+    document: Value,
+    query_roots: Vec<i64>,
+}
+
+fn dom_sources(
+    document: Value,
+    tree: &LocalFrameTree,
+    oopif: Option<&str>,
+    session: &str,
+    sources: &mut Vec<DomSource>,
+    omissions: &mut DomNativeOmissions,
+) -> Result<(), BrowserRefusal> {
+    fn split(
+        node: &mut Value,
+        documents: &mut Vec<Value>,
+        roots: &mut Vec<i64>,
+        depth: usize,
+        visited: &mut usize,
+        omissions: &mut DomNativeOmissions,
+    ) {
+        if depth > 64 || *visited >= 2_000 {
+            omissions.nodes += 1;
+            if let Some(object) = node.as_object_mut() {
+                object.remove("children");
+                object.remove("shadowRoots");
+                object.remove("contentDocument");
+            }
+            return;
+        }
+        *visited += 1;
+        if node["nodeType"] == 9 || (node["nodeType"] == 11 && node["shadowRootType"] == "open") {
+            if let Some(id) = node["nodeId"].as_i64() {
+                if roots.len() < 64 {
+                    roots.push(id);
+                } else {
+                    omissions.nodes += 1;
+                }
+            }
+        }
+        let child = node
+            .as_object_mut()
+            .and_then(|object| object.remove("contentDocument"));
+        if let Some(mut child) = child {
+            if child.get("frameId").is_none() {
+                child["frameId"] = node["frameId"].clone();
+            }
+            if documents.len() < 8 {
+                documents.push(child);
+            } else {
+                omissions.frames += 1;
+            }
+        }
+        for key in ["children", "shadowRoots"] {
+            if let Some(children) = node.get_mut(key).and_then(Value::as_array_mut) {
+                for child in children {
+                    split(child, documents, roots, depth + 1, visited, omissions);
+                }
+            }
+        }
+    }
+    let mut pending =
+        std::collections::VecDeque::from([document.get("root").cloned().unwrap_or(document)]);
+    let mut visited = 0;
+    while let Some(mut root) = pending.pop_front() {
+        if sources.len() >= 8 {
+            omissions.frames += pending.len() + 1;
+            break;
+        }
+        let frame_id = root
+            .get("frameId")
+            .and_then(Value::as_str)
+            .unwrap_or(&tree.main_frame_id);
+        let Some(identity) = tree.identity_of(frame_id) else {
+            omissions.frames += 1;
+            continue;
+        };
+        if sources.iter().any(|source| {
+            source.frame.identity.as_ref() == Some(&identity)
+                && source.frame.oopif_target_id.as_deref() == oopif
+        }) {
+            return Err(refuse(
+                BrowserRefusalCode::BrowserRouteUnavailable,
+                "ambiguous duplicate DOM document source",
+            ));
+        }
+        let mut children = Vec::new();
+        let mut query_roots = Vec::new();
+        split(
+            &mut root,
+            &mut children,
+            &mut query_roots,
+            0,
+            &mut visited,
+            omissions,
+        );
+        pending.extend(children);
+        sources.push(DomSource {
+            key: format!("df-{}", Uuid::new_v4()),
+            session: session.to_owned(),
+            document: json!({"root":root}),
+            query_roots,
+            frame: FrameRef {
+                kind: if oopif.is_some() {
+                    FrameKind::Oopif
+                } else if identity.frame_id == tree.main_frame_id {
+                    FrameKind::Main
+                } else {
+                    FrameKind::Iframe
+                },
+                identity: Some(identity),
+                oopif_target_id: oopif.map(str::to_owned),
+            },
+        });
+    }
+    Ok(())
+}
+
+fn dom_enrich(
+    rows: &mut Vec<dom_inspection::DomRecord>,
+    ax: &Value,
+    layout: &Value,
+    frame: &FrameRef,
+) -> bool {
+    let mut complete = ax
+        .get("nodes")
+        .and_then(Value::as_array)
+        .is_some_and(|nodes| nodes.len() <= 4_000);
+    let mut source_found = false;
+    let frame_id = &frame.identity.as_ref().expect("proven DOM frame").frame_id;
+    if let Some(nodes) = ax.get("nodes").and_then(Value::as_array) {
+        for node in nodes.iter().take(4_000) {
+            let Some(backend) = node.get("backendDOMNodeId").and_then(Value::as_i64) else {
+                continue;
+            };
+            let Some(row) = rows.iter_mut().find(|row| row.backend_node_id == backend) else {
+                continue;
+            };
+            let truncated = ["/role/value", "/name/value", "/value/value"]
+                .iter()
+                .any(|path| {
+                    node.pointer(path)
+                        .and_then(Value::as_str)
+                        .is_some_and(|value| value.chars().nth(1_024).is_some())
+                });
+            row.text_truncated |= truncated;
+            complete &= !truncated;
+            let bounded = |value: &Value| {
+                value
+                    .as_str()
+                    .map(|value| value.chars().take(1_024).collect::<String>())
+            };
+            row.role = node.pointer("/role/value").and_then(bounded);
+            row.name = node.pointer("/name/value").and_then(bounded);
+            row.value = node.pointer("/value/value").and_then(bounded);
+            if let Some(properties) = node.get("properties").and_then(Value::as_array) {
+                for property in properties.iter().take(32) {
+                    if let (Some(name), Some(value)) =
+                        (property["name"].as_str(), property.pointer("/value/value"))
+                    {
+                        if name.len() <= 128
+                            && (value.is_boolean()
+                                || value.is_number()
+                                || value.as_str().is_some_and(|value| value.len() <= 1_024))
+                        {
+                            row.states.insert(name.to_owned(), value.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let Some(strings) = layout.get("strings").and_then(Value::as_array) else {
+        return false;
+    };
+    let string = |index: &Value| {
+        index
+            .as_u64()
+            .and_then(|index| strings.get(index as usize))
+            .and_then(Value::as_str)
+    };
+    let Some(documents) = layout.get("documents").and_then(Value::as_array) else {
+        return false;
+    };
+    complete &= documents.len() <= 8;
+    for document in documents.iter().take(8) {
+        if string(&document["frameId"]) != Some(frame_id.as_str()) {
+            continue;
+        }
+        source_found = true;
+        let Some(backends) = document
+            .pointer("/nodes/backendNodeId")
+            .and_then(Value::as_array)
+        else {
+            complete = false;
+            continue;
+        };
+        complete &= backends.len() <= 4_000;
+        let present: HashSet<i64> = backends
+            .iter()
+            .take(4_000)
+            .filter_map(Value::as_i64)
+            .collect();
+        let collected = rows.len();
+        rows.retain(|row| present.contains(&row.backend_node_id));
+        complete &= rows.len() == collected;
+        complete &= document["layout"]["nodeIndex"]
+            .as_array()
+            .is_none_or(|indices| indices.len() <= 4_000);
+        for property in ["inputValue", "textValue", "inputChecked", "optionSelected"] {
+            complete &= document["nodes"][property]["index"]
+                .as_array()
+                .is_none_or(|indices| indices.len() <= 4_000);
+        }
+        for row in rows.iter_mut() {
+            let Some(index) = backends
+                .iter()
+                .take(4_000)
+                .position(|id| id.as_i64() == Some(row.backend_node_id))
+            else {
+                continue;
+            };
+            for (property, target) in [("inputValue", "value"), ("textValue", "value")] {
+                if let Some(position) =
+                    document["nodes"][property]["index"]
+                        .as_array()
+                        .and_then(|indices| {
+                            indices
+                                .iter()
+                                .take(4_000)
+                                .position(|v| v.as_u64() == Some(index as u64))
+                        })
+                {
+                    if let Some(value) = string(&document["nodes"][property]["value"][position]) {
+                        if target == "value" {
+                            let truncated = value.chars().nth(1_024).is_some();
+                            row.text_truncated |= truncated;
+                            complete &= !truncated;
+                            row.value = Some(value.chars().take(1_024).collect());
+                        }
+                    }
+                }
+            }
+            for (property, state) in [("inputChecked", "checked"), ("optionSelected", "selected")] {
+                if let Some(indices) = document["nodes"][property]["index"].as_array() {
+                    if indices
+                        .iter()
+                        .take(4_000)
+                        .any(|v| v.as_u64() == Some(index as u64))
+                    {
+                        row.states.insert(state.to_owned(), json!(true));
+                    }
+                }
+            }
+            if let Some(position) = document["layout"]["nodeIndex"]
+                .as_array()
+                .and_then(|indices| {
+                    indices
+                        .iter()
+                        .take(4_000)
+                        .position(|v| v.as_u64() == Some(index as u64))
+                })
+            {
+                if let Some(bounds) = document["layout"]["bounds"][position].as_array() {
+                    let numbers = bounds.iter().map(Value::as_f64).collect::<Option<Vec<_>>>();
+                    if let Some(numbers) = numbers.filter(|v| {
+                        v.len() == 4
+                            && v.iter().all(|n| n.is_finite())
+                            && v[2] >= 0.0
+                            && v[3] >= 0.0
+                    }) {
+                        row.bounds =
+                            Some(Rect::new(numbers[0], numbers[1], numbers[2], numbers[3]));
+                    }
+                }
+                if let Some(styles) = document["layout"]["styles"][position].as_array() {
+                    let display = styles.first().and_then(string);
+                    let visibility = styles.get(1).and_then(string);
+                    let opacity = styles.get(2).and_then(string);
+                    row.visibility = if display == Some("none")
+                        || matches!(visibility, Some("hidden" | "collapse"))
+                        || opacity == Some("0")
+                    {
+                        "hidden"
+                    } else if display.is_some() && visibility.is_some() {
+                        "visible"
+                    } else {
+                        "unknown"
+                    }
+                    .to_owned();
+                }
+            }
+        }
+    }
+    complete && source_found
+}
 /// Attribute names that make an element interactive-enough to ref.
 const INTERACTIVE_ATTRS: &[&str] = &["onclick", "role", "contenteditable", "tabindex", "href"];
 /// Element names always considered interactive.
@@ -2927,6 +3685,9 @@ async fn live_title(conn: &Arc<CdpConnection>, cdp_target_id: &str, fallback: &s
     }
 }
 
+#[cfg(test)]
+#[path = "dom_inspection_tests.rs"]
+mod dom_inspection_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
