@@ -289,12 +289,12 @@ impl GetBrowserStateTool {
                     "session": schema_session(),
                     "snapshot_format": {
                         "type": "string",
-                        "enum": ["dom_refs_v1", "semantic_v2"],
+                        "enum": ["dom_refs_v1", "semantic_v2", "dom_inspect_v1"],
                         "description": "Versioned snapshot contract. dom_refs_v1 remains the compatibility default."
                     },
                     "scope_ref": {
                         "type": "string",
-                        "description": "Current semantic/content ref whose subtree should be observed."
+                        "description": "Use a current semantic/content ref for semantic_v2, or a current readonly DOM ref for dom_inspect_v1. Scope stays within its exact frame/document."
                     },
                     "query": {
                         "type": "string",
@@ -304,6 +304,21 @@ impl GetBrowserStateTool {
                         "type": "string",
                         "description": "Opaque continuation minted by an earlier semantic_v2 response."
                     },
+                    "locator": {
+                        "type":"object", "additionalProperties":false,
+                        "properties": {
+                            "role":{"type":"string","minLength":1,"maxLength":256},
+                            "name":{"type":"string","minLength":1,"maxLength":256},
+                            "label":{"type":"string","minLength":1,"maxLength":256},
+                            "text":{"type":"string","minLength":1,"maxLength":256},
+                            "test_id":{"type":"string","minLength":1,"maxLength":256},
+                            "css":{"type":"string","minLength":1,"maxLength":256}
+                        },
+                        "description":"Use with dom_inspect_v1. Predicates combine with AND: exact role/name/label (accessible name)/test-ID, substring text and Chromium CSS over document/open shadow roots. Duplicate matches remain separate."
+                    },
+                    "include_hidden":{"type":"boolean","default":true,"description":"Use with dom_inspect_v1 to retain hidden/noninteractive elements. False includes only proven visible elements."},
+                    "max_nodes":{"type":"integer","minimum":1,"maximum":200,"default":100,"description":"Maximum returned dom_inspect_v1 elements. Check snapshot coverage before inferring absence."},
+                    "max_depth":{"type":"integer","minimum":1,"maximum":32,"default":16,"description":"Maximum DOM collection depth for dom_inspect_v1. Deeper omitted descendants make coverage incomplete."},
                     "include_screenshot": {
                         "type": "boolean",
                         "default": false,
@@ -382,9 +397,12 @@ impl Tool for GetBrowserStateTool {
                     )
                 }
             };
-            if snapshot_format != "dom_refs_v1" && snapshot_format != "semantic_v2" {
+            if snapshot_format != "dom_refs_v1"
+                && snapshot_format != "semantic_v2"
+                && snapshot_format != "dom_inspect_v1"
+            {
                 return ToolResult::error(format!(
-                    "snapshot_format must be \"dom_refs_v1\" or \"semantic_v2\", got {snapshot_format:?}"
+                    "snapshot_format must be \"dom_refs_v1\", \"semantic_v2\" or \"dom_inspect_v1\", got {snapshot_format:?}"
                 ));
             }
             if snapshot_format == "dom_refs_v1"
@@ -394,6 +412,115 @@ impl Tool for GetBrowserStateTool {
             {
                 return ToolResult::error(
                     "scope_ref, query, and continuation require snapshot_format=\"semantic_v2\"",
+                );
+            }
+            if snapshot_format == "dom_inspect_v1" {
+                if include_screenshot
+                    || args.get("query").is_some()
+                    || args.get("continuation").is_some()
+                {
+                    return ToolResult::error("dom_inspect_v1 returns readonly DOM metadata only; query, continuation and CDP screenshot are not supported");
+                }
+                let locator = match args.get("locator") {
+                    None => super::dom_inspection::DomLocator::default(),
+                    Some(value) => {
+                        match serde_json::from_value::<super::dom_inspection::DomLocator>(
+                            value.clone(),
+                        ) {
+                            Ok(locator) => locator,
+                            Err(error) => {
+                                return ToolResult::error(format!("invalid DOM locator: {error}"))
+                            }
+                        }
+                    }
+                };
+                for value in [
+                    &locator.role,
+                    &locator.name,
+                    &locator.label,
+                    &locator.text,
+                    &locator.test_id,
+                    &locator.css,
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    if value.trim().is_empty()
+                        || value.chars().count() > 256
+                        || value.contains('\0')
+                    {
+                        return ToolResult::error(
+                            "DOM locator must contain bounded, nonempty strings without NUL",
+                        );
+                    }
+                }
+                let integer = |key: &str, default: usize, max: usize| -> Result<usize, String> {
+                    match args.get(key) {
+                        None => Ok(default),
+                        Some(value) => value
+                            .as_u64()
+                            .filter(|value| *value >= 1 && *value <= max as u64)
+                            .map(|value| value as usize)
+                            .ok_or_else(|| format!("{key} must be an integer in 1..={max}")),
+                    }
+                };
+                let max_nodes = match integer("max_nodes", 100, 200) {
+                    Ok(v) => v,
+                    Err(e) => return ToolResult::error(e),
+                };
+                let max_depth = match integer("max_depth", 16, 32) {
+                    Ok(v) => v,
+                    Err(e) => return ToolResult::error(e),
+                };
+                let include_hidden = match args.get("include_hidden") {
+                    None => true,
+                    Some(Value::Bool(v)) => *v,
+                    Some(_) => return ToolResult::error("include_hidden must be boolean"),
+                };
+                let scope = match args.get("scope_ref") {
+                    None => None,
+                    Some(Value::String(v)) if !v.is_empty() && v.len() <= 256 => Some(v.as_str()),
+                    Some(_) => {
+                        return ToolResult::error(
+                            "scope_ref must be a bounded current readonly DOM ref",
+                        )
+                    }
+                };
+                return match self
+                    .engine
+                    .snapshot_tab_dom(
+                        &session,
+                        &target_id,
+                        &tab_id,
+                        &locator,
+                        scope,
+                        include_hidden,
+                        max_nodes,
+                        max_depth,
+                    )
+                    .await
+                {
+                    Ok(snapshot) => {
+                        let guidance = if snapshot
+                            .pointer("/snapshot/complete")
+                            .and_then(Value::as_bool)
+                            == Some(true)
+                        {
+                            "Readonly DOM inspection. CSS bounds do not grant native input authority; DOM/layout/native paint are separate samples."
+                        } else {
+                            "Partial readonly DOM inspection: absence is unknown outside the collected slice. Narrow the scope or raise the bounded limits. CSS bounds do not grant native input authority."
+                        };
+                        ToolResult::text(guidance).with_structured(snapshot)
+                    }
+                    Err(refusal) => refusal.to_tool_result(),
+                };
+            }
+            if ["locator", "include_hidden", "max_nodes", "max_depth"]
+                .iter()
+                .any(|key| args.get(*key).is_some())
+            {
+                return ToolResult::error(
+                    "DOM locator and collection limits require snapshot_format=dom_inspect_v1",
                 );
             }
             if snapshot_format == "semantic_v2" {

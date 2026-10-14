@@ -38,6 +38,9 @@
 mod adapter_support;
 pub mod binding;
 pub mod cdp_ws;
+pub mod dom_geometry;
+pub mod dom_pixel_match;
+mod dom_inspection;
 pub mod download;
 pub mod engine;
 mod grant;
