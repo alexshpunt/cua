@@ -97,6 +97,10 @@ struct State {
     switch_on_capture: bool,
     loader: &'static str,
     fail_capture: bool,
+    world_reply: Value,
+    fail_world: bool,
+    navigate_on_world: bool,
+    navigate_on_visibility: bool,
     png: String,
 }
 struct Fixture {
@@ -127,6 +131,10 @@ async fn fixture() -> Fixture {
         switch_on_capture: false,
         loader: "L1",
         fail_capture: false,
+        world_reply: json!({"executionContextId":77}),
+        fail_world: false,
+        navigate_on_world: false,
+        navigate_on_visibility: false,
         png: png(4, 2),
     }));
     let shared = state.clone();
@@ -140,9 +148,16 @@ async fn fixture() -> Fixture {
             "Target.attachToTarget" => json!({"sessionId":"s"}),
             "Target.setAutoAttach" | "Page.enable" => json!({}),
             "Page.getFrameTree" => json!({"frameTree":{"frame":{"id":"F1","loaderId":state.loader,"url":"https://capture.test/"}}}),
+            "Page.createIsolatedWorld" => {
+                if state.navigate_on_world {state.loader = "L2";}
+                if state.fail_world {return MockReply::err(-32000, "isolated context unavailable");}
+                state.world_reply.clone()
+            }
             "Runtime.evaluate" => {
                 assert_eq!(call.params["expression"], "document.visibilityState === 'visible'");
-                json!({"result":{"value":state.selected}})
+                if state.navigate_on_visibility {state.loader = "L2";}
+                // A page-owned override claims visible; only the isolated context has the real state.
+                json!({"result":{"value":if call.params["contextId"] == 77 {state.selected} else {true}}})
             }
             "Page.getLayoutMetrics" => json!({"cssVisualViewport":{"pageX":17,"pageY":23,"clientWidth":2,"clientHeight":1}}),
             "Page.captureScreenshot" => {
@@ -201,6 +216,128 @@ fn assert_no_input(f: &Fixture) {
                 && method != "Page.bringToFront",
             "unexpected {method}"
         );
+    }
+}
+#[tokio::test]
+async fn isolated_selection_ignores_page_owned_visibility_overrides() {
+    let f = fixture().await;
+    f.state.lock().unwrap().selected = false;
+    let refusal = capture(&f, BrowserScreenshotMode::NativeView)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(refusal.code, BrowserRefusalCode::BrowserWrongTargetRefused);
+    assert!(captures(&f).is_empty());
+    assert_no_input(&f);
+}
+
+#[tokio::test]
+async fn isolated_selection_requires_a_valid_root_context_without_universal_access() {
+    let f = fixture().await;
+    capture(&f, BrowserScreenshotMode::NativeView)
+        .await
+        .unwrap();
+    let calls = f.state.lock().unwrap();
+    let worlds: Vec<_> = calls
+        .calls
+        .iter()
+        .filter(|(method, _)| method == "Page.createIsolatedWorld")
+        .collect();
+    assert_eq!(
+        worlds.len(),
+        2,
+        "before and after checks use driver-owned worlds"
+    );
+    for (_, params) in worlds {
+        assert_eq!(params["frameId"], "F1");
+        assert_eq!(params["grantUniveralAccess"], false);
+        assert!(params["worldName"]
+            .as_str()
+            .is_some_and(|name| !name.is_empty()));
+    }
+    let evaluations: Vec<_> = calls
+        .calls
+        .iter()
+        .filter(|(method, _)| method == "Runtime.evaluate")
+        .collect();
+    assert_eq!(evaluations.len(), 2);
+    assert!(evaluations
+        .iter()
+        .all(|(_, params)| params["contextId"] == 77));
+    drop(calls);
+    assert_no_input(&f);
+}
+
+#[tokio::test]
+async fn isolated_selection_missing_malformed_or_unavailable_context_never_evaluates() {
+    for reply in [
+        json!({}),
+        json!({"executionContextId":null}),
+        json!({"executionContextId":0}),
+        json!({"executionContextId":-1}),
+        json!({"executionContextId":"77"}),
+        json!({"executionContextId":1.5}),
+    ] {
+        let f = fixture().await;
+        f.state.lock().unwrap().world_reply = reply;
+        let refusal = capture(&f, BrowserScreenshotMode::NativeView)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(refusal.code, BrowserRefusalCode::BrowserRouteUnavailable);
+        assert!(captures(&f).is_empty());
+        assert!(!f
+            .state
+            .lock()
+            .unwrap()
+            .calls
+            .iter()
+            .any(|(method, _)| method == "Runtime.evaluate"));
+        assert_no_input(&f);
+    }
+    let f = fixture().await;
+    f.state.lock().unwrap().fail_world = true;
+    let refusal = capture(&f, BrowserScreenshotMode::NativeView)
+        .await
+        .err()
+        .unwrap();
+    assert_eq!(refusal.code, BrowserRefusalCode::BrowserRouteUnavailable);
+    assert!(captures(&f).is_empty());
+    assert!(!f
+        .state
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .any(|(method, _)| method == "Runtime.evaluate"));
+    assert_no_input(&f);
+}
+
+#[tokio::test]
+async fn isolated_selection_navigation_during_context_creation_or_evaluation_refuses() {
+    for during_creation in [true, false] {
+        let f = fixture().await;
+        if during_creation {
+            f.state.lock().unwrap().navigate_on_world = true;
+        } else {
+            f.state.lock().unwrap().navigate_on_visibility = true;
+        }
+        let refusal = capture(&f, BrowserScreenshotMode::NativeView)
+            .await
+            .err()
+            .unwrap();
+        assert_eq!(refusal.code, BrowserRefusalCode::BrowserRefStale);
+        assert!(captures(&f).is_empty());
+        if during_creation {
+            assert!(!f
+                .state
+                .lock()
+                .unwrap()
+                .calls
+                .iter()
+                .any(|(method, _)| method == "Runtime.evaluate"));
+        }
+        assert_no_input(&f);
     }
 }
 #[tokio::test]

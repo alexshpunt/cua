@@ -140,6 +140,11 @@ async fn bound() -> (Fixture, String, String) {
                 json!({})
             },
             "Page.enable"=>json!({}),
+            "Page.createIsolatedWorld"=> {
+                assert_eq!(call.params["frameId"],"F_MAIN");
+                assert_eq!(call.params["grantUniveralAccess"],false);
+                json!({"executionContextId":77})
+            },
             "Page.getFrameTree"=> {
                 if call.session_id.as_deref()==Some("child") {return MockReply::ok(json!({"frameTree":{"frame":{"id":"O_FRAME","loaderId":"O_LOADER","url":"https://cross.test/"}}}));}
                 let mut tree=json!({"frameTree":{"frame":{"id":"F_MAIN","loaderId":if state.navigated {"NEW"} else {"L_MAIN"},"url":"https://fixture.test/"}}});
@@ -161,7 +166,11 @@ async fn bound() -> (Fixture, String, String) {
                 assert_eq!(call.params["selector"],"button[data-testid='save']:not([disabled])");
                 json!({"nodeIds":if call.params["nodeId"]==100 {if state.unmatched_css_node {vec![999]} else {vec![10]}} else {vec![]}})
             },
-            "Runtime.evaluate"=> {assert_eq!(call.params["expression"],"document.visibilityState === 'visible'");json!({"result":{"value":state.selected}})},
+            "Runtime.evaluate"=> {
+                assert_eq!(call.params["expression"],"document.visibilityState === 'visible'");
+                assert_eq!(call.params["contextId"],77);
+                json!({"result":{"value":state.selected}})
+            },
             "Accessibility.getFullAXTree"=>if call.params["frameId"]=="O_FRAME" {json!({"nodes":[{"backendDOMNodeId":10,"role":{"value":"button"},"name":{"value":"Cross"}}]})} else if call.params["frameId"]=="F_IFRAME" {json!({"nodes":[{"backendDOMNodeId":10,"role":{"value":"button"},"name":{"value":"Inner"}}]})}
                 else {json!({"nodes":[{"backendDOMNodeId":10,"role":{"value":"button"},"name":{"value":"Save"}},
                     {"backendDOMNodeId":11,"role":{"value":"button"},"name":{"value":"Save"}},
