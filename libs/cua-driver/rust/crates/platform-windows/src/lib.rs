@@ -90,6 +90,8 @@ pub mod history;
 
 #[cfg(target_os = "windows")]
 pub mod browser_platform;
+#[cfg(target_os = "windows")]
+mod browser_viewport;
 
 // Pure isolated-browser selection decision; cfg-independent so its unit
 // tests run on any host.
