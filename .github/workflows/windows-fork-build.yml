@@ -6,6 +6,7 @@ on:
       - feat/lpt-730-coordinate-scroll
       - feat/lpt-703-window-restore
       - feat/lpt-731-window-management
+      - feat/lpt-733-window-dom-inspection
   workflow_dispatch:
     inputs:
       source_ref:
@@ -114,6 +115,12 @@ jobs:
           cargo test --locked -p cua-driver-core --test window_management_execution 2>&1 |
             Tee-Object build-evidence/window-management-execution-tests.log
           if ($LASTEXITCODE -ne 0) { throw "window management execution tests failed: $LASTEXITCODE" }
+      - name: Check native DOM pixel proof consumer when present
+        if: hashFiles('libs/cua-driver/rust/crates/cua-driver-core/examples/dom_pixel_proof.rs') != ''
+        run: |
+          cargo test --locked -p cua-driver-core --example dom_pixel_proof 2>&1 |
+            Tee-Object build-evidence/dom-pixel-proof-tests.log
+          if ($LASTEXITCODE -ne 0) { throw "DOM pixel proof tests failed: $LASTEXITCODE" }
       - name: Build isolated persistent WGC probe when present
         if: hashFiles('libs/cua-driver/rust/crates/platform-windows/examples/persistent-wgc-probe.rs') != ''
         run: |

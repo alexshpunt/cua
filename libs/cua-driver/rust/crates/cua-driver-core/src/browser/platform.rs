@@ -386,6 +386,20 @@ pub trait BrowserPlatform: Send + Sync {
         window_id: u64,
     ) -> Result<NativeWindowInfo, BrowserRefusal>;
 
+    /// Measure the exact visible browser content client area in physical desktop
+    /// pixels, without input or activation. Callers must separately prove that
+    /// their CDP tab is selected. Ambiguous or unavailable native widgets refuse;
+    /// implementations must never infer browser chrome insets from window size.
+    async fn native_browser_viewport(
+        &self,
+        _pid: i64,
+        _window_id: u64,
+    ) -> Result<super::dom_geometry::NativeBrowserViewport, BrowserRefusal> {
+        Err(BrowserRefusal::new(
+            super::refusal::BrowserRefusalCode::BrowserRouteUnavailable,
+            "native browser viewport measurement is unavailable on this platform",
+        ))
+    }
     /// Prove whether `window_id` is the only native top-level window owned by
     /// `pid`. `Some(true)` is an exact platform-attested cardinality proof;
     /// `Some(false)` means another window exists; `None` means this window
