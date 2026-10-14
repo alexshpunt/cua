@@ -39,6 +39,7 @@ mod adapter_support;
 pub mod binding;
 pub mod cdp_ws;
 pub mod download;
+pub mod dom_geometry;
 pub mod engine;
 mod grant;
 mod keyed_gates;
