@@ -240,6 +240,26 @@ fn args(target: &str, tab: &str) -> Value {
 }
 
 #[tokio::test]
+async fn explicit_geometry_reads_current_ref_without_minting_pixel_authority() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"].as_array().unwrap().iter()
+        .find(|row| row["attributes"]["id"] == "main-btn").unwrap()["ref"].clone();
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference.clone();
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["mode"], "element_geometry", "{result}");
+    assert_eq!(result["ref"], reference);
+    assert_eq!(result["coordinate_space"], "frame_viewport_css_pixels");
+    assert_eq!(result["method"], "isolated_cssom_border_box");
+    assert_eq!(result["native_pixel_mapping"], "unavailable");
+    assert_eq!(result["bounds"]["x"], 10.5);
+    assert_eq!(result["scroll"]["y"], 120.0);
+    assert!(f.state.lock().unwrap().calls.iter().any(|(method,_)|method=="Runtime.releaseObjectGroup"));
+}
+
+#[tokio::test]
 async fn selected_hidden_document_remains_readonly_inspectable() {
     let (f, target, tab) = bound().await;
     f.state.lock().unwrap().visible = false;
