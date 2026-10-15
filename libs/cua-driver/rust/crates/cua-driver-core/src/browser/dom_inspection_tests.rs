@@ -16,6 +16,10 @@ struct State {
     navigated: bool,
     detached: bool,
     selected: bool,
+    visible: bool,
+    duplicate_title: bool,
+    visibility_reply: Option<Value>,
+    fail_visibility: bool,
     switch_during_collection: bool,
     oopif: bool,
     node_detached: bool,
@@ -25,7 +29,10 @@ struct State {
     missing_layout_identity: bool,
     long_live_value: bool,
 }
-struct Platform(String);
+struct Platform {
+    endpoint: String,
+    state: Arc<Mutex<State>>,
+}
 #[async_trait]
 impl BrowserPlatform for Platform {
     async fn classify_browser(&self, _: i64) -> Result<BrowserClassification, BrowserRefusal> {
@@ -47,7 +54,7 @@ impl BrowserPlatform for Platform {
         Ok(NativeWindowInfo {
             pid,
             window_id,
-            title: "Fixture".into(),
+            title: if self.state.lock().unwrap().selected { "Fixture" } else { "Other tab" }.into(),
             bounds: Rect::new(0., 0., 800., 600.),
             geometry_exact: true,
             ownership: NativeOwnershipProof {
@@ -69,7 +76,7 @@ impl BrowserPlatform for Platform {
         pid: i64,
     ) -> Result<Option<OwnedEndpoint>, BrowserRefusal> {
         Ok(Some(OwnedEndpoint {
-            ws_url: self.0.clone(),
+            ws_url: self.endpoint.clone(),
             http_port: None,
             transport: EndpointTransport::EmbeddedDescendant,
             ownership: EndpointOwnershipProof {
@@ -120,13 +127,18 @@ fn document(detached: bool) -> Value {
 async fn bound() -> (Fixture, String, String) {
     let state = Arc::new(Mutex::new(State {
         selected: true,
+        visible: true,
         ..Default::default()
     }));
     let shared = state.clone();
     let server=MockCdpServer::start(Arc::new(move|call| {
         let mut state=shared.lock().unwrap(); state.calls.push((call.method.clone(),call.params.clone()));
         let result=match call.method.as_str() {
-            "Target.getTargets"=>json!({"targetInfos":[{"targetId":"T1","type":"page","title":"Fixture","url":"https://fixture.test/"}]}),
+            "Target.getTargets"=> {
+                let mut targets=vec![json!({"targetId":"T1","type":"page","title":"Fixture","url":"https://fixture.test/"})];
+                if !state.selected || state.duplicate_title { targets.push(json!({"targetId":"T2","type":"page","title":if state.duplicate_title {"Fixture"} else {"Other tab"},"url":"https://other.test/"})); }
+                json!({"targetInfos":targets})
+            },
             "Browser.getWindowForTarget"=>json!({"windowId":1,"bounds":{"left":0,"top":0,"width":800,"height":600,"windowState":"normal"}}),
             "Browser.getWindowBounds"=>json!({"bounds":{"left":0,"top":0,"width":800,"height":600,"windowState":"normal"}}),
             "Target.attachToTarget"=>json!({"sessionId":"s"}),
@@ -169,7 +181,8 @@ async fn bound() -> (Fixture, String, String) {
             "Runtime.evaluate"=> {
                 assert_eq!(call.params["expression"],"document.visibilityState === 'visible'");
                 assert_eq!(call.params["contextId"],77);
-                json!({"result":{"value":state.selected}})
+                if state.fail_visibility {return MockReply::err(-32000,"visibility unavailable");}
+                state.visibility_reply.clone().unwrap_or_else(||json!({"result":{"value":state.visible}}))
             },
             "Accessibility.getFullAXTree"=>if call.params["frameId"]=="O_FRAME" {json!({"nodes":[{"backendDOMNodeId":10,"role":{"value":"button"},"name":{"value":"Cross"}}]})} else if call.params["frameId"]=="F_IFRAME" {json!({"nodes":[{"backendDOMNodeId":10,"role":{"value":"button"},"name":{"value":"Inner"}}]})}
                 else {json!({"nodes":[{"backendDOMNodeId":10,"role":{"value":"button"},"name":{"value":"Save"}},
@@ -189,7 +202,7 @@ async fn bound() -> (Fixture, String, String) {
             method=>return MockReply::method_not_found(method)
         }; MockReply::ok(result)
     })).await;
-    let engine = BrowserEngine::new(Arc::new(Platform(server.ws_url())));
+    let engine = BrowserEngine::new(Arc::new(Platform { endpoint: server.ws_url(), state: state.clone() }));
     let value = structured(
         &GetBrowserStateTool::new(engine.clone())
             .invoke(json!({"pid":1,"window_id":7,"session":"dom-inspection-tests"}))
@@ -216,6 +229,45 @@ fn structured(result: &crate::protocol::ToolResult) -> Value {
 }
 fn args(target: &str, tab: &str) -> Value {
     json!({"target_id":target,"tab_id":tab,"session":"dom-inspection-tests","snapshot_format":"dom_inspect_v1"})
+}
+
+#[tokio::test]
+async fn selected_hidden_document_remains_readonly_inspectable() {
+    let (f, target, tab) = bound().await;
+    f.state.lock().unwrap().visible = false;
+    let result = structured(&GetBrowserStateTool::new(f.engine.clone()).invoke(args(&target, &tab)).await);
+    assert_eq!(result["status"], "ok", "{result}");
+    assert!(!result["elements"].as_array().unwrap().is_empty());
+    assert!(f.state.lock().unwrap().calls.iter().all(|(method, _)| !method.starts_with("Input.")
+        && !matches!(method.as_str(), "Target.activateTarget" | "Page.bringToFront" | "Runtime.callFunctionOn")));
+}
+
+#[tokio::test]
+async fn visible_document_cannot_replace_fresh_selected_target_evidence() {
+    for duplicate in [false, true] {
+        let (f, target, tab) = bound().await;
+        if duplicate { f.state.lock().unwrap().duplicate_title = true; }
+        else { f.state.lock().unwrap().selected = false; }
+        let result = structured(&GetBrowserStateTool::new(f.engine.clone()).invoke(args(&target, &tab)).await);
+        assert_eq!(result["refusal"]["code"], "browser_wrong_target_refused", "{result}");
+        assert!(f.state.lock().unwrap().calls.iter().all(|(method,_)| method != "DOM.getDocument"));
+    }
+}
+
+#[tokio::test]
+async fn invalid_isolated_visibility_is_unavailable_not_a_selected_tab_change() {
+    for reply in [json!({}), json!({"result":{"value":null}}), json!({"result":{"value":"visible"}}),
+        json!({"result":{"value":true},"exceptionDetails":{"text":"failed"}})] {
+        let (f, target, tab) = bound().await;
+        f.state.lock().unwrap().visibility_reply = Some(reply);
+        let result = structured(&GetBrowserStateTool::new(f.engine.clone()).invoke(args(&target, &tab)).await);
+        assert_eq!(result["refusal"]["code"], "browser_route_unavailable", "{result}");
+        assert!(f.state.lock().unwrap().calls.iter().all(|(method,_)| method != "DOM.getDocument"));
+    }
+    let (f, target, tab) = bound().await;
+    f.state.lock().unwrap().fail_visibility = true;
+    let result = structured(&GetBrowserStateTool::new(f.engine.clone()).invoke(args(&target, &tab)).await);
+    assert_eq!(result["refusal"]["code"], "browser_route_unavailable", "{result}");
 }
 
 #[tokio::test]
