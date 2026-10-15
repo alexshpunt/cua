@@ -133,6 +133,115 @@ pub fn match_viewport(native: &RgbImage, page: &RgbImage) -> Result<PixelPlaceme
     found.ok_or("dom_pixel_match_not_found")
 }
 
+/// Exact correspondence for one explicitly requested page-bitmap region.
+///
+/// This does not describe the rest of the page, CSS geometry, source identity
+/// or simultaneous paint. Consumers must not extrapolate outside either region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PixelCorrespondence {
+    pub page_pixel_region: PixelPlacement,
+    pub native_pixel_region: PixelPlacement,
+}
+
+impl PixelCorrespondence {
+    /// Translate a page-bitmap rectangle only when it is wholly proven.
+    /// Input uses page-bitmap pixels, not CSS. Rectangles crossing the proof
+    /// boundary are refused without clipping or extrapolating unmatched pixels.
+    pub fn map_region(&self, requested: PixelPlacement) -> Result<PixelPlacement, &'static str> {
+        let page = self.page_pixel_region;
+        let native = self.native_pixel_region;
+        let refusal = "dom_pixel_region_outside_proof";
+        for region in [page, native, requested] {
+            if region.width == 0
+                || region.height == 0
+                || region.x.checked_add(region.width).is_none()
+                || region.y.checked_add(region.height).is_none()
+            {
+                return Err(refusal);
+            }
+        }
+        if page.width != native.width || page.height != native.height {
+            return Err(refusal);
+        }
+        let x = requested.x.checked_sub(page.x).ok_or(refusal)?;
+        let y = requested.y.checked_sub(page.y).ok_or(refusal)?;
+        if x.checked_add(requested.width)
+            .is_none_or(|right| right > page.width)
+            || y.checked_add(requested.height)
+                .is_none_or(|bottom| bottom > page.height)
+        {
+            return Err(refusal);
+        }
+        Ok(PixelPlacement {
+            x: native.x.checked_add(x).ok_or(refusal)?,
+            y: native.y.checked_add(y).ok_or(refusal)?,
+            width: requested.width,
+            height: requested.height,
+        })
+    }
+}
+/// Match a declared opaque RGBA region without retrying smaller regions.
+///
+/// The full-image matcher remains separate. This operation never chooses an
+/// inset, tolerates changed channels, rescales pixels or grants input authority.
+pub fn match_region(
+    native: &image::RgbaImage,
+    page: &image::RgbaImage,
+    page_pixel_region: PixelPlacement,
+) -> Result<PixelCorrespondence, &'static str> {
+    for image in [native, page] {
+        let (width, height) = image.dimensions();
+        if width == 0 || height == 0 {
+            return Err("dom_pixel_invalid_dimensions");
+        }
+        if width > 16_384 || height > 16_384 || u64::from(width) * u64::from(height) > 16_777_216 {
+            return Err("dom_pixel_image_limit");
+        }
+    }
+    let region = page_pixel_region;
+    if region.width == 0
+        || region.height == 0
+        || region
+            .x
+            .checked_add(region.width)
+            .is_none_or(|right| right > page.width())
+        || region
+            .y
+            .checked_add(region.height)
+            .is_none_or(|bottom| bottom > page.height())
+    {
+        return Err("dom_pixel_region_invalid");
+    }
+    for y in region.y..region.y + region.height {
+        for x in region.x..region.x + region.width {
+            if page.get_pixel(x, y).0[3] != 255 {
+                return Err("dom_pixel_region_not_opaque");
+            }
+        }
+    }
+    let native_rgb = RgbImage::from_fn(native.width(), native.height(), |x, y| {
+        let pixel = native.get_pixel(x, y).0;
+        image::Rgb([pixel[0], pixel[1], pixel[2]])
+    });
+    let page_rgb = RgbImage::from_fn(region.width, region.height, |x, y| {
+        let pixel = page.get_pixel(region.x + x, region.y + y).0;
+        image::Rgb([pixel[0], pixel[1], pixel[2]])
+    });
+    // Reuse the complete bounded uniqueness search. A transparent duplicate
+    // can only cause conservative refusal, never weaken exact correspondence.
+    let native_pixel_region = match_viewport(&native_rgb, &page_rgb)?;
+    for y in native_pixel_region.y..native_pixel_region.y + native_pixel_region.height {
+        for x in native_pixel_region.x..native_pixel_region.x + native_pixel_region.width {
+            if native.get_pixel(x, y).0[3] != 255 {
+                return Err("dom_pixel_region_not_opaque");
+            }
+        }
+    }
+    Ok(PixelCorrespondence {
+        page_pixel_region,
+        native_pixel_region,
+    })
+}
 fn rgb(pixel: &[u8]) -> u64 {
     ((u64::from(pixel[0]) << 16) | (u64::from(pixel[1]) << 8) | u64::from(pixel[2])) + 1
 }
@@ -152,6 +261,197 @@ mod tests {
         for (px, py, pixel) in page.enumerate_pixels() {
             native.put_pixel(x + px, y + py, *pixel);
         }
+    }
+
+    #[test]
+    fn subregion_translation_cannot_extrapolate_into_unmatched_edges() {
+        let (native, page, region) = rgba_fixture();
+        let proof = match_region(&native, &page, region).unwrap();
+        assert_eq!(
+            proof.map_region(PixelPlacement {
+                x: 2,
+                y: 2,
+                width: 1,
+                height: 1
+            }),
+            Ok(PixelPlacement {
+                x: 5,
+                y: 4,
+                width: 1,
+                height: 1
+            })
+        );
+        assert_eq!(proof.map_region(region), Ok(proof.native_pixel_region));
+        for request in [
+            PixelPlacement {
+                x: 0,
+                y: 1,
+                width: 2,
+                height: 2,
+            },
+            PixelPlacement {
+                x: 1,
+                y: 0,
+                width: 2,
+                height: 2,
+            },
+            PixelPlacement {
+                x: 3,
+                y: 3,
+                width: 2,
+                height: 1,
+            },
+            PixelPlacement {
+                x: 2,
+                y: 3,
+                width: 1,
+                height: 2,
+            },
+            PixelPlacement {
+                x: 2,
+                y: 2,
+                width: 0,
+                height: 1,
+            },
+            PixelPlacement {
+                x: u32::MAX,
+                y: 2,
+                width: 2,
+                height: 1,
+            },
+        ] {
+            assert_eq!(
+                proof.map_region(request),
+                Err("dom_pixel_region_outside_proof")
+            );
+        }
+    }
+    fn rgba_fixture() -> (image::RgbaImage, image::RgbaImage, PixelPlacement) {
+        let page = image::RgbaImage::from_fn(5, 5, |x, y| image::Rgba([x as u8, y as u8, 73, 255]));
+        let mut native = image::RgbaImage::from_pixel(9, 8, image::Rgba([99, 99, 99, 0]));
+        for y in 1..4 {
+            for x in 1..4 {
+                native.put_pixel(x + 3, y + 2, *page.get_pixel(x, y));
+            }
+        }
+        (
+            native,
+            page,
+            PixelPlacement {
+                x: 1,
+                y: 1,
+                width: 3,
+                height: 3,
+            },
+        )
+    }
+
+    #[test]
+    fn declared_region_preserves_both_origins_without_admitting_unmatched_edges() {
+        let (native, page, region) = rgba_fixture();
+        assert_eq!(
+            match_region(&native, &page, region),
+            Ok(PixelCorrespondence {
+                page_pixel_region: region,
+                native_pixel_region: PixelPlacement {
+                    x: 4,
+                    y: 3,
+                    width: 3,
+                    height: 3
+                },
+            })
+        );
+        let rgb_native = image::DynamicImage::ImageRgba8(native).to_rgb8();
+        let rgb_page = image::DynamicImage::ImageRgba8(page).to_rgb8();
+        assert_eq!(
+            match_viewport(&rgb_native, &rgb_page),
+            Err("dom_pixel_match_not_found")
+        );
+    }
+
+    #[test]
+    fn region_matching_requires_exact_opaque_pixels_but_not_unrelated_native_corners() {
+        let (mut native, mut page, region) = rgba_fixture();
+        native.get_pixel_mut(4, 3).0[3] = 254;
+        assert_eq!(
+            match_region(&native, &page, region),
+            Err("dom_pixel_region_not_opaque")
+        );
+        native.get_pixel_mut(4, 3).0[3] = 255;
+        page.get_pixel_mut(1, 1).0[3] = 254;
+        assert_eq!(
+            match_region(&native, &page, region),
+            Err("dom_pixel_region_not_opaque")
+        );
+        page.get_pixel_mut(1, 1).0[3] = 255;
+        native.get_pixel_mut(4, 3).0[0] += 1;
+        assert_eq!(
+            match_region(&native, &page, region),
+            Err("dom_pixel_match_not_found")
+        );
+    }
+
+    #[test]
+    fn invalid_declared_regions_refuse_before_search_or_allocation() {
+        let (native, page, _) = rgba_fixture();
+        for region in [
+            PixelPlacement {
+                x: 0,
+                y: 0,
+                width: 0,
+                height: 1,
+            },
+            PixelPlacement {
+                x: 5,
+                y: 0,
+                width: 1,
+                height: 1,
+            },
+            PixelPlacement {
+                x: 0,
+                y: 4,
+                width: 1,
+                height: 2,
+            },
+            PixelPlacement {
+                x: u32::MAX,
+                y: 0,
+                width: 2,
+                height: 1,
+            },
+        ] {
+            assert_eq!(
+                match_region(&native, &page, region),
+                Err("dom_pixel_region_invalid")
+            );
+        }
+        assert_eq!(
+            match_region(
+                &image::RgbaImage::new(16_385, 1),
+                &page,
+                PixelPlacement {
+                    x: 0,
+                    y: 0,
+                    width: 1,
+                    height: 1
+                }
+            ),
+            Err("dom_pixel_image_limit")
+        );
+    }
+
+    #[test]
+    fn ambiguous_region_never_chooses_a_native_placement() {
+        let (mut native, page, region) = rgba_fixture();
+        for y in 0..3 {
+            for x in 0..3 {
+                native.put_pixel(x, y, *page.get_pixel(x + 1, y + 1));
+            }
+        }
+        assert_eq!(
+            match_region(&native, &page, region),
+            Err("dom_pixel_match_ambiguous")
+        );
     }
 
     #[test]
