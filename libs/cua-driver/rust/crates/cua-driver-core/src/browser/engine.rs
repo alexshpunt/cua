@@ -62,6 +62,8 @@ use super::types::{
     EndpointAccessClass, NativeWindowInfo, OwnedEndpoint, Rect,
 };
 
+#[path = "dom_cssom_engine.rs"]
+mod dom_cssom_engine;
 /// Bounds tolerance (device pixels) for native ↔ CDP window correlation.
 /// Absorbs window-shadow and DIP-rounding differences.
 pub const BOUNDS_TOLERANCE_PX: f64 = 8.0;
@@ -3447,8 +3449,8 @@ impl BrowserEngine {
     }
 }
 
-// DOM inspection never accepts a caller-provided script. The only evaluation
-// above is a fixed readonly visibility proof; selectors use Chromium's parser.
+// DOM inspection never accepts a caller-provided script. Visibility and explicit
+// geometry use fixed isolated-world reads; selectors use Chromium's parser.
 const DOM_READ_MAX_BYTES: usize = 4 * 1024 * 1024;
 
 async fn dom_read(
