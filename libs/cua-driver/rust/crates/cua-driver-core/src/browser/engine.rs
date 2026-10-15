@@ -3061,7 +3061,8 @@ impl BrowserEngine {
                 "frame":{"ref":row.frame_key,"kind":frame.kind.as_str()},"tag":row.tag,
                 "attributes":row.attributes,"text":row.text,"text_truncated":row.text_truncated,
                 "role":row.role,"name":row.name,"value":row.value,"states":row.states,
-                "visibility":row.visibility,"bounds_css":row.bounds,"coordinate_space":"document_css_pixels"}));
+                "visibility":row.visibility,"bounds_css":null,"coordinate_space":"document_css_pixels",
+                "geometry_status":"unqualified_native_layout_units"}));
         }
         let url = sources
             .first()
@@ -3089,7 +3090,9 @@ impl BrowserEngine {
         Ok(
             json!({"status":"ok","mode":"snapshot","target_id":target_id,"tab_id":tab_id,
             "page":{"url":url,"title":title},"snapshot":{"id":format!("p{snapshot_id}"),"format":"dom_inspect_v1",
-                "complete":collection_complete && visibility_complete && !truncated,"collection_complete":collection_complete,
+                "complete":false,"geometry_complete":false,
+                "metadata_complete":collection_complete && visibility_complete && !truncated,
+                "collection_complete":collection_complete,
                 "matched_count":matched_count,"returned_count":elements.len(),"truncated":truncated,
                 "omitted":{"nodes":omitted.nodes,"depth":omitted.depth,"frames":omitted.frames,
                     "metadata":omitted.metadata,"text":omitted.text,"hidden_filtered":hidden_filtered},
@@ -3735,18 +3738,8 @@ fn dom_enrich(
                         .position(|v| v.as_u64() == Some(index as u64))
                 })
             {
-                if let Some(bounds) = document["layout"]["bounds"][position].as_array() {
-                    let numbers = bounds.iter().map(Value::as_f64).collect::<Option<Vec<_>>>();
-                    if let Some(numbers) = numbers.filter(|v| {
-                        v.len() == 4
-                            && v.iter().all(|n| n.is_finite())
-                            && v[2] >= 0.0
-                            && v[3] >= 0.0
-                    }) {
-                        row.bounds =
-                            Some(Rect::new(numbers[0], numbers[1], numbers[2], numbers[3]));
-                    }
-                }
+                // DOMSnapshot absolute layout bounds have no qualified CSS-pixel
+                // transform. Retain style visibility, never mint geometry from them.
                 if let Some(styles) = document["layout"]["styles"][position].as_array() {
                     let display = styles.first().and_then(string);
                     let visibility = styles.get(1).and_then(string);
