@@ -28,6 +28,12 @@ struct State {
     single_frame: bool,
     missing_layout_identity: bool,
     long_live_value: bool,
+    geometry_missing_unique: bool,
+    geometry_context_fault: String,
+    geometry_exception: bool,
+    geometry_detaches: bool,
+    geometry_navigates: bool,
+    geometry_cleanup_fails: bool,
 }
 struct Platform {
     endpoint: String,
@@ -157,9 +163,59 @@ async fn bound() -> (Fixture, String, String) {
                 json!({})
             },
             "Page.enable"=>json!({}),
+            "Runtime.enable"=>json!({}),
+            "DOM.resolveNode"=> {
+                assert_eq!(call.params["executionContextId"],77);
+                assert!(call.params["objectGroup"].as_str().is_some());
+                json!({"object":{"type":"object","subtype":"node","objectId":"geometry-node"}})
+            },
+            "Runtime.callFunctionOn"=> {
+                assert_eq!(call.params["uniqueContextId"],"unique-main-77");
+                assert!(call.params.get("executionContextId").is_none());
+                assert!(call.params.get("objectId").is_none());
+                assert_eq!(call.params["arguments"],json!([{"objectId":"geometry-node"}]));
+                assert_eq!(call.params["throwOnSideEffect"],true);
+                assert_eq!(call.params["returnByValue"],true);
+                assert_eq!(call.params["awaitPromise"],false);
+                assert_eq!(call.params["userGesture"],false);
+                if state.geometry_navigates {state.navigated=true;}
+                if state.geometry_exception {json!({"exceptionDetails":{"text":"side effect check refused"}})} else {
+                    json!({"result":{"type":"object","value":{
+                        "connected":!state.geometry_detaches,"same_document":true,
+                        "bounds":{"x":10.5,"y":20.25,"width":80.0,"height":30.0},
+                        "scroll":{"x":0.0,"y":120.0},
+                        "visual_viewport":{"offset_x":0.0,"offset_y":0.0,
+                            "page_x":0.0,"page_y":120.0,"width":800.0,"height":600.0,"scale":1.0}
+                    }}})
+                }
+            },
+            "Runtime.releaseObjectGroup"=> {
+                if state.geometry_cleanup_fails {return MockReply::err(-32000,"release failed");}
+                json!({})
+            },
             "Page.createIsolatedWorld"=> {
                 assert_eq!(call.params["frameId"],"F_MAIN");
                 assert_eq!(call.params["grantUniveralAccess"],false);
+                if call.params["worldName"]=="cua-driver-dom-geometry" {
+                    let fault = state.geometry_context_fault.as_str();
+                    let event = crate::browser::mock_cdp::MockEvent {
+                        method:"Runtime.executionContextCreated".into(),
+                        session_id:if fault == "session" {Some("foreign-session".into())} else {call.session_id.clone()},
+                        params:json!({"context":{"id":if fault == "numeric_id" {78} else {77},
+                            "name":if fault == "name" {"page-world"} else {"cua-driver-dom-geometry"},
+                            "uniqueId":if state.geometry_missing_unique {Value::Null} else {json!("unique-main-77")},
+                            "auxData":{"frameId":if fault == "frame" {"FOREIGN"} else {"F_MAIN"},"isDefault":fault == "default_world"}}})
+                    };
+                    let mut events = vec![event];
+                    if fault == "reused_id" {
+                        events.push(crate::browser::mock_cdp::MockEvent {
+                            method:"Runtime.executionContextCreated".into(),session_id:call.session_id.clone(),
+                            params:json!({"context":{"id":77,"name":"cua-driver-dom-geometry",
+                                "uniqueId":"reused-unique-77","auxData":{"frameId":"F_MAIN","isDefault":false}}})
+                        });
+                    }
+                    return MockReply::ok(json!({"executionContextId":77})).with_events(events);
+                }
                 json!({"executionContextId":77})
             },
             "Page.getFrameTree"=> {
@@ -178,7 +234,7 @@ async fn bound() -> (Fixture, String, String) {
                         "children":[element(30,10,"BUTTON",json!(["id","cross-btn","aria-label","Cross"]),vec![])]}})
                 } else {document(state.detached)}
             },
-            "DOM.describeNode"=>if state.detached || state.node_detached {return MockReply::err(-32000,"detached node")} else {json!({"node":{"backendNodeId":10,"nodeId":30}})},
+            "DOM.describeNode"=>if state.detached || state.node_detached {return MockReply::err(-32000,"detached node")} else {json!({"node":{"backendNodeId":call.params["backendNodeId"],"nodeId":30}})},
             "DOM.querySelectorAll"=> {
                 assert_eq!(call.params["selector"],"button[data-testid='save']:not([disabled])");
                 json!({"nodeIds":if call.params["nodeId"]==100 {if state.unmatched_css_node {vec![999]} else {vec![10]}} else {vec![]}})
@@ -237,6 +293,233 @@ fn structured(result: &crate::protocol::ToolResult) -> Value {
 }
 fn args(target: &str, tab: &str) -> Value {
     json!({"target_id":target,"tab_id":tab,"session":"dom-inspection-tests","snapshot_format":"dom_inspect_v1"})
+}
+
+#[tokio::test]
+async fn explicit_geometry_reads_current_ref_without_minting_pixel_authority() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["id"] == "main-btn")
+        .unwrap()["ref"]
+        .clone();
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference.clone();
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["mode"], "element_geometry", "{result}");
+    assert_eq!(result["ref"], reference);
+    assert_eq!(result["coordinate_space"], "frame_viewport_css_pixels");
+    assert_eq!(result["method"], "isolated_cssom_border_box");
+    assert_eq!(result["native_pixel_mapping"], "unavailable");
+    assert_eq!(result["bounds"]["x"], 10.5);
+    assert_eq!(result["scroll"]["y"], 120.0);
+    assert!(f
+        .state
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .any(|(method, _)| method == "Runtime.releaseObjectGroup"));
+}
+
+#[tokio::test]
+async fn geometry_open_shadow_ref_keeps_main_frame_and_readonly_authority() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let row = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["data-testid"] == "shadow")
+        .unwrap();
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = row["ref"].clone();
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["mode"], "element_geometry", "{result}");
+    assert_eq!(result["frame"]["kind"], row["frame"]["kind"]);
+    assert_eq!(result["source_ref"], row["ref"]);
+    assert_eq!(result["native_pixel_mapping"], "unavailable");
+    let calls = &f.state.lock().unwrap().calls;
+    assert!(calls
+        .iter()
+        .any(|(method, params)| method == "DOM.resolveNode" && params["backendNodeId"] == 15));
+    assert!(!calls.iter().any(|(method, _)| method.starts_with("Input.")
+        || matches!(
+            method.as_str(),
+            "DOM.focus"
+                | "DOM.scrollIntoViewIfNeeded"
+                | "Page.captureScreenshot"
+                | "Target.activateTarget"
+                | "Page.bringToFront"
+        )));
+}
+
+#[tokio::test]
+async fn geometry_context_identity_must_be_unique_and_frame_attested() {
+    for fault in [
+        "session",
+        "numeric_id",
+        "name",
+        "frame",
+        "default_world",
+        "reused_id",
+    ] {
+        let (f, target, tab) = bound().await;
+        let tool = GetBrowserStateTool::new(f.engine.clone());
+        let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+        let reference = snapshot["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["attributes"]["id"] == "main-btn")
+            .unwrap()["ref"]
+            .clone();
+        f.state.lock().unwrap().geometry_context_fault = fault.into();
+        let mut request = args(&target, &tab);
+        request["geometry_ref"] = reference;
+        let result = structured(&tool.invoke(request).await);
+        assert_eq!(
+            result["refusal"]["code"], "browser_route_unavailable",
+            "{fault}: {result}"
+        );
+        let state = f.state.lock().unwrap();
+        assert!(
+            !state.calls.iter().any(
+                |(method, _)| method == "DOM.resolveNode" || method == "Runtime.callFunctionOn"
+            ),
+            "{fault}"
+        );
+        assert!(
+            state
+                .calls
+                .iter()
+                .any(|(method, _)| method == "Runtime.releaseObjectGroup"),
+            "{fault}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn geometry_context_exception_navigation_and_cleanup_fail_closed() {
+    for fault in [
+        "missing_unique",
+        "exception",
+        "detached",
+        "navigation",
+        "cleanup",
+    ] {
+        let (f, target, tab) = bound().await;
+        let tool = GetBrowserStateTool::new(f.engine.clone());
+        let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+        let reference = snapshot["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["attributes"]["id"] == "main-btn")
+            .unwrap()["ref"]
+            .clone();
+        {
+            let mut state = f.state.lock().unwrap();
+            state.geometry_missing_unique = fault == "missing_unique";
+            state.geometry_exception = fault == "exception";
+            state.geometry_detaches = fault == "detached";
+            state.geometry_navigates = fault == "navigation";
+            state.geometry_cleanup_fails = fault == "cleanup";
+        }
+        let mut request = args(&target, &tab);
+        request["geometry_ref"] = reference;
+        let result = structured(&tool.invoke(request).await);
+        assert_eq!(
+            result["refusal"]["code"],
+            if matches!(fault, "navigation" | "detached") {
+                "browser_ref_stale"
+            } else {
+                "browser_route_unavailable"
+            },
+            "{fault}: {result}"
+        );
+        let state = f.state.lock().unwrap();
+        if fault == "missing_unique" {
+            assert!(!state.calls.iter().any(
+                |(method, _)| method == "DOM.resolveNode" || method == "Runtime.callFunctionOn"
+            ));
+        }
+        assert!(
+            state
+                .calls
+                .iter()
+                .any(|(method, _)| method == "Runtime.releaseObjectGroup"),
+            "{fault}"
+        );
+        assert!(!state
+            .calls
+            .iter()
+            .any(|(method, _)| method.starts_with("Input.")
+                || matches!(
+                    method.as_str(),
+                    "DOM.focus"
+                        | "DOM.scrollIntoViewIfNeeded"
+                        | "Target.activateTarget"
+                        | "Page.bringToFront"
+                )));
+    }
+}
+
+#[tokio::test]
+async fn geometry_child_and_stale_refs_refuse_without_rebinding() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["frame"]["kind"] == "iframe")
+        .unwrap()["ref"]
+        .clone();
+    let before = f.state.lock().unwrap().calls.len();
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference;
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(
+        result["refusal"]["code"], "browser_route_unavailable",
+        "{result}"
+    );
+    assert!(!f.state.lock().unwrap().calls[before..]
+        .iter()
+        .any(|(method, _)| method == "DOM.resolveNode"));
+    let reference = snapshot["elements"][0]["ref"].clone();
+    tool.invoke(args(&target, &tab)).await;
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference;
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["refusal"]["code"], "browser_ref_stale", "{result}");
+}
+
+#[tokio::test]
+async fn geometry_rejects_mixed_or_malformed_requests_before_cdp() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    for extra in [
+        json!({"geometry_ref":""}),
+        json!({"geometry_ref":1}),
+        json!({"geometry_ref":"p1:0","scope_ref":"p1:0"}),
+        json!({"geometry_ref":"p1:0","max_nodes":10}),
+        json!({"geometry_ref":"p1:0","snapshot_format":"semantic_v2"}),
+    ] {
+        let mut request = args(&target, &tab);
+        for (key, value) in extra.as_object().unwrap() {
+            request[key] = value.clone();
+        }
+        let before = f.state.lock().unwrap().calls.len();
+        assert!(tool.invoke(request).await.is_error.unwrap_or(false));
+        assert_eq!(f.state.lock().unwrap().calls.len(), before);
+    }
 }
 
 #[tokio::test]
