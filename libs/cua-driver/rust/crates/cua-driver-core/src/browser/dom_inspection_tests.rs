@@ -332,16 +332,43 @@ async fn invalid_isolated_visibility_is_unavailable_not_a_selected_tab_change() 
 }
 
 #[tokio::test]
+async fn unqualified_layout_units_never_become_css_geometry() {
+    let (f, target, tab) = bound().await;
+    f.state.lock().unwrap().single_frame = true;
+    let result = structured(
+        &GetBrowserStateTool::new(f.engine.clone())
+            .invoke(args(&target, &tab))
+            .await,
+    );
+    assert_eq!(result["status"], "ok", "{result}");
+    assert_eq!(result["snapshot"]["collection_complete"], true);
+    assert_eq!(result["snapshot"]["complete"], false, "{result}");
+    assert_eq!(result["snapshot"]["geometry_complete"], false);
+    assert_eq!(result["elements"].as_array().unwrap().len(), 1);
+    let element = &result["elements"][0];
+    assert_eq!(element["value"], "live-value");
+    assert_eq!(element["states"]["checked"], true);
+    assert_eq!(element["bounds_css"], Value::Null);
+    assert_eq!(
+        element["geometry_status"],
+        "unqualified_native_layout_units"
+    );
+}
+
+#[tokio::test]
 async fn missing_layout_identity_cannot_mint_a_complete_readonly_record() {
     let (f, target, tab) = bound().await;
     f.state.lock().unwrap().single_frame = true;
     let tool = GetBrowserStateTool::new(f.engine.clone());
     let baseline = structured(&tool.invoke(args(&target, &tab)).await);
-    assert_eq!(baseline["snapshot"]["complete"], true, "{baseline}");
+    assert_eq!(
+        baseline["snapshot"]["metadata_complete"], true,
+        "{baseline}"
+    );
     assert_eq!(baseline["elements"].as_array().unwrap().len(), 1);
     f.state.lock().unwrap().missing_layout_identity = true;
     let result = structured(&tool.invoke(args(&target, &tab)).await);
-    assert_eq!(result["snapshot"]["complete"], false, "{result}");
+    assert_eq!(result["snapshot"]["metadata_complete"], false, "{result}");
     assert!(result["snapshot"]["omitted"]["metadata"].as_u64().unwrap() > 0);
     assert_eq!(
         result["elements"],
@@ -356,7 +383,10 @@ async fn long_live_values_report_bounded_text_and_partial_coverage() {
     f.state.lock().unwrap().single_frame = true;
     let tool = GetBrowserStateTool::new(f.engine.clone());
     let baseline = structured(&tool.invoke(args(&target, &tab)).await);
-    assert_eq!(baseline["snapshot"]["complete"], true, "{baseline}");
+    assert_eq!(
+        baseline["snapshot"]["metadata_complete"], true,
+        "{baseline}"
+    );
     assert_eq!(baseline["elements"][0]["value"], "live-value");
     f.state.lock().unwrap().long_live_value = true;
     let result = structured(&tool.invoke(args(&target, &tab)).await);
@@ -369,7 +399,7 @@ async fn long_live_values_report_bounded_text_and_partial_coverage() {
         1024
     );
     assert_eq!(result["elements"][0]["text_truncated"], true);
-    assert_eq!(result["snapshot"]["complete"], false);
+    assert_eq!(result["snapshot"]["metadata_complete"], false);
     assert!(result["snapshot"]["omitted"]["text"].as_u64().unwrap() > 0);
 }
 #[tokio::test]
@@ -405,10 +435,8 @@ async fn contained_oopif_refs_keep_child_source_and_refuse_detached_children() {
         .find(|e| e["attributes"]["id"] == "cross-btn")
         .unwrap();
     assert_eq!(cross["frame"]["kind"], "oopif");
-    assert_eq!(
-        cross["bounds_css"],
-        json!({"x":5.0,"y":6.0,"width":40.0,"height":20.0})
-    );
+    assert_eq!(cross["bounds_css"], Value::Null);
+    assert_eq!(cross["geometry_status"], "unqualified_native_layout_units");
     let mut scoped = args(&target, &tab);
     scoped["scope_ref"] = cross["ref"].clone();
     f.state.lock().unwrap().oopif = false;
@@ -470,7 +498,8 @@ async fn dom_inspection_metadata_and_readonly_refs_retire_without_mutation() {
     assert!(elements.iter().any(|e| e["tag"] == "html"));
     assert!(elements
         .iter()
-        .all(|e| e["coordinate_space"] == "document_css_pixels"));
+        .all(|e| e["bounds_css"].is_null()
+            && e["geometry_status"] == "unqualified_native_layout_units"));
     let input = elements.iter().find(|e| e["tag"] == "input").unwrap();
     assert_eq!(input["value"], "live-value");
     assert_eq!(input["states"]["checked"], true);

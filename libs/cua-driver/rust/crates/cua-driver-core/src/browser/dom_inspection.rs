@@ -1,6 +1,5 @@
 //! Bounded, read-only DOM records. Native CDP frame and layout proof stays with the caller.
 
-use super::types::Rect;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
@@ -20,7 +19,6 @@ pub(crate) struct DomRecord {
     pub(crate) value: Option<String>,
     pub(crate) states: BTreeMap<String, Value>,
     pub(crate) visibility: String,
-    pub(crate) bounds: Option<Rect>,
     pub(crate) text_truncated: bool,
 }
 
@@ -173,7 +171,6 @@ impl Collector {
                 value: None,
                 states: BTreeMap::new(),
                 visibility: "unknown".to_owned(),
-                bounds: None,
                 text: String::new(),
                 text_truncated: attrs_truncated || tag_truncated,
                 attributes,
@@ -499,7 +496,6 @@ mod tests {
         assert!(rows[1].value.is_none());
         assert!(rows[1].states.is_empty());
         assert_eq!(rows[1].visibility, "unknown");
-        assert!(rows.iter().all(|row| row.bounds.is_none()));
         assert!(coverage.complete);
     }
 
