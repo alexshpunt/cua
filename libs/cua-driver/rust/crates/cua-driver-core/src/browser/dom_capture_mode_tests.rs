@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 struct Platform {
     endpoint: String,
     gone: Arc<Mutex<bool>>,
+    state: Arc<Mutex<State>>,
 }
 #[async_trait]
 impl BrowserPlatform for Platform {
@@ -43,7 +44,7 @@ impl BrowserPlatform for Platform {
         Ok(NativeWindowInfo {
             pid,
             window_id,
-            title: "Capture fixture".into(),
+            title: if self.state.lock().unwrap().selected { "Capture fixture" } else { "Other tab" }.into(),
             bounds: Rect::new(0., 0., 800., 600.),
             geometry_exact: true,
             ownership: NativeOwnershipProof {
@@ -93,6 +94,10 @@ impl BrowserPlatform for Platform {
 struct State {
     calls: Vec<(String, Value)>,
     selected: bool,
+    visible: bool,
+    duplicate_title: bool,
+    visibility_reply: Option<Value>,
+    fail_visibility: bool,
     navigate_on_capture: bool,
     switch_on_capture: bool,
     loader: &'static str,
@@ -127,6 +132,10 @@ async fn fixture() -> Fixture {
     let state = Arc::new(Mutex::new(State {
         calls: vec![],
         selected: true,
+        visible: true,
+        duplicate_title: false,
+        visibility_reply: None,
+        fail_visibility: false,
         navigate_on_capture: false,
         switch_on_capture: false,
         loader: "L1",
@@ -142,7 +151,11 @@ async fn fixture() -> Fixture {
         let mut state = shared.lock().unwrap();
         state.calls.push((call.method.clone(), call.params.clone()));
         let value = match call.method.as_str() {
-            "Target.getTargets" => json!({"targetInfos":[{"targetId":"T1","type":"page","title":"Capture fixture","url":"https://capture.test/"}]}),
+            "Target.getTargets" => {
+                let mut targets=vec![json!({"targetId":"T1","type":"page","title":"Capture fixture","url":"https://capture.test/"})];
+                if !state.selected || state.duplicate_title { targets.push(json!({"targetId":"T2","type":"page","title":if state.duplicate_title {"Capture fixture"} else {"Other tab"},"url":"https://other.test/"})); }
+                json!({"targetInfos":targets})
+            },
             "Browser.getWindowForTarget" => json!({"windowId":1,"bounds":{"left":0,"top":0,"width":800,"height":600,"windowState":"normal"}}),
             "Browser.getWindowBounds" => json!({"bounds":{"left":0,"top":0,"width":800,"height":600,"windowState":"normal"}}),
             "Target.attachToTarget" => json!({"sessionId":"s"}),
@@ -157,7 +170,8 @@ async fn fixture() -> Fixture {
                 assert_eq!(call.params["expression"], "document.visibilityState === 'visible'");
                 if state.navigate_on_visibility {state.loader = "L2";}
                 // A page-owned override claims visible; only the isolated context has the real state.
-                json!({"result":{"value":if call.params["contextId"] == 77 {state.selected} else {true}}})
+                if state.fail_visibility {return MockReply::err(-32000,"visibility unavailable");}
+                state.visibility_reply.clone().unwrap_or_else(||json!({"result":{"value":if call.params["contextId"] == 77 {state.visible} else {true}}}))
             }
             "Page.getLayoutMetrics" => json!({"cssVisualViewport":{"pageX":17,"pageY":23,"clientWidth":2,"clientHeight":1}}),
             "Page.captureScreenshot" => {
@@ -174,6 +188,7 @@ async fn fixture() -> Fixture {
     let engine = BrowserEngine::new(Arc::new(Platform {
         endpoint: server.ws_url(),
         gone: gone.clone(),
+        state: state.clone(),
     }));
     let bound = GetBrowserStateTool::new(engine.clone())
         .invoke(json!({"pid":1,"window_id":7,"session":"capture-mode-tests"}))
@@ -219,14 +234,47 @@ fn assert_no_input(f: &Fixture) {
     }
 }
 #[tokio::test]
-async fn isolated_selection_ignores_page_owned_visibility_overrides() {
+async fn isolated_visibility_ignores_page_owned_overrides_without_claiming_a_tab_change() {
     let f = fixture().await;
-    f.state.lock().unwrap().selected = false;
+    f.state.lock().unwrap().visible = false;
     let refusal = capture(&f, BrowserScreenshotMode::NativeView)
         .await
         .err()
         .unwrap();
-    assert_eq!(refusal.code, BrowserRefusalCode::BrowserWrongTargetRefused);
+    assert_eq!(refusal.code, BrowserRefusalCode::BrowserRouteUnavailable);
+    assert!(refusal.message.contains("hidden"));
+    assert!(captures(&f).is_empty());
+    assert_no_input(&f);
+}
+
+#[tokio::test]
+async fn selected_title_ambiguity_or_another_selected_target_refuses_visible_capture() {
+    for duplicate in [false, true] {
+        let f = fixture().await;
+        if duplicate { f.state.lock().unwrap().duplicate_title = true; }
+        else { f.state.lock().unwrap().selected = false; }
+        let refusal = capture(&f, BrowserScreenshotMode::NativeView).await.err().unwrap();
+        assert_eq!(refusal.code, BrowserRefusalCode::BrowserWrongTargetRefused);
+        assert!(captures(&f).is_empty());
+        assert_no_input(&f);
+    }
+}
+
+#[tokio::test]
+async fn malformed_or_exception_visibility_never_captures_or_claims_a_tab_change() {
+    for reply in [json!({}), json!({"result":{"value":null}}), json!({"result":{"value":"visible"}}),
+        json!({"result":{"value":true},"exceptionDetails":{"text":"failed"}})] {
+        let f = fixture().await;
+        f.state.lock().unwrap().visibility_reply = Some(reply);
+        let refusal = capture(&f, BrowserScreenshotMode::NativeView).await.err().unwrap();
+        assert_eq!(refusal.code, BrowserRefusalCode::BrowserRouteUnavailable);
+        assert!(captures(&f).is_empty());
+        assert_no_input(&f);
+    }
+    let f = fixture().await;
+    f.state.lock().unwrap().fail_visibility = true;
+    let refusal = capture(&f, BrowserScreenshotMode::NativeView).await.err().unwrap();
+    assert_eq!(refusal.code, BrowserRefusalCode::BrowserRouteUnavailable);
     assert!(captures(&f).is_empty());
     assert_no_input(&f);
 }
