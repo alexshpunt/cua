@@ -1,8 +1,9 @@
 //! Offline qualification of two original PNG samples, not a browser/input tool.
 //! Usage: cargo run -p cua-driver-core --example dom_pixel_proof -- native.png page.png
-//! No resampling, tolerance, guessed inset or native input authority is supplied.
+//! Optional explicit region: native.png page.png --region x y width height
+//! No resampling, tolerance, automatic inset or native input authority is supplied.
 
-use cua_driver_core::browser::dom_pixel_match::{match_viewport, PixelPlacement};
+use cua_driver_core::browser::dom_pixel_match::{match_region, match_viewport, PixelPlacement};
 use cua_driver_core::image_utils::png_dimensions;
 use image::{DynamicImage, GenericImageView, ImageFormat};
 use serde_json::json;
@@ -48,11 +49,49 @@ fn match_samples(
 fn main() -> anyhow::Result<()> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     anyhow::ensure!(
-        args.len() == 2,
-        "usage: dom_pixel_proof native.png page.png"
+        args.len() == 2 || (args.len() == 7 && args[2] == "--region"),
+        "usage: dom_pixel_proof native.png page.png [--region x y width height]"
     );
+    let region = if args.len() == 7 {
+        let values = args[3..]
+            .iter()
+            .map(|value| {
+                value
+                    .to_str()
+                    .ok_or_else(|| anyhow::anyhow!("region must contain unsigned integers"))?
+                    .parse::<u32>()
+                    .map_err(anyhow::Error::from)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        Some(PixelPlacement {
+            x: values[0],
+            y: values[1],
+            width: values[2],
+            height: values[3],
+        })
+    } else {
+        None
+    };
     let native = decode(Path::new(&args[0]))?;
     let page = decode(Path::new(&args[1]))?;
+    if let Some(region) = region {
+        let result = match_region(&native.to_rgba8(), &page.to_rgba8(), region);
+        println!(
+            "{}",
+            match result {
+                Ok(proof) => json!({"status":"matched", "method":"unique_exact_rgba_region",
+                "page_pixel_region":{"x":proof.page_pixel_region.x,"y":proof.page_pixel_region.y,
+                    "width":proof.page_pixel_region.width,"height":proof.page_pixel_region.height},
+                "native_pixel_region":{"x":proof.native_pixel_region.x,"y":proof.native_pixel_region.y,
+                    "width":proof.native_pixel_region.width,"height":proof.native_pixel_region.height},
+                "native_dimensions":native.dimensions(),"page_dimensions":page.dimensions(),
+                "read_only":true,"input_authority":false,"atomic_capture":false,"css_mapping":null}),
+                Err(code) =>
+                    json!({"status":"refused","code":code,"read_only":true,"input_authority":false}),
+            }
+        );
+        return Ok(());
+    }
     let result = match_samples(&native, &page);
     println!(
         "{}",
