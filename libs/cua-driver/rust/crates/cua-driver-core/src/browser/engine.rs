@@ -2010,7 +2010,7 @@ impl BrowserEngine {
             let validated = self
                 .revalidate_for_mutation(session, target_id, Some(tab_id))
                 .await?;
-            self.require_selected_dom_tab(&validated).await?;
+            self.require_selected_dom_tab(&validated, true).await?;
             let tree = self
                 .local_frame_tree(&validated.conn, &validated.cdp_session)
                 .await
@@ -2079,7 +2079,7 @@ impl BrowserEngine {
                     "document navigated during bitmap capture",
                 ));
             }
-            self.require_selected_dom_tab(&validated).await?;
+            self.require_selected_dom_tab(&validated, true).await?;
         }
         let data_base64 = response
             .get("data")
@@ -2594,10 +2594,33 @@ impl BrowserEngine {
         }
     }
 
-    async fn require_selected_dom_tab(
+    async fn require_same_selected_dom_target(
         &self,
         validated: &ValidatedTab,
     ) -> Result<(), BrowserRefusal> {
+        // Selectedness belongs to this exact native/CDP window, independently
+        // of whether Chromium currently reports its document as visible.
+        let native = self
+            .native_window_checked(validated.record.pid, validated.record.window_id)
+            .await?;
+        let candidates = self.window_candidates(&validated.conn).await?;
+        if selected_tab_target_id(&native.title, &candidates, validated.record.cdp_window_id)
+            != Some(validated.tab.cdp_target_id.as_str())
+        {
+            return Err(refuse(
+                BrowserRefusalCode::BrowserWrongTargetRefused,
+                "fresh native-window evidence does not uniquely select the admitted tab; no activation requested",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn require_selected_dom_tab(
+        &self,
+        validated: &ValidatedTab,
+        require_visible: bool,
+    ) -> Result<(), BrowserRefusal> {
+        self.require_same_selected_dom_target(validated).await?;
         let root = self
             .local_frame_tree(&validated.conn, &validated.cdp_session)
             .await
@@ -2678,10 +2701,26 @@ impl BrowserEngine {
                 "document changed during isolated visibility read",
             ));
         }
-        if visibility.pointer("/result/value").and_then(Value::as_bool) != Some(true) {
-            return Err(refuse(
-                BrowserRefusalCode::BrowserWrongTargetRefused,
-                "the admitted tab is not proven selected; inspection never activates a tab",
+        if visibility.get("exceptionDetails").is_some() {
+            return Err(route_err(
+                "isolated document visibility unavailable",
+                "visibility evaluation reported an exception; selectedness is not inferred",
+            ));
+        }
+        let visible = visibility
+            .pointer("/result/value")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| {
+                route_err(
+                    "isolated document visibility unavailable",
+                    "visibility evaluation did not return a boolean; selectedness is not inferred",
+                )
+            })?;
+        self.require_same_selected_dom_target(validated).await?;
+        if require_visible && !visible {
+            return Err(route_err(
+                "selected document is hidden",
+                "visible-document capture is unavailable; no activation requested",
             ));
         }
         Ok(())
@@ -2705,7 +2744,7 @@ impl BrowserEngine {
         let validated = self
             .revalidate_for_mutation(session, target_id, Some(tab_id))
             .await?;
-        self.require_selected_dom_tab(&validated).await?;
+        self.require_selected_dom_tab(&validated, false).await?;
         let scoped = scope_ref
             .map(|reference| {
                 self.store
@@ -2969,7 +3008,8 @@ impl BrowserEngine {
                 "document navigated during inspection",
             ));
         }
-        self.require_selected_dom_tab(&final_validated).await?;
+        self.require_selected_dom_tab(&final_validated, false)
+            .await?;
         let mut identities = HashSet::new();
         if records
             .iter()
