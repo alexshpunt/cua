@@ -218,6 +218,7 @@ pub struct DomActionRefusal {
 pub struct DomActionResult {
     pub format: DomActionFormat,
     pub status: DomActionStatus,
+    #[schemars(schema_with = "nullable_input_route_schema")]
     pub input_route: Option<DomActionInputRoute>,
     #[schemars(schema_with = "false_schema")]
     pub trusted: bool,
@@ -348,6 +349,10 @@ impl ToolOutput for DomActionResult {
     }
 }
 
+fn nullable_input_route_schema(generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    let route = generator.subschema_for::<DomActionInputRoute>();
+    schemars::json_schema!({"anyOf": [route, {"type":"null"}]})
+}
 fn present_bool<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<bool>, D::Error> {

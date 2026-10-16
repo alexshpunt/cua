@@ -224,7 +224,7 @@ fn request_schema() -> Value {
             )
         })
         .collect::<serde_json::Map<_, _>>();
-    json!({"type":"object","properties":{
+    json!({"type":"object","description":"Use one bounded locator action with only its action-specific parameters.","properties":{
         "action":{"type":"string","enum":kinds.iter().map(|(name,_)|*name).collect::<Vec<_>>()},
         "locator":{"type":"object","properties":locator,"minProperties":1,"additionalProperties":false,
             "description":"Combine exact predicates with AND. A duplicate or incomplete match refuses; no convenient first match is chosen."},
