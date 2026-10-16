@@ -14,7 +14,8 @@ rego = ["dep:regorus"]
 cua-driver-contract = { path = "../cua-driver-contract" }
 tokio = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+# Preserve CDP f64 coordinates exactly across JSON decoding, without geometry tolerances.
+serde_json = { workspace = true, features = ["float_roundtrip"] }
 anyhow = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
