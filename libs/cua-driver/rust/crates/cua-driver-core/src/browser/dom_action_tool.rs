@@ -26,11 +26,16 @@ pub struct BrowserDomActionTool {
 impl BrowserDomActionTool {
     /// Construct this isolated candidate's explicit action surface for one shared engine.
     pub fn new(engine: Arc<BrowserEngine>) -> Self {
+        let mut session = crate::tool_schema::session_schema_with(
+            "Use the explicit session that owns the bound browser.",
+        );
+        session["minLength"] = json!(1);
+        session["maxLength"] = json!(256);
         let def=ToolDef {
             name:"browser_dom_action".into(),
             description:"Use browser_dom_action to perform a bounded locator-grounded action in the current inspected page. Check the returned prefix and observed state before another action; dispatch is not application success.".into(),
             input_schema:json!({"type":"object","properties":{
-                "session":{"type":"string","minLength":1,"maxLength":256,"description":"Use the explicit session that owns the bound browser."},
+                "session":session,
                 "target_id":{"type":"string","minLength":1,"maxLength":256,"description":"Use the exact opaque browser binding from get_browser_state."},
                 "tab_id":{"type":"string","minLength":1,"maxLength":256,"description":"Use the bound opaque tab id; this call never switches tabs."},
                 "source_ref":{"type":"string","minLength":1,"maxLength":256,"description":"Use a current dom_inspect_v1 reference as document context. The locator resolves within that same document; the reference alone grants no input authority."},

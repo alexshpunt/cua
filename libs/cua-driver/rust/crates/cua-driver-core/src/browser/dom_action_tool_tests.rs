@@ -42,6 +42,13 @@ fn wire(target: &str, tab: &str, source_ref: &str) -> Value {
 async fn the_public_schema_rejects_implicit_routes_coordinates_and_irrelevant_fields() {
     let (f, target, tab, context) = source().await;
     let tool = BrowserDomActionTool::new(f.engine.clone());
+    assert_eq!(
+        crate::tool_schema::shared_schema_violations(
+            "browser_dom_action",
+            &tool.def().input_schema
+        ),
+        Vec::<String>::new()
+    );
     let schema = jsonschema::validator_for(&tool.def().input_schema).unwrap();
     let valid = wire(&target, &tab, &context);
     assert!(schema.is_valid(&valid));
