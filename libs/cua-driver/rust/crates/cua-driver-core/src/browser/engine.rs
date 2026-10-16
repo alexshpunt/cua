@@ -62,6 +62,8 @@ use super::types::{
     EndpointAccessClass, NativeWindowInfo, OwnedEndpoint, Rect,
 };
 
+#[path = "dom_action_engine.rs"]
+mod dom_action_engine;
 #[path = "dom_cssom_engine.rs"]
 mod dom_cssom_engine;
 /// Bounds tolerance (device pixels) for native ↔ CDP window correlation.
