@@ -26,8 +26,47 @@ struct State {
     bad_metadata: bool,
     unmatched_css_node: bool,
     single_frame: bool,
+    dom_document: Option<Value>,
+    dom_layout: Option<Value>,
     missing_layout_identity: bool,
     long_live_value: bool,
+    distinct_attachment_ids: bool,
+    geometry_missing_unique: bool,
+    native_geometry_fault: String,
+    native_geometry_calls: usize,
+    geometry_context_fault: String,
+    geometry_exception: bool,
+    actionability_reply: Option<Value>,
+    actionability_eval_error: bool,
+    actionability_sample_changes: bool,
+    actionability_reads: usize,
+    sampled_backend: i64,
+    hit_backend: Option<i64>,
+    hit_frame: Option<String>,
+    hit_relation: Option<Value>,
+    hit_exception: bool,
+    hit_changes: bool,
+    hit_navigates: bool,
+    hit_description_fault: String,
+    hit_reads: usize,
+    hit_resolving: bool,
+    fractional_geometry: bool,
+    geometry_detaches: bool,
+    geometry_navigates: bool,
+    geometry_cleanup_fails: bool,
+    geometry_resolved: Option<Arc<tokio::sync::Notify>>,
+    geometry_released: Option<Arc<tokio::sync::Notify>>,
+    dispatch_fail_step: String,
+    dispatch_navigate_step: String,
+    dispatch_signal: Option<Arc<tokio::sync::Notify>>,
+    dispatch_preflight_refused: bool,
+    dispatch_negative_step: String,
+    dispatch_hit_fault: String,
+    dispatch_signal_step: String,
+    dispatch_stall_step: String,
+    dispatch_missing_unique: bool,
+    dispatch_cleanup_fails: bool,
+    dispatch_released: Option<Arc<tokio::sync::Notify>>,
 }
 struct Platform {
     endpoint: String,
@@ -51,22 +90,84 @@ impl BrowserPlatform for Platform {
         pid: i64,
         window_id: u64,
     ) -> Result<NativeWindowInfo, BrowserRefusal> {
+        let state = self.state.lock().unwrap();
         Ok(NativeWindowInfo {
             pid,
             window_id,
-            title: if self.state.lock().unwrap().selected {
+            title: if state.selected {
                 "Fixture"
             } else {
                 "Other tab"
             }
             .into(),
-            bounds: Rect::new(0., 0., 800., 600.),
+            // CDP-correlation DIP bounds, deliberately distinct from the physical sample.
+            bounds: Rect::new(
+                if state.native_geometry_fault == "window" && state.native_geometry_calls > 0 {
+                    1.
+                } else {
+                    0.
+                },
+                0.,
+                800.,
+                600.,
+            ),
             geometry_exact: true,
             ownership: NativeOwnershipProof {
                 method: NativeOwnershipMethod::WindowServerOwner,
                 owner_pid: pid,
                 detail: None,
             },
+        })
+    }
+    async fn native_browser_viewport(
+        &self,
+        _: i64,
+        _: u64,
+    ) -> Result<crate::browser::dom_geometry::NativeBrowserViewport, BrowserRefusal> {
+        let mut state = self.state.lock().unwrap();
+        state.native_geometry_calls += 1;
+        if state.native_geometry_fault == "unavailable" {
+            return Err(BrowserRefusal::new(
+                BrowserRefusalCode::BrowserRouteUnavailable,
+                "native RootWebArea pending",
+            ));
+        }
+        if state.native_geometry_fault == "navigation" {
+            state.navigated = true;
+        }
+        Ok(crate::browser::dom_geometry::NativeBrowserViewport {
+            // Physical pixels at DPR 1.5, not NativeWindowInfo's 800x600 DIP.
+            window: Rect::new(
+                if state.native_geometry_fault == "physical_window"
+                    && state.native_geometry_calls > 1
+                {
+                    1.
+                } else {
+                    0.
+                },
+                0.,
+                1200.,
+                900.,
+            ),
+            viewport: Rect::new(
+                10.,
+                100.,
+                if state.native_geometry_fault == "one_pixel" {
+                    751.
+                } else {
+                    750.
+                },
+                450.,
+            ),
+            source: "uia_root_web_area",
+            identity: vec![
+                42,
+                if state.native_geometry_fault == "identity" && state.native_geometry_calls > 1 {
+                    2
+                } else {
+                    1
+                },
+            ],
         })
     }
     async fn is_only_exact_native_window(
@@ -106,6 +207,16 @@ impl BrowserPlatform for Platform {
         ))
     }
 }
+#[path = "dom_action_dispatch_tests.rs"]
+mod action_dispatch_tests;
+#[path = "dom_action_hit_tests.rs"]
+mod action_hit_tests;
+#[path = "dom_action_prepare_tests.rs"]
+mod action_prepare_tests;
+#[path = "dom_action_tool_tests.rs"]
+mod action_tool_tests;
+#[path = "dom_native_geometry_tests.rs"]
+mod native_geometry_tests;
 struct Fixture {
     engine: Arc<BrowserEngine>,
     state: Arc<Mutex<State>>,
@@ -129,6 +240,65 @@ fn document(detached: bool) -> Value {
             element(11,11,"BUTTON",json!(["hidden","","aria-label","Save"]),vec![]),
             element(12,12,"INPUT",json!(["value","markup-only","type","checkbox"]),vec![]),iframe,shadow]) ]}})
 }
+// A realistic authored form plus native UA roots. UA descendants deliberately
+// contain forbidden extra frame/query roots and more than the author visit budget.
+fn author_form_fixture() -> (Value, Value) {
+    let root = |id: i64, children: Vec<Value>| {
+        json!({"nodeType":11,"nodeId":id,
+        "backendNodeId":id,"shadowRootType":"user-agent","childNodeCount":children.len(),"children":children})
+    };
+    let mut private_frame = element(901, 901, "IFRAME", json!([]), vec![]);
+    private_frame["contentDocument"] = json!({"nodeType":9,"nodeId":902,"backendNodeId":902,
+        "frameId":"PRIVATE_UA_FRAME","childNodeCount":0,"children":[]});
+    let mut private_host = element(903, 903, "DIV", json!([]), vec![]);
+    private_host["shadowRoots"] = json!([{"nodeType":11,"nodeId":904,"backendNodeId":904,
+        "shadowRootType":"open","childNodeCount":0,"children":[]}]);
+    let mut internals = vec![private_frame, private_host];
+    internals.extend((10_000..13_000).map(|id| element(id, id, "DIV", json!([]), vec![])));
+    let mut input = element(
+        12,
+        12,
+        "INPUT",
+        json!(["data-testid", "live-value"]),
+        vec![],
+    );
+    input["shadowRoots"] = json!([root(101, internals)]);
+    let options = (14..=16)
+        .map(|id| {
+            let mut option = element(id, id, "OPTION", json!(["value", id.to_string()]), vec![]);
+            option["shadowRoots"] = json!([root(id + 100, vec![])]);
+            option
+        })
+        .collect();
+    let mut select = element(13, 13, "SELECT", json!([]), options);
+    select["shadowRoots"] = json!([root(113, vec![])]);
+    let button = element(
+        10,
+        10,
+        "BUTTON",
+        json!([
+            "id",
+            "main-btn",
+            "data-testid",
+            "save",
+            "aria-label",
+            "Save"
+        ]),
+        vec![],
+    );
+    let mut shadow = element(20, 20, "DIV", json!([]), vec![]);
+    shadow["shadowRoots"] = json!([{"nodeType":11,"nodeId":150,"backendNodeId":150,
+        "shadowRootType":"open","childNodeCount":1,"children":[element(21,21,"BUTTON",json!([]),vec![])]}]);
+    let document = json!({"root":{"nodeType":9,"nodeId":100,"backendNodeId":100,"frameId":"F_MAIN",
+        "documentURL":"https://fixture.test/","childNodeCount":4,"children":[input,select,button,shadow]}});
+    let backends = vec![12, 13, 14, 15, 16, 10, 20, 21];
+    let indices = (0..backends.len()).collect::<Vec<_>>();
+    let layout = json!({"strings":["F_MAIN","block","visible","1"],"documents":[{
+        "frameId":0,"nodes":{"backendNodeId":backends},
+        "layout":{"nodeIndex":indices,"styles":vec![vec![1,2,3];8]}
+    }]});
+    (document, layout)
+}
 async fn bound() -> (Fixture, String, String) {
     let state = Arc::new(Mutex::new(State {
         selected: true,
@@ -144,9 +314,12 @@ async fn bound() -> (Fixture, String, String) {
                 if !state.selected || state.duplicate_title { targets.push(json!({"targetId":"T2","type":"page","title":if state.duplicate_title {"Fixture"} else {"Other tab"},"url":"https://other.test/"})); }
                 json!({"targetInfos":targets})
             },
+            "Browser.getVersion"=>json!({"product":"Chrome/145.0.fixture","revision":"@fixture-revision"}),
             "Browser.getWindowForTarget"=>json!({"windowId":1,"bounds":{"left":0,"top":0,"width":800,"height":600,"windowState":"normal"}}),
             "Browser.getWindowBounds"=>json!({"bounds":{"left":0,"top":0,"width":800,"height":600,"windowState":"normal"}}),
-            "Target.attachToTarget"=>json!({"sessionId":"s"}),
+            "Target.attachToTarget"=>json!({"sessionId":if state.distinct_attachment_ids {
+                format!("s-{}", state.calls.iter().filter(|(method,_)|method=="Target.attachToTarget").count())
+            } else {"s".into()}}),
             "Target.setAutoAttach"=> {
                 if state.oopif {
                     return MockReply::ok(json!({})).with_events(vec![crate::browser::mock_cdp::MockEvent {
@@ -157,9 +330,141 @@ async fn bound() -> (Fixture, String, String) {
                 json!({})
             },
             "Page.enable"=>json!({}),
+            "Runtime.enable"=>json!({}),
+            "DOM.resolveNode"=> {
+                assert_eq!(call.params["executionContextId"],77);
+                assert!(call.params["objectGroup"].as_str().is_some());
+                if let Some(signal) = &state.geometry_resolved { signal.notify_one(); }
+                let object = if state.hit_resolving { state.hit_resolving=false; "hit-node" } else {
+                    state.sampled_backend=call.params["backendNodeId"].as_i64().unwrap(); "geometry-node"
+                };
+                json!({"object":{"type":"object","subtype":"node","objectId":object}})
+            },
+            "DOM.getNodeForLocation"=> {
+                assert_eq!(call.params["x"],50); assert_eq!(call.params["y"],155);
+                assert_eq!(call.params["includeUserAgentShadowDOM"],false);
+                assert_eq!(call.params["ignorePointerEventsNone"],false);
+                state.hit_reads+=1; state.hit_resolving=true;
+                if state.hit_navigates {state.navigated=true;}
+                let backend=state.hit_backend.unwrap_or(state.sampled_backend) + if state.hit_changes && state.hit_reads%2==0 {1} else {0};
+                json!({"backendNodeId":backend,"frameId":state.hit_frame.as_deref().unwrap_or("F_MAIN")})
+            },
+            "Runtime.callFunctionOn"=> {
+                assert_eq!(call.params["uniqueContextId"],"unique-main-77");
+                assert!(call.params.get("executionContextId").is_none());
+                assert!(call.params.get("objectId").is_none());
+                let function = call.params["functionDeclaration"].as_str().unwrap();
+                if function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION
+                    || function == crate::browser::dom_action_operation::STEP_FUNCTION {
+                    assert_eq!(call.params["arguments"][0],json!({"objectId":"geometry-node"}));
+                    assert_eq!(call.params["throwOnSideEffect"], function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION);
+                    assert_eq!(call.params["returnByValue"],true);
+                    assert_eq!(call.params["awaitPromise"],false);
+                    assert_eq!(call.params["userGesture"],false);
+                    if function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION {
+                        if state.dispatch_hit_fault == "before_first" { state.hit_relation = Some(json!(false)); }
+                        return MockReply::ok(json!({"result":{"value":{"ok":!state.dispatch_preflight_refused}}}));
+                    }
+                    match state.dispatch_hit_fault.as_str() {
+                        "after_first" => state.hit_relation = Some(json!(false)),
+                        "changed_after_first" => state.hit_changes = true,
+                        _ => {}
+                    }
+                    let step = call.params["arguments"][1]["value"]["name"].as_str().unwrap();
+                    if state.dispatch_signal_step.is_empty() || state.dispatch_signal_step==step {
+                        if let Some(signal)=&state.dispatch_signal {signal.notify_one();}
+                    }
+                    if state.dispatch_stall_step==step {return MockReply::ok(json!({})).without_response();}
+                    if state.dispatch_navigate_step == step {state.navigated=true;}
+                    if state.dispatch_negative_step == step {
+                        return MockReply::ok(json!({"result":{"value":{"ok":false,"reason":"dom_action_event_cancelled"}}}));
+                    }
+                    if state.dispatch_fail_step == step {
+                        return MockReply::ok(json!({"exceptionDetails":{"text":"unknown effect"}}));
+                    }
+                    return MockReply::ok(json!({"result":{"value":{"ok":true,"observed":{"focused":true,"foreign":"discard"}}}}));
+                }
+                if function == crate::browser::dom_action_hit::HIT_FUNCTION {
+                    assert_eq!(call.params["arguments"],json!([{"objectId":"geometry-node"},{"objectId":"hit-node"}]));
+                    assert_eq!(call.params["throwOnSideEffect"],true); assert_eq!(call.params["returnByValue"],true);
+                    assert_eq!(call.params["awaitPromise"],false);assert_eq!(call.params["userGesture"],false);
+                    if state.hit_exception {return MockReply::ok(json!({"exceptionDetails":{"exception":{"className":"EvalError","description":"PRIVATE PROSE"}}}));}
+                    return MockReply::ok(json!({"result":{"type":"object","value":{
+                        "connected":state.hit_description_fault!="detached_hit", "same_document":state.hit_description_fault!="foreign_document",
+                        "relation":state.hit_relation.clone().unwrap_or(json!(true))
+                    }}}));
+                }
+                assert_eq!(call.params["arguments"],json!([{"objectId":"geometry-node"}]));
+                assert_eq!(call.params["throwOnSideEffect"],true);
+                assert_eq!(call.params["returnByValue"],true);
+                assert_eq!(call.params["awaitPromise"],false);
+                assert_eq!(call.params["userGesture"],false);
+                if state.geometry_navigates {state.navigated=true;}
+                if state.geometry_exception {json!({"exceptionDetails":{"text":"side effect check refused"}})} else if call.params["functionDeclaration"] == crate::browser::dom_action_sample::READ_FUNCTION {
+                    if state.actionability_eval_error {return MockReply::ok(json!({"exceptionDetails":{"exception":{"className":"EvalError","description":"PRIVATE SCRIPT/URL"}}}));}
+                    state.actionability_reads+=1;
+                    let mut reply=state.actionability_reply.clone().unwrap_or_else(|| json!({"result":{"type":"object","value":{
+                        "connected":!state.geometry_detaches,"same_document":true,
+                        "bounds":[10.5,20.25,80.0,30.0], "visible":true,"enabled":true,"editable":false,"receives_pointer":null,
+                        "hit_test":{"x":50,"y":155,"scroll_x":0.0,"scroll_y":120.0,"width":800.0,"height":600.0}
+                    }}}));
+                    if state.actionability_sample_changes && state.actionability_reads>=2 {reply["result"]["value"]["bounds"][0]=json!(11.5);}
+                    reply
+                } else {
+                    if function == crate::browser::dom_native_sample::READ_FUNCTION {
+                        return MockReply::ok(json!({"result":{"type":"object","value":{
+                            "connected":!state.geometry_detaches,"same_document":true,
+                            "bounds":{"x":10.5,"y":if state.native_geometry_fault=="css" && state.native_geometry_calls > 0 {21.25} else {20.25},"width":80.0,"height":30.0},
+                            "scroll":{"x":0.0,"y":120.0},
+                            "layout_viewport":{"width":500.0,"height":300.0,"dpr":1.5},
+                            "visual_viewport":{"offset_x":0.0,"offset_y":0.0,"page_x":0.0,"page_y":120.0,
+                                "width":500.0,"height":300.0,"scale":1.0}
+                        }}}));
+                    }
+                    assert_eq!(call.params["functionDeclaration"], crate::browser::dom_cssom_sample::READ_FUNCTION);
+                    json!({"result":{"type":"object","value":{
+                        "connected":!state.geometry_detaches,"same_document":true,
+                        "bounds":{"x":10.5,"y":if state.fractional_geometry {182.89584350585938} else {20.25},
+                            "width":if state.fractional_geometry {241.33334350585938} else {80.0},"height":30.0},
+                        "scroll":{"x":0.0,"y":120.0},
+                        "visual_viewport":{"offset_x":0.0,"offset_y":0.0,
+                            "page_x":0.0,"page_y":120.0,"width":800.0,"height":600.0,"scale":1.0}
+                    }}})
+                }
+            },
+            "Runtime.releaseObjectGroup"=> {
+                if call.params["objectGroup"].as_str().is_some_and(|group|group.starts_with("cua-dom-action-")) {
+                    if let Some(signal)=&state.dispatch_released {signal.notify_one();}
+                    if state.dispatch_cleanup_fails {return MockReply::err(-32000,"owned cleanup failed");}
+                }
+                if let Some(signal) = &state.geometry_released { signal.notify_one(); }
+                if state.geometry_cleanup_fails {return MockReply::err(-32000,"release failed");}
+                json!({})
+            },
             "Page.createIsolatedWorld"=> {
                 assert_eq!(call.params["frameId"],"F_MAIN");
                 assert_eq!(call.params["grantUniveralAccess"],false);
+                if matches!(call.params["worldName"].as_str(), Some("cua-driver-dom-geometry" | "cua-driver-dom-native-geometry" | "cua-driver-dom-actionability" | "cua-driver-dom-actions")) {
+                    let world_name = call.params["worldName"].as_str().unwrap();
+                    let fault = state.geometry_context_fault.as_str();
+                    let event = crate::browser::mock_cdp::MockEvent {
+                        method:"Runtime.executionContextCreated".into(),
+                        session_id:if fault == "session" {Some("foreign-session".into())} else {call.session_id.clone()},
+                        params:json!({"context":{"id":if fault == "numeric_id" {78} else {77},
+                            "name":if fault == "name" {"page-world"} else {world_name},
+                            "uniqueId":if state.geometry_missing_unique || (world_name=="cua-driver-dom-actions" && state.dispatch_missing_unique) {Value::Null} else {json!("unique-main-77")},
+                            "auxData":{"frameId":if fault == "frame" {"FOREIGN"} else {"F_MAIN"},"isDefault":fault == "default_world"}}})
+                    };
+                    let mut events = vec![event];
+                    if fault == "reused_id" {
+                        events.push(crate::browser::mock_cdp::MockEvent {
+                            method:"Runtime.executionContextCreated".into(),session_id:call.session_id.clone(),
+                            params:json!({"context":{"id":77,"name":world_name,
+                                "uniqueId":"reused-unique-77","auxData":{"frameId":"F_MAIN","isDefault":false}}})
+                        });
+                    }
+                    return MockReply::ok(json!({"executionContextId":77})).with_events(events);
+                }
                 json!({"executionContextId":77})
             },
             "Page.getFrameTree"=> {
@@ -169,6 +474,7 @@ async fn bound() -> (Fixture, String, String) {
             },
             "DOM.getDocument"=> {
                 if state.switch_during_collection {state.selected=false;}
+                if let Some(document) = &state.dom_document { return MockReply::ok(document.clone()); }
                 if state.single_frame {
                     return MockReply::ok(json!({"root":{"nodeType":9,"nodeId":100,"backendNodeId":100,"frameId":"F_MAIN","childNodeCount":1,
                         "children":[element(12,12,"INPUT",json!(["data-testid","live-value"]),vec![])]}}));
@@ -178,7 +484,18 @@ async fn bound() -> (Fixture, String, String) {
                         "children":[element(30,10,"BUTTON",json!(["id","cross-btn","aria-label","Cross"]),vec![])]}})
                 } else {document(state.detached)}
             },
-            "DOM.describeNode"=>if state.detached || state.node_detached {return MockReply::err(-32000,"detached node")} else {json!({"node":{"backendNodeId":10,"nodeId":30}})},
+            "DOM.describeNode"=>if state.detached || state.node_detached || (state.hit_resolving && state.hit_description_fault=="stale") {return MockReply::err(-32000,"No node with given id")} else {
+                let mut node=json!({"backendNodeId":call.params["backendNodeId"],"nodeId":30,"nodeType":1,"nodeName":"BUTTON"});
+                if state.hit_resolving {
+                    match state.hit_description_fault.as_str() {
+                        "ua"=>node["shadowRootType"]=json!("user-agent"),
+                        "pseudo"=>node["pseudoType"]=json!("before"),
+                        "frame"=>node["nodeName"]=json!("IFRAME"),
+                        _=>{}
+                    }
+                }
+                json!({"node":node})
+            },
             "DOM.querySelectorAll"=> {
                 assert_eq!(call.params["selector"],"button[data-testid='save']:not([disabled])");
                 json!({"nodeIds":if call.params["nodeId"]==100 {if state.unmatched_css_node {vec![999]} else {vec![10]}} else {vec![]}})
@@ -193,7 +510,7 @@ async fn bound() -> (Fixture, String, String) {
                 else {json!({"nodes":[{"backendDOMNodeId":10,"role":{"value":"button"},"name":{"value":"Save"}},
                     {"backendDOMNodeId":11,"role":{"value":"button"},"name":{"value":"Save"}},
                     {"backendDOMNodeId":12,"role":{"value":"checkbox"},"value":{"value":"live-value"},"properties":[{"name":"checked","value":{"value":true}},{"name":"disabled","value":{"value":false}}]}]})},
-            "DOMSnapshot.captureSnapshot"=>if state.bad_metadata {json!({})} else if state.single_frame {
+            "DOMSnapshot.captureSnapshot"=>if let Some(layout)=&state.dom_layout {layout.clone()} else if state.bad_metadata {json!({})} else if state.single_frame {
                 json!({"strings":["F_MAIN","block","visible","1",if state.long_live_value {"é".repeat(1025)} else {"live-value".to_owned()}],
                     "documents":[{"frameId":0,"nodes":{"backendNodeId":if state.missing_layout_identity {vec![999]} else {vec![12]},
                         "inputValue":{"index":[0],"value":[4]}},
@@ -237,6 +554,559 @@ fn structured(result: &crate::protocol::ToolResult) -> Value {
 }
 fn args(target: &str, tab: &str) -> Value {
     json!({"target_id":target,"tab_id":tab,"session":"dom-inspection-tests","snapshot_format":"dom_inspect_v1"})
+}
+
+#[tokio::test]
+async fn author_dom_scope_reports_ua_exclusions_without_admitting_internal_query_roots_or_frames() {
+    let (f, target, tab) = bound().await;
+    let (document, layout) = author_form_fixture();
+    {
+        let mut state = f.state.lock().unwrap();
+        state.single_frame = true;
+        state.dom_document = Some(document);
+        state.dom_layout = Some(layout);
+    }
+    let mut request = args(&target, &tab);
+    request["include_hidden"] = json!(true);
+    request["locator"] = json!({"css":"button[data-testid='save']:not([disabled])"});
+    let result = structured(
+        &GetBrowserStateTool::new(f.engine.clone())
+            .invoke(request)
+            .await,
+    );
+    assert_eq!(
+        result["snapshot"]["collection_scope"],
+        "author_dom_with_open_shadow"
+    );
+    assert_eq!(result["snapshot"]["collection_complete"], true, "{result}");
+    assert_eq!(result["snapshot"]["omitted"]["nodes"], 0);
+    assert_eq!(result["snapshot"]["omitted"]["frames"], 0);
+    assert_eq!(
+        result["snapshot"]["excluded"],
+        json!({"user_agent_shadow_roots":5,
+        "user_agent_shadow_hosts":{"input":1,"select":1,"option":3,"textarea":0,"button":0,"other":0}})
+    );
+    assert_eq!(result["elements"].as_array().unwrap().len(), 1);
+    assert_eq!(result["elements"][0]["attributes"]["id"], "main-btn");
+    assert!(!result.to_string().contains("PRIVATE_UA_FRAME"));
+    let state = f.state.lock().unwrap();
+    let roots = state
+        .calls
+        .iter()
+        .filter(|(method, _)| method == "DOM.querySelectorAll")
+        .map(|(_, params)| params["nodeId"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(roots, vec![100, 150]);
+    assert!(!state
+        .calls
+        .iter()
+        .any(|(method, _)| method.starts_with("Input.")));
+}
+
+#[tokio::test]
+async fn readonly_actionability_uses_the_attested_world_without_dispatching_input() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["id"] == "main-btn")
+        .unwrap()["ref"]
+        .as_str()
+        .unwrap();
+    let sample = f
+        .engine
+        .inspect_dom_actionability("dom-inspection-tests", &target, &tab, reference)
+        .await
+        .unwrap();
+    assert_eq!(sample.target.frame_id, "F_MAIN");
+    assert_eq!(sample.target.loader_id, "L_MAIN");
+    assert_eq!(sample.target.backend_node_id, 10);
+    assert!(sample.connected);
+    assert_eq!(sample.visible, Some(true));
+    assert_eq!(sample.enabled, Some(true));
+    assert_eq!(sample.editable, Some(false));
+    assert_eq!(sample.receives_pointer, Some(true));
+    assert_eq!(sample.bounds, Some([10.5, 20.25, 80.0, 30.0]));
+    let state = f.state.lock().unwrap();
+    assert!(state
+        .calls
+        .iter()
+        .any(|(method, params)| method == "Page.createIsolatedWorld"
+            && params["worldName"] == "cua-driver-dom-actionability"));
+    assert!(state
+        .calls
+        .iter()
+        .any(|(method, _)| method == "Runtime.releaseObjectGroup"));
+    assert!(!state
+        .calls
+        .iter()
+        .any(|(method, _)| method.starts_with("Input.")
+            || method.starts_with("Emulation.")
+            || matches!(
+                method.as_str(),
+                "DOM.focus" | "DOM.scrollIntoViewIfNeeded" | "Page.bringToFront"
+            )));
+}
+
+#[tokio::test]
+async fn readonly_actionability_refuses_invalid_state_source_context_and_cleanup() {
+    for fault in [
+        "malformed",
+        "exception",
+        "detached",
+        "navigation",
+        "context",
+        "cleanup",
+    ] {
+        let (f, target, tab) = bound().await;
+        let tool = GetBrowserStateTool::new(f.engine.clone());
+        let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+        let reference = snapshot["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["attributes"]["id"] == "main-btn")
+            .unwrap()["ref"]
+            .as_str()
+            .unwrap();
+        {
+            let mut state = f.state.lock().unwrap();
+            match fault {
+                "malformed" => {
+                    state.actionability_reply = Some(
+                        json!({"result":{"type":"object","value":{"connected":true,"same_document":true}}}),
+                    )
+                }
+                "exception" => state.geometry_exception = true,
+                "detached" => state.geometry_detaches = true,
+                "navigation" => state.geometry_navigates = true,
+                "context" => state.geometry_context_fault = "frame".into(),
+                "cleanup" => state.geometry_cleanup_fails = true,
+                _ => unreachable!(),
+            }
+        }
+        let error = f
+            .engine
+            .inspect_dom_actionability("dom-inspection-tests", &target, &tab, reference)
+            .await
+            .unwrap_err();
+        assert_eq!(
+            error.code,
+            if matches!(fault, "detached" | "navigation") {
+                BrowserRefusalCode::BrowserRefStale
+            } else {
+                BrowserRefusalCode::BrowserRouteUnavailable
+            },
+            "{fault}: {error:?}"
+        );
+        let state = f.state.lock().unwrap();
+        assert!(
+            state
+                .calls
+                .iter()
+                .any(|(method, _)| method == "Runtime.releaseObjectGroup"),
+            "{fault}"
+        );
+        assert!(!state
+            .calls
+            .iter()
+            .any(|(method, _)| method.starts_with("Input.") || method.starts_with("Emulation.")));
+        if fault == "context" {
+            assert!(!state
+                .calls
+                .iter()
+                .any(|(method, _)| method == "Runtime.callFunctionOn"));
+        }
+    }
+}
+
+#[tokio::test]
+async fn cancelled_readonly_actionability_still_releases_only_its_object_group() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["id"] == "main-btn")
+        .unwrap()["ref"]
+        .as_str()
+        .unwrap();
+    let resolved = Arc::new(tokio::sync::Notify::new());
+    let released = Arc::new(tokio::sync::Notify::new());
+    {
+        let mut state = f.state.lock().unwrap();
+        state.geometry_resolved = Some(resolved.clone());
+        state.geometry_released = Some(released.clone());
+    }
+    {
+        let operation =
+            f.engine
+                .inspect_dom_actionability("dom-inspection-tests", &target, &tab, reference);
+        tokio::pin!(operation);
+        tokio::select! { biased;
+            _ = resolved.notified() => {},
+            _ = &mut operation => panic!("actionability completed before cancellation seam"),
+        }
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(1), released.notified())
+        .await
+        .expect("cancelled actionability must request bounded owned cleanup");
+    assert!(!f
+        .state
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .any(|(method, _)| method == "Runtime.callFunctionOn" || method.starts_with("Input.")));
+}
+
+#[tokio::test]
+async fn child_frame_actionability_refuses_without_evaluating_a_main_world() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["id"] == "inner-btn")
+        .unwrap()["ref"]
+        .as_str()
+        .unwrap();
+    let count = f.state.lock().unwrap().calls.len();
+    let error = f
+        .engine
+        .inspect_dom_actionability("dom-inspection-tests", &target, &tab, reference)
+        .await
+        .unwrap_err();
+    assert_eq!(error.code, BrowserRefusalCode::BrowserRouteUnavailable);
+    assert_eq!(f.state.lock().unwrap().calls.len(), count);
+}
+#[tokio::test]
+async fn explicit_geometry_reads_current_ref_without_minting_pixel_authority() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["id"] == "main-btn")
+        .unwrap()["ref"]
+        .clone();
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference.clone();
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["mode"], "element_geometry", "{result}");
+    assert_eq!(result["ref"], reference);
+    assert_eq!(result["coordinate_space"], "frame_viewport_css_pixels");
+    assert_eq!(result["method"], "isolated_cssom_border_box");
+    assert_eq!(result["native_pixel_mapping"], "unavailable");
+    assert_eq!(result["bounds"]["x"], 10.5);
+    assert_eq!(result["scroll"]["y"], 120.0);
+    assert!(f
+        .state
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .any(|(method, _)| method == "Runtime.releaseObjectGroup"));
+}
+
+#[tokio::test]
+async fn cssom_fractional_geometry_preserves_exact_cdp_float64_values() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["id"] == "main-btn")
+        .unwrap()["ref"]
+        .clone();
+    f.state.lock().unwrap().fractional_geometry = true;
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference;
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["mode"], "element_geometry", "{result}");
+    for (field, expected) in [
+        ("y", 182.89584350585938_f64),
+        ("width", 241.33334350585938_f64),
+    ] {
+        let actual = result["bounds"][field]
+            .as_f64()
+            .expect("finite CSSOM coordinate");
+        assert_eq!(
+            actual.to_bits(),
+            expected.to_bits(),
+            "CDP JSON must preserve {field} exactly: {actual} versus {expected}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn geometry_fresh_attachment_sessions_do_not_change_the_bound_source() {
+    let (f, target, tab) = bound().await;
+    f.state.lock().unwrap().distinct_attachment_ids = true;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["id"] == "main-btn")
+        .unwrap()["ref"]
+        .clone();
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference.clone();
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["mode"], "element_geometry", "{result}");
+    assert_eq!(result["source_ref"], reference);
+    assert_eq!(result["native_pixel_mapping"], "unavailable");
+}
+
+#[tokio::test]
+async fn geometry_open_shadow_ref_keeps_main_frame_and_readonly_authority() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let row = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["data-testid"] == "shadow")
+        .unwrap();
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = row["ref"].clone();
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["mode"], "element_geometry", "{result}");
+    assert_eq!(result["frame"]["kind"], row["frame"]["kind"]);
+    assert_eq!(result["source_ref"], row["ref"]);
+    assert_eq!(result["native_pixel_mapping"], "unavailable");
+    let calls = &f.state.lock().unwrap().calls;
+    assert!(calls
+        .iter()
+        .any(|(method, params)| method == "DOM.resolveNode" && params["backendNodeId"] == 15));
+    assert!(!calls.iter().any(|(method, _)| method.starts_with("Input.")
+        || matches!(
+            method.as_str(),
+            "DOM.focus"
+                | "DOM.scrollIntoViewIfNeeded"
+                | "Page.captureScreenshot"
+                | "Target.activateTarget"
+                | "Page.bringToFront"
+        )));
+}
+
+#[tokio::test]
+async fn cancelled_geometry_still_releases_its_remote_object_group() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["id"] == "main-btn")
+        .unwrap()["ref"]
+        .clone();
+    let resolved = Arc::new(tokio::sync::Notify::new());
+    let released = Arc::new(tokio::sync::Notify::new());
+    {
+        let mut state = f.state.lock().unwrap();
+        state.geometry_resolved = Some(resolved.clone());
+        state.geometry_released = Some(released.clone());
+    }
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference;
+    {
+        let operation = tool.invoke(request);
+        tokio::pin!(operation);
+        tokio::select! {
+            biased;
+            _ = resolved.notified() => {},
+            _ = &mut operation => panic!("geometry completed before cancellation seam"),
+        }
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(1), released.notified())
+        .await
+        .expect("cancelled geometry must request bounded owned cleanup");
+    assert!(!f
+        .state
+        .lock()
+        .unwrap()
+        .calls
+        .iter()
+        .any(|(method, _)| method == "Runtime.callFunctionOn"));
+}
+
+#[tokio::test]
+async fn geometry_context_identity_must_be_unique_and_frame_attested() {
+    for fault in [
+        "session",
+        "numeric_id",
+        "name",
+        "frame",
+        "default_world",
+        "reused_id",
+    ] {
+        let (f, target, tab) = bound().await;
+        let tool = GetBrowserStateTool::new(f.engine.clone());
+        let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+        let reference = snapshot["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["attributes"]["id"] == "main-btn")
+            .unwrap()["ref"]
+            .clone();
+        f.state.lock().unwrap().geometry_context_fault = fault.into();
+        let mut request = args(&target, &tab);
+        request["geometry_ref"] = reference;
+        let result = structured(&tool.invoke(request).await);
+        assert_eq!(
+            result["refusal"]["code"], "browser_route_unavailable",
+            "{fault}: {result}"
+        );
+        let state = f.state.lock().unwrap();
+        assert!(
+            !state.calls.iter().any(
+                |(method, _)| method == "DOM.resolveNode" || method == "Runtime.callFunctionOn"
+            ),
+            "{fault}"
+        );
+        assert!(
+            state
+                .calls
+                .iter()
+                .any(|(method, _)| method == "Runtime.releaseObjectGroup"),
+            "{fault}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn geometry_context_exception_navigation_and_cleanup_fail_closed() {
+    for fault in [
+        "missing_unique",
+        "exception",
+        "detached",
+        "navigation",
+        "cleanup",
+    ] {
+        let (f, target, tab) = bound().await;
+        let tool = GetBrowserStateTool::new(f.engine.clone());
+        let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+        let reference = snapshot["elements"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["attributes"]["id"] == "main-btn")
+            .unwrap()["ref"]
+            .clone();
+        {
+            let mut state = f.state.lock().unwrap();
+            state.geometry_missing_unique = fault == "missing_unique";
+            state.geometry_exception = fault == "exception";
+            state.geometry_detaches = fault == "detached";
+            state.geometry_navigates = fault == "navigation";
+            state.geometry_cleanup_fails = fault == "cleanup";
+        }
+        let mut request = args(&target, &tab);
+        request["geometry_ref"] = reference;
+        let result = structured(&tool.invoke(request).await);
+        assert_eq!(
+            result["refusal"]["code"],
+            if matches!(fault, "navigation" | "detached") {
+                "browser_ref_stale"
+            } else {
+                "browser_route_unavailable"
+            },
+            "{fault}: {result}"
+        );
+        let state = f.state.lock().unwrap();
+        if fault == "missing_unique" {
+            assert!(!state.calls.iter().any(
+                |(method, _)| method == "DOM.resolveNode" || method == "Runtime.callFunctionOn"
+            ));
+        }
+        assert!(
+            state
+                .calls
+                .iter()
+                .any(|(method, _)| method == "Runtime.releaseObjectGroup"),
+            "{fault}"
+        );
+        assert!(!state
+            .calls
+            .iter()
+            .any(|(method, _)| method.starts_with("Input.")
+                || matches!(
+                    method.as_str(),
+                    "DOM.focus"
+                        | "DOM.scrollIntoViewIfNeeded"
+                        | "Target.activateTarget"
+                        | "Page.bringToFront"
+                )));
+    }
+}
+
+#[tokio::test]
+async fn geometry_child_and_stale_refs_refuse_without_rebinding() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["frame"]["kind"] == "iframe")
+        .unwrap()["ref"]
+        .clone();
+    let before = f.state.lock().unwrap().calls.len();
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference;
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(
+        result["refusal"]["code"], "browser_route_unavailable",
+        "{result}"
+    );
+    assert!(!f.state.lock().unwrap().calls[before..]
+        .iter()
+        .any(|(method, _)| method == "DOM.resolveNode"));
+    let reference = snapshot["elements"][0]["ref"].clone();
+    tool.invoke(args(&target, &tab)).await;
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference;
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["refusal"]["code"], "browser_ref_stale", "{result}");
+}
+
+#[tokio::test]
+async fn geometry_rejects_mixed_or_malformed_requests_before_cdp() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    for extra in [
+        json!({"geometry_ref":""}),
+        json!({"geometry_ref":1}),
+        json!({"geometry_ref":"p1:0","scope_ref":"p1:0"}),
+        json!({"geometry_ref":"p1:0","max_nodes":10}),
+        json!({"geometry_ref":"p1:0","snapshot_format":"semantic_v2"}),
+    ] {
+        let mut request = args(&target, &tab);
+        for (key, value) in extra.as_object().unwrap() {
+            request[key] = value.clone();
+        }
+        let before = f.state.lock().unwrap().calls.len();
+        assert!(tool.invoke(request).await.is_error.unwrap_or(false));
+        assert_eq!(f.state.lock().unwrap().calls.len(), before);
+    }
 }
 
 #[tokio::test]
@@ -332,16 +1202,43 @@ async fn invalid_isolated_visibility_is_unavailable_not_a_selected_tab_change() 
 }
 
 #[tokio::test]
+async fn unqualified_layout_units_never_become_css_geometry() {
+    let (f, target, tab) = bound().await;
+    f.state.lock().unwrap().single_frame = true;
+    let result = structured(
+        &GetBrowserStateTool::new(f.engine.clone())
+            .invoke(args(&target, &tab))
+            .await,
+    );
+    assert_eq!(result["status"], "ok", "{result}");
+    assert_eq!(result["snapshot"]["collection_complete"], true);
+    assert_eq!(result["snapshot"]["complete"], false, "{result}");
+    assert_eq!(result["snapshot"]["geometry_complete"], false);
+    assert_eq!(result["elements"].as_array().unwrap().len(), 1);
+    let element = &result["elements"][0];
+    assert_eq!(element["value"], "live-value");
+    assert_eq!(element["states"]["checked"], true);
+    assert_eq!(element["bounds_css"], Value::Null);
+    assert_eq!(
+        element["geometry_status"],
+        "unqualified_native_layout_units"
+    );
+}
+
+#[tokio::test]
 async fn missing_layout_identity_cannot_mint_a_complete_readonly_record() {
     let (f, target, tab) = bound().await;
     f.state.lock().unwrap().single_frame = true;
     let tool = GetBrowserStateTool::new(f.engine.clone());
     let baseline = structured(&tool.invoke(args(&target, &tab)).await);
-    assert_eq!(baseline["snapshot"]["complete"], true, "{baseline}");
+    assert_eq!(
+        baseline["snapshot"]["metadata_complete"], true,
+        "{baseline}"
+    );
     assert_eq!(baseline["elements"].as_array().unwrap().len(), 1);
     f.state.lock().unwrap().missing_layout_identity = true;
     let result = structured(&tool.invoke(args(&target, &tab)).await);
-    assert_eq!(result["snapshot"]["complete"], false, "{result}");
+    assert_eq!(result["snapshot"]["metadata_complete"], false, "{result}");
     assert!(result["snapshot"]["omitted"]["metadata"].as_u64().unwrap() > 0);
     assert_eq!(
         result["elements"],
@@ -356,7 +1253,10 @@ async fn long_live_values_report_bounded_text_and_partial_coverage() {
     f.state.lock().unwrap().single_frame = true;
     let tool = GetBrowserStateTool::new(f.engine.clone());
     let baseline = structured(&tool.invoke(args(&target, &tab)).await);
-    assert_eq!(baseline["snapshot"]["complete"], true, "{baseline}");
+    assert_eq!(
+        baseline["snapshot"]["metadata_complete"], true,
+        "{baseline}"
+    );
     assert_eq!(baseline["elements"][0]["value"], "live-value");
     f.state.lock().unwrap().long_live_value = true;
     let result = structured(&tool.invoke(args(&target, &tab)).await);
@@ -369,7 +1269,7 @@ async fn long_live_values_report_bounded_text_and_partial_coverage() {
         1024
     );
     assert_eq!(result["elements"][0]["text_truncated"], true);
-    assert_eq!(result["snapshot"]["complete"], false);
+    assert_eq!(result["snapshot"]["metadata_complete"], false);
     assert!(result["snapshot"]["omitted"]["text"].as_u64().unwrap() > 0);
 }
 #[tokio::test]
@@ -405,10 +1305,8 @@ async fn contained_oopif_refs_keep_child_source_and_refuse_detached_children() {
         .find(|e| e["attributes"]["id"] == "cross-btn")
         .unwrap();
     assert_eq!(cross["frame"]["kind"], "oopif");
-    assert_eq!(
-        cross["bounds_css"],
-        json!({"x":5.0,"y":6.0,"width":40.0,"height":20.0})
-    );
+    assert_eq!(cross["bounds_css"], Value::Null);
+    assert_eq!(cross["geometry_status"], "unqualified_native_layout_units");
     let mut scoped = args(&target, &tab);
     scoped["scope_ref"] = cross["ref"].clone();
     f.state.lock().unwrap().oopif = false;
@@ -470,7 +1368,8 @@ async fn dom_inspection_metadata_and_readonly_refs_retire_without_mutation() {
     assert!(elements.iter().any(|e| e["tag"] == "html"));
     assert!(elements
         .iter()
-        .all(|e| e["coordinate_space"] == "document_css_pixels"));
+        .all(|e| e["bounds_css"].is_null()
+            && e["geometry_status"] == "unqualified_native_layout_units"));
     let input = elements.iter().find(|e| e["tag"] == "input").unwrap();
     assert_eq!(input["value"], "live-value");
     assert_eq!(input["states"]["checked"], true);
