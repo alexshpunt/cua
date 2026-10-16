@@ -66,6 +66,7 @@ use super::types::{
 mod dom_action_engine;
 #[path = "dom_cssom_engine.rs"]
 mod dom_cssom_engine;
+pub(crate) use dom_cssom_engine::dispatch::DomActionRoute;
 /// Bounds tolerance (device pixels) for native ↔ CDP window correlation.
 /// Absorbs window-shadow and DIP-rounding differences.
 pub const BOUNDS_TOLERANCE_PX: f64 = 8.0;
