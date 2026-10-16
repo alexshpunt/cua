@@ -1,12 +1,65 @@
 //! Explicit readonly CSSOM geometry; never a CSS-to-native-pixel mapping.
 
 use super::super::cdp_ws::{BoundedCdpEvents, BoundedEventError};
-use super::super::dom_cssom_sample::{parse_sample, READ_FUNCTION, WORLD_NAME};
+use super::super::dom_action_sample;
+use super::super::dom_action_wait::{ActionState, ActionTarget};
+use super::super::dom_cssom_sample;
 use super::*;
 use std::time::Duration;
 
 const REPLY_LIMIT: usize = 16 * 1024;
 const EVENT_LIMIT: usize = 512;
+
+/// Only these native readonly functions can cross the attested-world boundary.
+#[derive(Clone, Copy)]
+enum DomNodeSampleKind {
+    Geometry,
+    Actionability,
+}
+
+impl DomNodeSampleKind {
+    fn world(self) -> &'static str {
+        match self {
+            Self::Geometry => dom_cssom_sample::WORLD_NAME,
+            Self::Actionability => dom_action_sample::WORLD_NAME,
+        }
+    }
+
+    fn function(self) -> &'static str {
+        match self {
+            Self::Geometry => dom_cssom_sample::READ_FUNCTION,
+            Self::Actionability => dom_action_sample::READ_FUNCTION,
+        }
+    }
+
+    fn parse(self, reply: &Value, target: ActionTarget) -> Result<DomNodeSample, BrowserRefusal> {
+        match self {
+            Self::Geometry => dom_cssom_sample::parse_sample(reply)
+                .map(DomNodeSample::Geometry)
+                .map_err(|reason| {
+                    if reason == "dom_geometry_source_detached" {
+                        stale("geometry source detached or changed document")
+                    } else {
+                        unavailable("fixed side-effect-checked geometry sample is unavailable")
+                    }
+                }),
+            Self::Actionability => dom_action_sample::parse_sample(reply, target)
+                .map(DomNodeSample::Actionability)
+                .map_err(|reason| {
+                    if reason == "dom_action_ref_stale" {
+                        stale("actionability source detached or changed document")
+                    } else {
+                        unavailable("fixed side-effect-checked actionability sample is unavailable")
+                    }
+                }),
+        }
+    }
+}
+
+enum DomNodeSample {
+    Geometry(Value),
+    Actionability(ActionState),
+}
 
 impl BrowserEngine {
     /// Sample a current main-document inspection ref in an attested isolated world.
@@ -19,6 +72,71 @@ impl BrowserEngine {
         reference: &str,
     ) -> Result<Value, BrowserRefusal> {
         let _interval = self.lock_mutation(session, target_id, tab_id).await?;
+        let DomNodeSample::Geometry(sample) = self
+            .sample_dom_ref(
+                session,
+                target_id,
+                tab_id,
+                reference,
+                DomNodeSampleKind::Geometry,
+            )
+            .await?
+        else {
+            return Err(unavailable("readonly sample kind changed"));
+        };
+        let mut output = json!({
+            "status":"ok","mode":"element_geometry","ref":reference,
+            "source_ref":reference,"target_id":target_id,"tab_id":tab_id,
+            "frame":{"kind":"main"},"coordinate_space":"frame_viewport_css_pixels",
+            "method":"isolated_cssom_border_box","viewport":"layout","native_pixel_mapping":"unavailable",
+            "atomic":false
+        });
+        for field in [
+            "connected",
+            "same_document",
+            "bounds",
+            "scroll",
+            "visual_viewport",
+        ] {
+            output[field] = sample[field].clone();
+        }
+        Ok(output)
+    }
+
+    /// Read actionability from a current inspection ref without granting action authority.
+    /// This samples only the main/open-shadow document; dispatch must independently revalidate.
+    pub(crate) async fn inspect_dom_actionability(
+        &self,
+        session: &str,
+        target_id: &str,
+        tab_id: &str,
+        reference: &str,
+    ) -> Result<ActionState, BrowserRefusal> {
+        let _interval = self.lock_mutation(session, target_id, tab_id).await?;
+        match self
+            .sample_dom_ref(
+                session,
+                target_id,
+                tab_id,
+                reference,
+                DomNodeSampleKind::Actionability,
+            )
+            .await?
+        {
+            DomNodeSample::Actionability(sample) => Ok(sample),
+            DomNodeSample::Geometry(_) => Err(unavailable("readonly sample kind changed")),
+        }
+    }
+
+    // Both entry points hold the same real-target serialization interval around this entire read.
+    async fn sample_dom_ref(
+        &self,
+        session: &str,
+        target_id: &str,
+        tab_id: &str,
+        reference: &str,
+        kind: DomNodeSampleKind,
+    ) -> Result<DomNodeSample, BrowserRefusal> {
         let entry = self
             .store
             .resolve_dom_ref(session, target_id, tab_id, reference)
@@ -48,7 +166,11 @@ impl BrowserEngine {
         let validated = self
             .revalidate_for_mutation(session, target_id, Some(tab_id))
             .await?;
-        let group = format!("cua-dom-geometry-{}", Uuid::new_v4());
+        let prefix = match kind {
+            DomNodeSampleKind::Geometry => "cua-dom-geometry",
+            DomNodeSampleKind::Actionability => "cua-dom-actionability",
+        };
+        let group = format!("{prefix}-{}", Uuid::new_v4());
         let mut objects = RemoteObjectGroup {
             conn: validated.conn.clone(),
             session: validated.cdp_session.clone(),
@@ -71,7 +193,7 @@ impl BrowserEngine {
                 &frame_session,
                 "Page.createIsolatedWorld",
                 json!({
-                    "frameId":identity.frame_id,"worldName":WORLD_NAME,"grantUniveralAccess":false
+                    "frameId":identity.frame_id,"worldName":kind.world(),"grantUniveralAccess":false
                 }),
             )
             .await?;
@@ -82,6 +204,7 @@ impl BrowserEngine {
                 .ok_or_else(|| unavailable("isolated geometry context is unavailable"))?;
             let mut evidence = ContextEvidence {
                 id: context_id,
+                world_name: kind.world(),
                 unique_id: None,
                 consumed: 0,
             };
@@ -117,20 +240,21 @@ impl BrowserEngine {
                 &frame_session,
                 "Runtime.callFunctionOn",
                 json!({
-                    "functionDeclaration":READ_FUNCTION,"uniqueContextId":unique_id,
+                    "functionDeclaration":kind.function(),"uniqueContextId":unique_id,
                     "arguments":[{"objectId":object_id}],
                     "returnByValue":true,"awaitPromise":false,"userGesture":false,
                     "throwOnSideEffect":true
                 }),
             )
             .await?;
-            let sample = parse_sample(&reply).map_err(|reason| {
-                if reason == "dom_geometry_source_detached" {
-                    stale("geometry source detached or changed document")
-                } else {
-                    unavailable("fixed side-effect-checked geometry sample is unavailable")
-                }
-            })?;
+            let sample = kind.parse(
+                &reply,
+                ActionTarget {
+                    frame_id: identity.frame_id.clone(),
+                    loader_id: identity.loader_id.clone(),
+                    backend_node_id: entry.backend_node_id,
+                },
+            )?;
             evidence.drain(&mut events, &frame_session, &identity.frame_id)?;
             let current = self
                 .revalidate_for_mutation(session, target_id, Some(tab_id))
@@ -173,26 +297,7 @@ impl BrowserEngine {
             Ok(_) if released.is_err() => Err(unavailable(
                 "geometry remote-object cleanup could not be confirmed",
             )),
-            Ok(sample) => {
-                let mut output = json!({
-                    "status":"ok","mode":"element_geometry","ref":reference,
-                    "source_ref":reference,"target_id":target_id,"tab_id":tab_id,
-                    "frame":{"kind":"main"},"coordinate_space":"frame_viewport_css_pixels",
-                    "method":"isolated_cssom_border_box","viewport":"layout","native_pixel_mapping":"unavailable",
-                    "atomic":false
-                });
-                // parse_sample already projects this closed set; never expose raw CDP data.
-                for field in [
-                    "connected",
-                    "same_document",
-                    "bounds",
-                    "scroll",
-                    "visual_viewport",
-                ] {
-                    output[field] = sample[field].clone();
-                }
-                Ok(output)
-            }
+            Ok(sample) => Ok(sample),
         };
         if result
             .as_ref()
@@ -331,6 +436,7 @@ async fn describe_source(
 
 struct ContextEvidence {
     id: i64,
+    world_name: &'static str,
     unique_id: Option<String>,
     consumed: usize,
 }
@@ -389,7 +495,7 @@ impl ContextEvidence {
                 .and_then(Value::as_str)
                 .filter(|id| !id.is_empty() && id.len() <= 512)
                 .ok_or_else(|| unavailable("isolated context lacks a bounded unique identity"))?;
-            if context.get("name").and_then(Value::as_str) != Some(WORLD_NAME)
+            if context.get("name").and_then(Value::as_str) != Some(self.world_name)
                 || context.pointer("/auxData/frameId").and_then(Value::as_str) != Some(frame)
                 || context
                     .pointer("/auxData/isDefault")
