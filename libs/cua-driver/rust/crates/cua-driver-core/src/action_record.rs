@@ -466,7 +466,9 @@ impl ActionExecutionRecord {
         args: &serde_json::Value,
         structured: &serde_json::Value,
     ) -> Option<Self> {
-        if !is_action_tool(tool_name) {
+        // The extended DOM receipt requires its producer's explicit internal record.
+        // Inferring one here would erase or misclassify a partially attempted prefix.
+        if tool_name == "browser_dom_action" || !is_action_tool(tool_name) {
             return None;
         }
         let requested_delivery = requested_delivery(tool_name, args);
@@ -615,7 +617,7 @@ impl ActionExecutionRecord {
 }
 
 pub fn is_action_tool(tool_name: &str) -> bool {
-    cua_driver_contract::is_action_result_tool(tool_name)
+    tool_name == "browser_dom_action" || cua_driver_contract::is_action_result_tool(tool_name)
 }
 
 fn requested_delivery(tool_name: &str, args: &serde_json::Value) -> RequestedDelivery {

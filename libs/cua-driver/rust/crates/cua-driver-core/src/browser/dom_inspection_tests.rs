@@ -131,6 +131,8 @@ impl BrowserPlatform for Platform {
 mod action_dispatch_tests;
 #[path = "dom_action_prepare_tests.rs"]
 mod action_prepare_tests;
+#[path = "dom_action_tool_tests.rs"]
+mod action_tool_tests;
 struct Fixture {
     engine: Arc<BrowserEngine>,
     state: Arc<Mutex<State>>,

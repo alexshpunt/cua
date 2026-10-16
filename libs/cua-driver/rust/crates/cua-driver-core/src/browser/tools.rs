@@ -15,6 +15,7 @@ use crate::tool::{ProtectedResourceOwnership, Tool, ToolDef, ToolRegistry};
 use crate::tool_args::ArgsExt;
 
 use super::cdp_ws::CdpConnection;
+use super::dom_action_tool::BrowserDomActionTool;
 use super::download::BrowserDownloadTool;
 use super::engine::{BrowserEngine, BrowserScreenshotMode, BrowserTabScreenshot};
 use super::platform::{BrowserVisualActionKind, PrepareProfile, PrepareRequest, PrepareStrategy};
@@ -33,6 +34,7 @@ pub fn register_browser_tools(engine: &Arc<BrowserEngine>, registry: &mut ToolRe
     registry.register(Box::new(BrowserNavigateTool::new(engine.clone())));
     registry.register(Box::new(BrowserClickTool::new(engine.clone())));
     registry.register(Box::new(BrowserTypeTool::new(engine.clone())));
+    registry.register(Box::new(BrowserDomActionTool::new(engine.clone())));
     registry.register(Box::new(BrowserDialogTool::new(engine.clone())));
     registry.register(Box::new(BrowserSetInputFilesTool::new(engine.clone())));
     registry.register(Box::new(BrowserDownloadTool::new(engine.clone())));
@@ -2887,6 +2889,10 @@ mod tests {
                 "browser_type",
             ),
             (
+                BrowserDomActionTool::new(e.clone()).def().clone(),
+                "browser_dom_action",
+            ),
+            (
                 BrowserDialogTool::new(e.clone()).def().clone(),
                 "browser_dialog",
             ),
@@ -2914,6 +2920,7 @@ mod tests {
             BrowserNavigateTool::new(e.clone()).def().clone(),
             BrowserClickTool::new(e.clone()).def().clone(),
             BrowserTypeTool::new(e.clone()).def().clone(),
+            BrowserDomActionTool::new(e.clone()).def().clone(),
             BrowserDialogTool::new(e.clone()).def().clone(),
             BrowserSetInputFilesTool::new(e.clone()).def().clone(),
             BrowserDownloadTool::new(e.clone()).def().clone(),
@@ -2938,6 +2945,7 @@ mod tests {
                 "browser_navigate",
                 "browser_click",
                 "browser_type",
+                "browser_dom_action",
                 "browser_dialog",
                 "browser_set_input_files",
                 "browser_download",
