@@ -39,6 +39,10 @@ struct State {
     geometry_cleanup_fails: bool,
     geometry_resolved: Option<Arc<tokio::sync::Notify>>,
     geometry_released: Option<Arc<tokio::sync::Notify>>,
+    dispatch_fail_step: String,
+    dispatch_navigate_step: String,
+    dispatch_signal: Option<Arc<tokio::sync::Notify>>,
+    dispatch_preflight_refused: bool,
 }
 struct Platform {
     endpoint: String,
@@ -117,6 +121,8 @@ impl BrowserPlatform for Platform {
         ))
     }
 }
+#[path = "dom_action_dispatch_tests.rs"]
+mod action_dispatch_tests;
 #[path = "dom_action_prepare_tests.rs"]
 mod action_prepare_tests;
 struct Fixture {
@@ -183,6 +189,25 @@ async fn bound() -> (Fixture, String, String) {
                 assert_eq!(call.params["uniqueContextId"],"unique-main-77");
                 assert!(call.params.get("executionContextId").is_none());
                 assert!(call.params.get("objectId").is_none());
+                let function = call.params["functionDeclaration"].as_str().unwrap();
+                if function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION
+                    || function == crate::browser::dom_action_operation::STEP_FUNCTION {
+                    assert_eq!(call.params["arguments"][0],json!({"objectId":"geometry-node"}));
+                    assert_eq!(call.params["throwOnSideEffect"], function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION);
+                    assert_eq!(call.params["returnByValue"],true);
+                    assert_eq!(call.params["awaitPromise"],false);
+                    assert_eq!(call.params["userGesture"],false);
+                    if function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION {
+                        return MockReply::ok(json!({"result":{"value":{"ok":!state.dispatch_preflight_refused}}}));
+                    }
+                    let step = call.params["arguments"][1]["value"]["name"].as_str().unwrap();
+                    if let Some(signal)=&state.dispatch_signal {signal.notify_one();}
+                    if state.dispatch_navigate_step == step {state.navigated=true;}
+                    if state.dispatch_fail_step == step {
+                        return MockReply::ok(json!({"exceptionDetails":{"text":"unknown effect"}}));
+                    }
+                    return MockReply::ok(json!({"result":{"value":{"ok":true,"observed":{"focused":true,"foreign":"discard"}}}}));
+                }
                 assert_eq!(call.params["arguments"],json!([{"objectId":"geometry-node"}]));
                 assert_eq!(call.params["throwOnSideEffect"],true);
                 assert_eq!(call.params["returnByValue"],true);
@@ -214,7 +239,7 @@ async fn bound() -> (Fixture, String, String) {
             "Page.createIsolatedWorld"=> {
                 assert_eq!(call.params["frameId"],"F_MAIN");
                 assert_eq!(call.params["grantUniveralAccess"],false);
-                if matches!(call.params["worldName"].as_str(), Some("cua-driver-dom-geometry" | "cua-driver-dom-actionability")) {
+                if matches!(call.params["worldName"].as_str(), Some("cua-driver-dom-geometry" | "cua-driver-dom-actionability" | "cua-driver-dom-actions")) {
                     let world_name = call.params["worldName"].as_str().unwrap();
                     let fault = state.geometry_context_fault.as_str();
                     let event = crate::browser::mock_cdp::MockEvent {

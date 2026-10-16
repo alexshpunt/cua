@@ -34,7 +34,7 @@ fn unavailable(reason: &'static str) -> BrowserRefusal {
     }))
 }
 
-fn requirements(kind: DomActionKind) -> ActionRequirements {
+pub(super) fn requirements(kind: DomActionKind) -> ActionRequirements {
     use DomActionKind::*;
     ActionRequirements {
         visible: true,

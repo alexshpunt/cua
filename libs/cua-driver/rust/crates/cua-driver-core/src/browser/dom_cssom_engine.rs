@@ -7,6 +7,9 @@ use super::super::dom_cssom_sample;
 use super::*;
 use std::time::Duration;
 
+#[path = "dom_action_dispatch.rs"]
+pub(crate) mod dispatch;
+
 const REPLY_LIMIT: usize = 16 * 1024;
 const EVENT_LIMIT: usize = 512;
 
