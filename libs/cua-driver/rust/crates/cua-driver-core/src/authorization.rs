@@ -361,6 +361,7 @@ const BROWSER_BOUND_INPUT_OPERATIONS: &[&str] = &[
     "browser_click",
     "browser_type",
     "browser_pointer",
+    "browser_dom_action",
 ];
 const BROWSER_BOUND_INPUT_SCOPE_KEYS: &[&str] = &[
     "daemon_generation",
@@ -944,6 +945,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         | "browser_click"
         | "browser_type"
         | "browser_pointer"
+        | "browser_dom_action"
         | "history_status"
         | "history_query"
         | "parse_visual_regions" => RiskClass::R2,
@@ -1452,6 +1454,24 @@ pub fn status_json_with_provider(authorization_host: Option<&'static str>) -> se
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dom_action_admission_uses_the_active_bound_browser_adapter() {
+        for input_route in ["dom_event", "trusted"] {
+            let args = serde_json::json!({"input_route":input_route,"request":{"action":"fill","text":"private"}});
+            let risk = classify_tool_call("browser_dom_action", &args);
+            assert_eq!(risk.class, RiskClass::R2);
+            assert_eq!(risk.enforcement, RiskEnforcement::Active);
+            let adapters = enforcement_adapters_for_call("browser_dom_action", &args);
+            assert_eq!(
+                adapters
+                    .iter()
+                    .map(|adapter| adapter.id)
+                    .collect::<Vec<_>>(),
+                vec!["browser_bound_input"]
+            );
+        }
+    }
 
     #[test]
     fn standard_is_the_default() {

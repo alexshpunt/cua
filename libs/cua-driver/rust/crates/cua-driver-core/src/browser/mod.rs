@@ -43,6 +43,7 @@ mod dom_action_operation;
 mod dom_action_progress;
 mod dom_action_request;
 mod dom_action_sample;
+pub mod dom_action_tool;
 mod dom_action_wait;
 mod dom_cssom_sample;
 pub mod dom_geometry;

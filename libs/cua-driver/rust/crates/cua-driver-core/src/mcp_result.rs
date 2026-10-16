@@ -106,6 +106,9 @@ fn conforming_tool_result_inner(tool: &str, result: Value, has_schema: bool) -> 
     };
 
     if result.get("isError").and_then(Value::as_bool) == Some(true) {
+        if tool == "browser_dom_action" {
+            return bounded_dom_action_error(result);
+        }
         let structured = result.remove("structuredContent").unwrap_or(Value::Null);
         result.insert(
             "structuredContent".to_owned(),
@@ -124,14 +127,19 @@ fn conforming_tool_result_inner(tool: &str, result: Value, has_schema: bool) -> 
                 tool,
                 "successful tool result declared an output schema but carried no structured content"
             );
-            invalid_output_result(result, format!(
+            invalid_output_result(tool, result, format!(
                 "internal output mismatch for {tool}: tool advertises an output schema but returned no structured content"
             ))
         }
         // A refusal payload satisfies the advertised schema's other arm. The
         // typed success validator would reject it, so ask the arm it belongs
         // to rather than replacing a payload a client accepts.
-        Some(structured) if is_refusal_envelope(structured) => Value::Object(result),
+        Some(structured)
+            if is_refusal_envelope(structured)
+                && !(tool == "browser_dom_action" && looks_like_dom_receipt(structured)) =>
+        {
+            Value::Object(result)
+        }
         Some(structured) => match validate_wire_output(tool, structured)
             .and_then(|()| validate_success_output(tool, structured.clone()))
         {
@@ -142,6 +150,7 @@ fn conforming_tool_result_inner(tool: &str, result: Value, has_schema: bool) -> 
                     "successful tool result carried structured content its output schema rejects"
                 );
                 invalid_output_result(
+                    tool,
                     result,
                     format!("internal output mismatch for {tool}: {error}"),
                 )
@@ -150,7 +159,108 @@ fn conforming_tool_result_inner(tool: &str, result: Value, has_schema: bool) -> 
     }
 }
 
-fn invalid_output_result(original: serde_json::Map<String, Value>, message: String) -> Value {
+fn bounded_dom_action_error(mut result: serde_json::Map<String, Value>) -> Value {
+    let raw_text = result
+        .get("content")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .find_map(|block| {
+            (block.get("type").and_then(Value::as_str) == Some("text"))
+                .then(|| block.get("text").and_then(Value::as_str))
+                .flatten()
+        })
+        .unwrap_or("DOM action outcome unavailable. Verify state before retrying.");
+    let mut bytes = 0;
+    let text = raw_text
+        .chars()
+        .take_while(|character| {
+            bytes += character.len_utf8();
+            bytes <= 1024
+        })
+        .collect::<String>();
+    let mut structured = result.remove("structuredContent").unwrap_or(Value::Null);
+    let mut code = structured
+        .get("code")
+        .or_else(|| structured.pointer("/refusal/code"))
+        .and_then(Value::as_str)
+        .filter(|value| {
+            !value.is_empty()
+                && value.len() <= 96
+                && value
+                    .bytes()
+                    .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'_')
+        })
+        .unwrap_or(TOOL_OUTPUT_INVALID_CODE)
+        .to_owned();
+    let receipt_fields = [
+        "format",
+        "action_result",
+        "observed",
+        "input_route",
+        "trusted",
+        "atomic",
+        "native_pixel_mapping",
+        "limitations",
+    ];
+    let prefix = if receipt_fields
+        .iter()
+        .any(|field| structured.get(field).is_some())
+    {
+        match cua_driver_contract::DomActionResult::from_value(structured) {
+            Ok(receipt) => Some(receipt.progress),
+            Err(_) => {
+                code = TOOL_OUTPUT_INVALID_CODE.to_owned();
+                None
+            }
+        }
+    } else if let Some(value) = structured
+        .as_object_mut()
+        .and_then(|object| object.remove("progress"))
+    {
+        match cua_driver_contract::DomActionProgress::from_value(value) {
+            Ok(prefix) => Some(prefix),
+            Err(_) => {
+                code = TOOL_OUTPUT_INVALID_CODE.to_owned();
+                None
+            }
+        }
+    } else {
+        None
+    };
+    let mut diagnostic = json!({"code":code,"execution_state":"unknown"});
+    if let Some(prefix) = prefix {
+        diagnostic["progress"] = serde_json::to_value(prefix).expect("closed prefix serializes");
+    }
+    json!({"isError":true,"content":[{"type":"text","text":text}],"structuredContent":diagnostic})
+}
+
+fn looks_like_dom_receipt(value: &Value) -> bool {
+    [
+        "format",
+        "progress",
+        "action_result",
+        "observed",
+        "input_route",
+        "trusted",
+        "atomic",
+        "native_pixel_mapping",
+        "limitations",
+    ]
+    .iter()
+    .any(|field| value.get(field).is_some())
+}
+
+fn invalid_output_result(
+    tool: &str,
+    original: serde_json::Map<String, Value>,
+    message: String,
+) -> Value {
+    // Rejected DOM receipts may be oversized or carry raw native identities. Never echo
+    // them or their prose as accepted evidence through an otherwise open error envelope.
+    if tool == "browser_dom_action" {
+        return internal_error_result(message);
+    }
     let mut result = internal_error_result(message);
     if let Some(Value::Array(content)) = original.get("content") {
         result["content"]
@@ -191,6 +301,101 @@ pub fn tool_error_result(message: impl Into<String>, structured: Value) -> Value
         "isError": true,
         "structuredContent": structured,
     })
+}
+
+#[cfg(test)]
+mod dom_action_mcp_tests {
+    #[test]
+    fn dom_action_error_preserves_only_a_valid_bounded_prefix_as_unknown_diagnostic() {
+        let (receipt, _) = crate::tool::dom_action_receipt_fixture();
+        let prefix = receipt["progress"].clone();
+        let value = json!({"isError":true,"content":[],"structuredContent":receipt});
+        let result = conforming_tool_result("browser_dom_action", value);
+        assert_eq!(result["structuredContent"]["execution_state"], "unknown");
+        assert_eq!(result["structuredContent"]["progress"], prefix);
+        assert!(result["structuredContent"].get("format").is_none());
+        let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+        assert!(jsonschema::validator_for(&schema)
+            .unwrap()
+            .is_valid(&result["structuredContent"]));
+    }
+    #[test]
+    fn dom_action_error_flag_cannot_bypass_the_advertised_contract_or_byte_budget() {
+        let (mut receipt, _) = crate::tool::dom_action_receipt_fixture();
+        receipt["backendNodeId"] = json!(42);
+        let value = json!({"isError":true,"content":[{"type":"text","text":"é".repeat(20_000)}],"structuredContent":receipt});
+        let result = conforming_tool_result("browser_dom_action", value);
+        let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+        assert!(jsonschema::validator_for(&schema)
+            .unwrap()
+            .is_valid(&result["structuredContent"]));
+        assert!(result.to_string().len() < 16 * 1024);
+        assert!(result["structuredContent"].get("backendNodeId").is_none());
+    }
+    use super::*;
+    #[test]
+    fn dom_action_mcp_keeps_a_valid_unknown_prefix_and_its_exact_schema() {
+        let (receipt, _) = crate::tool::dom_action_receipt_fixture();
+        let value = json!({"content":[{"type":"text","text":"Native outcome is unknown."}],"structuredContent":receipt});
+        assert_eq!(
+            conforming_tool_result("browser_dom_action", value.clone()),
+            value
+        );
+        assert!(advertises_output_schema("browser_dom_action"));
+        let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+        assert!(jsonschema::validator_for(&schema)
+            .unwrap()
+            .is_valid(&value["structuredContent"]));
+        validate_proxy_output_schema("browser_dom_action", Some(&schema)).unwrap();
+    }
+    #[test]
+    fn dom_action_refusal_marker_cannot_hide_an_invalid_receipt_or_raw_native_fields() {
+        let (receipt, _) = crate::tool::dom_action_receipt_fixture();
+        for (field, bad) in [
+            ("trusted", json!(true)),
+            ("backendNodeId", json!(42)),
+            ("format", json!("unknown_version")),
+            ("progress", json!({"status":"refused","backendNodeId":42})),
+        ] {
+            let mut invalid = receipt.clone();
+            invalid[field] = bad;
+            let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+            assert!(
+                !jsonschema::validator_for(&schema)
+                    .unwrap()
+                    .is_valid(&invalid),
+                "schema accepted {field}"
+            );
+            let result = conforming_tool_result(
+                "browser_dom_action",
+                json!({"content":[],"structuredContent":invalid}),
+            );
+            assert_eq!(result["isError"], true, "accepted {field}");
+            assert_eq!(result["structuredContent"]["execution_state"], "unknown");
+            assert!(result["structuredContent"].get("invalid_output").is_none());
+        }
+    }
+    #[test]
+    fn dom_action_mcp_accepts_pre_dispatch_permission_refusals_but_drops_oversize_receipts() {
+        let refused = json!({"content":[],"structuredContent":{"status":"refused","refusal":{"code":"consent_required","message":"approve the exact browser scope"}}});
+        assert_eq!(
+            conforming_tool_result("browser_dom_action", refused.clone()),
+            refused
+        );
+        let (mut receipt, _) = crate::tool::dom_action_receipt_fixture();
+        receipt["refusal"]["message"] = json!("é".repeat(20_000));
+        let result = conforming_tool_result(
+            "browser_dom_action",
+            json!({"content":[{"type":"text","text":"x".repeat(20_000)}],"structuredContent":receipt}),
+        );
+        assert_eq!(result["isError"], true);
+        assert!(result.to_string().len() < 16 * 1024);
+        let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+        let schema = jsonschema::validator_for(&schema).unwrap();
+        assert!(schema.is_valid(&refused["structuredContent"]));
+        assert!(!schema
+            .is_valid(&json!({"status":"refused","format":"bad","refusal":{"code":"invalid"}})));
+    }
 }
 
 #[cfg(test)]
