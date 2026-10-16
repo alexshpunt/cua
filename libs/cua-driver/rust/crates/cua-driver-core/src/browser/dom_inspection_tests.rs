@@ -39,6 +39,16 @@ struct State {
     geometry_cleanup_fails: bool,
     geometry_resolved: Option<Arc<tokio::sync::Notify>>,
     geometry_released: Option<Arc<tokio::sync::Notify>>,
+    dispatch_fail_step: String,
+    dispatch_navigate_step: String,
+    dispatch_signal: Option<Arc<tokio::sync::Notify>>,
+    dispatch_preflight_refused: bool,
+    dispatch_negative_step: String,
+    dispatch_signal_step: String,
+    dispatch_stall_step: String,
+    dispatch_missing_unique: bool,
+    dispatch_cleanup_fails: bool,
+    dispatch_released: Option<Arc<tokio::sync::Notify>>,
 }
 struct Platform {
     endpoint: String,
@@ -117,6 +127,8 @@ impl BrowserPlatform for Platform {
         ))
     }
 }
+#[path = "dom_action_dispatch_tests.rs"]
+mod action_dispatch_tests;
 #[path = "dom_action_prepare_tests.rs"]
 mod action_prepare_tests;
 struct Fixture {
@@ -183,6 +195,31 @@ async fn bound() -> (Fixture, String, String) {
                 assert_eq!(call.params["uniqueContextId"],"unique-main-77");
                 assert!(call.params.get("executionContextId").is_none());
                 assert!(call.params.get("objectId").is_none());
+                let function = call.params["functionDeclaration"].as_str().unwrap();
+                if function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION
+                    || function == crate::browser::dom_action_operation::STEP_FUNCTION {
+                    assert_eq!(call.params["arguments"][0],json!({"objectId":"geometry-node"}));
+                    assert_eq!(call.params["throwOnSideEffect"], function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION);
+                    assert_eq!(call.params["returnByValue"],true);
+                    assert_eq!(call.params["awaitPromise"],false);
+                    assert_eq!(call.params["userGesture"],false);
+                    if function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION {
+                        return MockReply::ok(json!({"result":{"value":{"ok":!state.dispatch_preflight_refused}}}));
+                    }
+                    let step = call.params["arguments"][1]["value"]["name"].as_str().unwrap();
+                    if state.dispatch_signal_step.is_empty() || state.dispatch_signal_step==step {
+                        if let Some(signal)=&state.dispatch_signal {signal.notify_one();}
+                    }
+                    if state.dispatch_stall_step==step {return MockReply::ok(json!({})).without_response();}
+                    if state.dispatch_navigate_step == step {state.navigated=true;}
+                    if state.dispatch_negative_step == step {
+                        return MockReply::ok(json!({"result":{"value":{"ok":false,"reason":"dom_action_event_cancelled"}}}));
+                    }
+                    if state.dispatch_fail_step == step {
+                        return MockReply::ok(json!({"exceptionDetails":{"text":"unknown effect"}}));
+                    }
+                    return MockReply::ok(json!({"result":{"value":{"ok":true,"observed":{"focused":true,"foreign":"discard"}}}}));
+                }
                 assert_eq!(call.params["arguments"],json!([{"objectId":"geometry-node"}]));
                 assert_eq!(call.params["throwOnSideEffect"],true);
                 assert_eq!(call.params["returnByValue"],true);
@@ -207,6 +244,10 @@ async fn bound() -> (Fixture, String, String) {
                 }
             },
             "Runtime.releaseObjectGroup"=> {
+                if call.params["objectGroup"].as_str().is_some_and(|group|group.starts_with("cua-dom-action-")) {
+                    if let Some(signal)=&state.dispatch_released {signal.notify_one();}
+                    if state.dispatch_cleanup_fails {return MockReply::err(-32000,"owned cleanup failed");}
+                }
                 if let Some(signal) = &state.geometry_released { signal.notify_one(); }
                 if state.geometry_cleanup_fails {return MockReply::err(-32000,"release failed");}
                 json!({})
@@ -214,7 +255,7 @@ async fn bound() -> (Fixture, String, String) {
             "Page.createIsolatedWorld"=> {
                 assert_eq!(call.params["frameId"],"F_MAIN");
                 assert_eq!(call.params["grantUniveralAccess"],false);
-                if matches!(call.params["worldName"].as_str(), Some("cua-driver-dom-geometry" | "cua-driver-dom-actionability")) {
+                if matches!(call.params["worldName"].as_str(), Some("cua-driver-dom-geometry" | "cua-driver-dom-actionability" | "cua-driver-dom-actions")) {
                     let world_name = call.params["worldName"].as_str().unwrap();
                     let fault = state.geometry_context_fault.as_str();
                     let event = crate::browser::mock_cdp::MockEvent {
@@ -222,7 +263,7 @@ async fn bound() -> (Fixture, String, String) {
                         session_id:if fault == "session" {Some("foreign-session".into())} else {call.session_id.clone()},
                         params:json!({"context":{"id":if fault == "numeric_id" {78} else {77},
                             "name":if fault == "name" {"page-world"} else {world_name},
-                            "uniqueId":if state.geometry_missing_unique {Value::Null} else {json!("unique-main-77")},
+                            "uniqueId":if state.geometry_missing_unique || (world_name=="cua-driver-dom-actions" && state.dispatch_missing_unique) {Value::Null} else {json!("unique-main-77")},
                             "auxData":{"frameId":if fault == "frame" {"FOREIGN"} else {"F_MAIN"},"isDefault":fault == "default_world"}}})
                     };
                     let mut events = vec![event];

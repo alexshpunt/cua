@@ -6,6 +6,9 @@ use crate::browser::dom_action_request::DomActionRequest;
 use crate::browser::dom_action_wait::ActionRequirements;
 
 const WORLD: &str = "cua-driver-dom-actions";
+#[cfg(test)]
+#[path = "dom_action_cleanup_tests.rs"]
+mod cleanup_tests;
 
 /// The caller must select the route explicitly; unsupported trusted input never downgrades.
 #[derive(Clone, Copy, PartialEq, Eq)]

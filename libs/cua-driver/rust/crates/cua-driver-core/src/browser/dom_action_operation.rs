@@ -239,3 +239,90 @@ pub(crate) const STEP_FUNCTION: &str = r#"function(node, step) {
     default: return fail('dom_action_operation_unavailable');
   }
 }"#;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::browser::dom_action_key::parse_press_key;
+    use crate::browser::dom_action_request::parse_request;
+
+    #[test]
+    fn every_declared_action_has_a_bounded_explicit_plan() {
+        for (action, params, names) in [
+            ("click", json!({}), vec!["click"]),
+            (
+                "double_click",
+                json!({}),
+                vec!["click", "click", "dblclick"],
+            ),
+            ("right_click", json!({}), vec!["contextmenu"]),
+            (
+                "hover",
+                json!({"dwell_ms":10}),
+                vec![
+                    "pointerover",
+                    "mouseover",
+                    "pointerenter",
+                    "mouseenter",
+                    "dwell",
+                ],
+            ),
+            (
+                "fill",
+                json!({"text":""}),
+                vec!["focus", "beforeinput", "fill", "input"],
+            ),
+            (
+                "type",
+                json!({"text":"🙂"}),
+                vec!["focus", "beforeinput", "insert_text", "input"],
+            ),
+            (
+                "press",
+                json!({"key":"Control+a"}),
+                vec!["focus", "keydown", "keyup"],
+            ),
+            ("check", json!({}), vec!["set_checked"]),
+            ("uncheck", json!({}), vec!["set_checked"]),
+            (
+                "select_option",
+                json!({"values":[""]}),
+                vec!["select_values", "input", "change"],
+            ),
+            ("focus", json!({}), vec!["focus"]),
+            ("scroll_into_view", json!({}), vec!["scroll_into_view"]),
+        ] {
+            let mut raw = json!({"action":action,"locator":{"test_id":"control"}});
+            raw.as_object_mut()
+                .unwrap()
+                .extend(params.as_object().unwrap().clone());
+            let request = parse_request(&raw).unwrap();
+            let key = request
+                .key
+                .as_deref()
+                .map(parse_press_key)
+                .transpose()
+                .unwrap();
+            let steps = plan(&request, key.as_ref()).unwrap();
+            assert_eq!(
+                steps.iter().map(|step| step.name).collect::<Vec<_>>(),
+                names
+            );
+            assert!(steps.len() <= 5);
+            if action == "press" {
+                assert_eq!(steps[1].argument["modifiers"], 2);
+            }
+        }
+    }
+
+    #[test]
+    fn a_missing_press_plan_refuses_without_text_or_key_fallback() {
+        let request =
+            parse_request(&json!({"action":"press","locator":{"css":"input"},"key":"Enter"}))
+                .unwrap();
+        assert_eq!(
+            plan(&request, None).unwrap_err(),
+            "dom_action_key_unavailable"
+        );
+    }
+}

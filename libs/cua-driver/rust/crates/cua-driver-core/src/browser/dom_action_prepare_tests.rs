@@ -2,7 +2,7 @@
 use super::*;
 use crate::browser::dom_action_request::parse_request;
 
-async fn source() -> (Fixture, String, String, String) {
+pub(super) async fn source() -> (Fixture, String, String, String) {
     let (fixture, target, tab) = bound().await;
     fixture.state.lock().unwrap().single_frame = true;
     let snapshot = structured(
@@ -14,7 +14,7 @@ async fn source() -> (Fixture, String, String, String) {
     let reference = snapshot["elements"][0]["ref"].as_str().unwrap().to_owned();
     (fixture, target, tab, reference)
 }
-fn request(action: &str) -> crate::browser::dom_action_request::DomActionRequest {
+pub(super) fn request(action: &str) -> crate::browser::dom_action_request::DomActionRequest {
     parse_request(&json!({"action":action,"locator":{"test_id":"live-value"},"timeout_ms":1000}))
         .unwrap()
 }
