@@ -433,6 +433,8 @@ pub fn default_capabilities_for(tool_name: &str) -> Vec<String> {
         "browser_set_input_files" => &["browser.input.files"],
         "browser_download" => &["browser.download"],
         "browser_pointer" => &["browser.input.pointer"],
+        // Closed locator intents use the existing exact-tab admission adapter, not OS input.
+        "browser_dom_action" => &["browser.input.dom_action"],
 
         // ── driver self-service ──────────────────────────────────────
         "check_for_update" => &["driver.update_check"],
@@ -3625,6 +3627,36 @@ mod runtime_isolation_tests {
     }
 
     #[tokio::test]
+    async fn dom_action_admission_denies_unattested_resources_before_dispatch() {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let mut registry = super::ToolRegistry::new_with_protected_consent_provider(None);
+        registry.register(Box::new(ObservationProbe {
+            hits: hits.clone(),
+            def: super::ToolDef {
+                name: "browser_dom_action".into(),
+                description: "test DOM mutation".into(),
+                input_schema: serde_json::json!({"type":"object"}),
+                read_only: false,
+                destructive: false,
+                idempotent: false,
+                open_world: true,
+            },
+        }));
+        let result = registry
+            .invoke_with_context(
+                "browser_dom_action",
+                serde_json::json!({"session":"owner","input_route":"dom_event"}),
+                standard_context(),
+            )
+            .await;
+        assert_eq!(
+            result.structured_content.unwrap()["refusal"]["code"],
+            "protected_resource_scope_invalid"
+        );
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
     async fn standard_observation_runs_without_a_protected_host() {
         let hits = Arc::new(AtomicUsize::new(0));
         let registry = observation_registry(None, hits.clone());
@@ -5806,6 +5838,47 @@ fn recording_args_for(tool_name: &str, args: &Value) -> Value {
                     );
                 }
             }
+            "browser_dom_action" => {
+                // Recording keeps only a closed operation/route and opaque source context.
+                // Requests may contain typed text, option values and private locators.
+                let action = arguments
+                    .get("request")
+                    .and_then(|request| request.get("action"))
+                    .and_then(Value::as_str)
+                    .filter(|action| {
+                        matches!(
+                            *action,
+                            "click"
+                                | "double_click"
+                                | "right_click"
+                                | "hover"
+                                | "fill"
+                                | "type"
+                                | "press"
+                                | "check"
+                                | "uncheck"
+                                | "select_option"
+                                | "focus"
+                                | "scroll_into_view"
+                        )
+                    })
+                    .unwrap_or("unrecognized")
+                    .to_owned();
+                let route = arguments
+                    .get("input_route")
+                    .and_then(Value::as_str)
+                    .filter(|route| matches!(*route, "dom_event" | "trusted"))
+                    .unwrap_or("unrecognized")
+                    .to_owned();
+                arguments.retain(|key, _| {
+                    matches!(
+                        key.as_str(),
+                        "session" | "target_id" | "tab_id" | "source_ref"
+                    )
+                });
+                arguments.insert("request".to_owned(), serde_json::json!({"action": action}));
+                arguments.insert("input_route".to_owned(), Value::String(route));
+            }
             "browser_pointer" => {}
             _ => {}
         }
@@ -5877,6 +5950,28 @@ mod capability_tests {
     //! These belong in cua-driver-core because they cover the shape
     //! of the registry response — no platform code involved.
     use super::*;
+
+    #[test]
+    fn dom_action_admission_has_a_distinct_capability_and_content_free_recording() {
+        assert_eq!(
+            default_capabilities_for("browser_dom_action"),
+            vec!["browser.input.dom_action"]
+        );
+        let args = serde_json::json!({"session":"owner","target_id":"target","tab_id":"tab","source_ref":"source",
+            "input_route":"dom_event","request":{"action":"fill","locator":{"label":"private label"},"text":"private input","values":["private option"]}});
+        let recorded = recording_args_for("browser_dom_action", &args);
+        assert_eq!(recorded["input_route"], "dom_event");
+        assert_eq!(recorded["request"]["action"], "fill");
+        for content in ["private label", "private input", "private option"] {
+            assert!(!recorded.to_string().contains(content));
+        }
+        assert_eq!(args["request"]["text"], "private input");
+        let invalid = recording_args_for(
+            "browser_dom_action",
+            &serde_json::json!({"input_route":"private route", "request":{"action":"private action"},"script":"private extra"}),
+        );
+        assert!(!invalid.to_string().contains("private"));
+    }
 
     #[test]
     fn browser_prepare_recording_redacts_transport_identity() {
@@ -6058,6 +6153,7 @@ mod capability_tests {
         "browser_set_input_files",
         "browser_download",
         "browser_pointer",
+        "browser_dom_action",
         "history_status",
         "history_query",
         "parse_visual_regions",
@@ -6151,6 +6247,7 @@ mod capability_tests {
         "browser.dialog",
         "browser.download",
         "browser.input.pointer",
+        "browser.input.dom_action",
         // driver self
         "driver.update_check",
         "driver.probe",

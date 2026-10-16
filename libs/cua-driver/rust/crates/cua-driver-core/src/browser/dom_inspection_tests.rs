@@ -129,6 +129,8 @@ impl BrowserPlatform for Platform {
 }
 #[path = "dom_action_dispatch_tests.rs"]
 mod action_dispatch_tests;
+#[path = "dom_action_tool_tests.rs"]
+mod action_tool_tests;
 #[path = "dom_action_prepare_tests.rs"]
 mod action_prepare_tests;
 struct Fixture {

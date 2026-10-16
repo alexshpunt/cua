@@ -16,6 +16,7 @@ use crate::tool_args::ArgsExt;
 
 use super::cdp_ws::CdpConnection;
 use super::download::BrowserDownloadTool;
+use super::dom_action_tool::BrowserDomActionTool;
 use super::engine::{BrowserEngine, BrowserScreenshotMode, BrowserTabScreenshot};
 use super::platform::{BrowserVisualActionKind, PrepareProfile, PrepareRequest, PrepareStrategy};
 use super::pointer::BrowserPointerTool;
@@ -33,6 +34,7 @@ pub fn register_browser_tools(engine: &Arc<BrowserEngine>, registry: &mut ToolRe
     registry.register(Box::new(BrowserNavigateTool::new(engine.clone())));
     registry.register(Box::new(BrowserClickTool::new(engine.clone())));
     registry.register(Box::new(BrowserTypeTool::new(engine.clone())));
+    registry.register(Box::new(BrowserDomActionTool::new(engine.clone())));
     registry.register(Box::new(BrowserDialogTool::new(engine.clone())));
     registry.register(Box::new(BrowserSetInputFilesTool::new(engine.clone())));
     registry.register(Box::new(BrowserDownloadTool::new(engine.clone())));
