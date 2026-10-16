@@ -16,7 +16,7 @@ use crate::tool_args::ArgsExt;
 
 use super::cdp_ws::CdpConnection;
 use super::download::BrowserDownloadTool;
-use super::engine::{BrowserEngine, BrowserTabScreenshot};
+use super::engine::{BrowserEngine, BrowserScreenshotMode, BrowserTabScreenshot};
 use super::platform::{BrowserVisualActionKind, PrepareProfile, PrepareRequest, PrepareStrategy};
 use super::pointer::BrowserPointerTool;
 use super::refusal::{BrowserRefusal, BrowserRefusalCode};
@@ -232,20 +232,29 @@ fn semantic_ref_value(listed: &super::engine::SemanticListedRef) -> Value {
 
 fn with_tab_screenshot(mut result: ToolResult, screenshot: BrowserTabScreenshot) -> ToolResult {
     if let Some(structured) = result.structured_content.as_mut() {
-        structured["screenshot"] = json!({
+        let mut metadata = json!({
             "source": "cdp_tab",
-            "scope": "viewport",
+            "scope": if matches!(screenshot.mode, BrowserScreenshotMode::NativeView) { "view" } else { "viewport" },
+            "capture_mode": screenshot.mode.as_str(),
             "mime_type": "image/png",
             "width": screenshot.width,
             "height": screenshot.height,
-            "coordinate_space": "viewport_css_px",
-            "viewport_css_width": screenshot.viewport_css_width,
-            "viewport_css_height": screenshot.viewport_css_height,
-            "pixel_to_css_scale_x": screenshot.pixel_to_css_scale_x,
-            "pixel_to_css_scale_y": screenshot.pixel_to_css_scale_y,
             "tab_activation": "not_requested",
             "window_foregrounding": "not_requested",
         });
+        if let (Some(width), Some(height), Some(scale_x), Some(scale_y)) = (
+            screenshot.viewport_css_width,
+            screenshot.viewport_css_height,
+            screenshot.pixel_to_css_scale_x,
+            screenshot.pixel_to_css_scale_y,
+        ) {
+            metadata["coordinate_space"] = json!("viewport_css_px");
+            metadata["viewport_css_width"] = json!(width);
+            metadata["viewport_css_height"] = json!(height);
+            metadata["pixel_to_css_scale_x"] = json!(scale_x);
+            metadata["pixel_to_css_scale_y"] = json!(scale_y);
+        }
+        structured["screenshot"] = metadata;
         structured["screenshot_width"] = json!(screenshot.width);
         structured["screenshot_height"] = json!(screenshot.height);
         structured["screenshot_mime_type"] = json!("image/png");
@@ -289,12 +298,16 @@ impl GetBrowserStateTool {
                     "session": schema_session(),
                     "snapshot_format": {
                         "type": "string",
-                        "enum": ["dom_refs_v1", "semantic_v2"],
+                        "enum": ["dom_refs_v1", "semantic_v2", "dom_inspect_v1"],
                         "description": "Versioned snapshot contract. dom_refs_v1 remains the compatibility default."
                     },
                     "scope_ref": {
                         "type": "string",
-                        "description": "Current semantic/content ref whose subtree should be observed."
+                        "description": "Use a current semantic/content ref for semantic_v2, or a current readonly DOM ref for dom_inspect_v1. Scope stays within its exact frame/document."
+                    },
+                    "geometry_ref": {
+                        "type":"string", "minLength":1, "maxLength":256,
+                        "description":"Use with dom_inspect_v1 and a current readonly DOM ref to sample main-document/open-shadow viewport CSS geometry. Omit locator, scope and collection options. Treat the result as a readonly sample, not native pixels, visibility or crop authority."
                     },
                     "query": {
                         "type": "string",
@@ -303,6 +316,27 @@ impl GetBrowserStateTool {
                     "continuation": {
                         "type": "string",
                         "description": "Opaque continuation minted by an earlier semantic_v2 response."
+                    },
+                    "locator": {
+                        "type":"object", "additionalProperties":false,
+                        "properties": {
+                            "role":{"type":"string","minLength":1,"maxLength":256},
+                            "name":{"type":"string","minLength":1,"maxLength":256},
+                            "label":{"type":"string","minLength":1,"maxLength":256},
+                            "text":{"type":"string","minLength":1,"maxLength":256},
+                            "test_id":{"type":"string","minLength":1,"maxLength":256},
+                            "css":{"type":"string","minLength":1,"maxLength":256}
+                        },
+                        "description":"Use with dom_inspect_v1. Predicates combine with AND: exact role/name/label (accessible name)/test-ID, substring text and Chromium CSS over document/open shadow roots. Duplicate matches remain separate."
+                    },
+                    "include_hidden":{"type":"boolean","default":true,"description":"Use with dom_inspect_v1 to retain hidden/noninteractive elements. False includes only proven visible elements."},
+                    "max_nodes":{"type":"integer","minimum":1,"maximum":200,"default":100,"description":"Maximum returned dom_inspect_v1 elements. Check snapshot coverage before inferring absence."},
+                    "max_depth":{"type":"integer","minimum":1,"maximum":32,"default":16,"description":"Maximum DOM collection depth for dom_inspect_v1. Deeper omitted descendants make coverage incomplete."},
+                    "screenshot_mode": {
+                        "type": "string",
+                        "enum": ["viewport", "surface_unclipped", "native_view"],
+                        "default": "viewport",
+                        "description": "Use with include_screenshot=true in snapshot mode. viewport retains the existing clipped CSS viewport. surface_unclipped and native_view capture without clip or emulation and require the exact tab to remain selected. Treat their pixels as private comparison samples, not native-window pixels or proven CSS geometry."
                     },
                     "include_screenshot": {
                         "type": "boolean",
@@ -354,6 +388,36 @@ impl Tool for GetBrowserStateTool {
     }
 
     async fn invoke(&self, args: Value) -> ToolResult {
+        if args.get("geometry_ref").is_some()
+            && (args.opt_str("snapshot_format").as_deref() != Some("dom_inspect_v1")
+                || args.opt_str("target_id").is_none()
+                || args.opt_str("tab_id").is_none())
+        {
+            return ToolResult::error(
+                "geometry_ref requires dom_inspect_v1 and an existing target_id/tab_id",
+            );
+        }
+        let screenshot_mode = match args.get("screenshot_mode") {
+            None => BrowserScreenshotMode::Viewport,
+            Some(Value::String(mode)) if mode == "viewport" => BrowserScreenshotMode::Viewport,
+            Some(Value::String(mode)) if mode == "surface_unclipped" => {
+                BrowserScreenshotMode::SurfaceUnclipped
+            }
+            Some(Value::String(mode)) if mode == "native_view" => BrowserScreenshotMode::NativeView,
+            Some(_) => {
+                return ToolResult::error(
+                    "screenshot_mode must be viewport, surface_unclipped or native_view",
+                )
+            }
+        };
+        if args.get("screenshot_mode").is_some() {
+            if args.opt_str("target_id").is_none() || args.opt_str("tab_id").is_none() {
+                return ToolResult::error("screenshot_mode requires snapshot mode");
+            }
+            if args.get("include_screenshot").and_then(Value::as_bool) != Some(true) {
+                return ToolResult::error("screenshot_mode requires include_screenshot=true");
+            }
+        }
         // Snapshot mode: target_id (+ tab_id) — uses existing capabilities.
         if let Some(target_id) = args.opt_str("target_id") {
             let session = match require_explicit_session(&args) {
@@ -382,9 +446,12 @@ impl Tool for GetBrowserStateTool {
                     )
                 }
             };
-            if snapshot_format != "dom_refs_v1" && snapshot_format != "semantic_v2" {
+            if snapshot_format != "dom_refs_v1"
+                && snapshot_format != "semantic_v2"
+                && snapshot_format != "dom_inspect_v1"
+            {
                 return ToolResult::error(format!(
-                    "snapshot_format must be \"dom_refs_v1\" or \"semantic_v2\", got {snapshot_format:?}"
+                    "snapshot_format must be \"dom_refs_v1\", \"semantic_v2\" or \"dom_inspect_v1\", got {snapshot_format:?}"
                 ));
             }
             if snapshot_format == "dom_refs_v1"
@@ -394,6 +461,143 @@ impl Tool for GetBrowserStateTool {
             {
                 return ToolResult::error(
                     "scope_ref, query, and continuation require snapshot_format=\"semantic_v2\"",
+                );
+            }
+            if snapshot_format == "dom_inspect_v1" {
+                if include_screenshot
+                    || args.get("query").is_some()
+                    || args.get("continuation").is_some()
+                {
+                    return ToolResult::error("dom_inspect_v1 returns readonly DOM metadata only; query, continuation and CDP screenshot are not supported");
+                }
+                if let Some(value) = args.get("geometry_ref") {
+                    let Some(reference) = value.as_str().filter(|reference| {
+                        !reference.trim().is_empty()
+                            && reference.len() <= 256
+                            && !reference.contains('\0')
+                    }) else {
+                        return ToolResult::error(
+                            "geometry_ref must be a bounded current readonly DOM ref",
+                        );
+                    };
+                    if [
+                        "locator",
+                        "scope_ref",
+                        "include_hidden",
+                        "max_nodes",
+                        "max_depth",
+                        "screenshot_mode",
+                    ]
+                    .iter()
+                    .any(|field| args.get(*field).is_some())
+                    {
+                        return ToolResult::error("geometry_ref cannot combine with locator, scope, collection or screenshot options");
+                    }
+                    return match self.engine.inspect_dom_geometry(&session, &target_id, &tab_id, reference).await {
+                        Ok(sample) => ToolResult::text("Readonly frame-viewport CSS geometry sample. Native-pixel mapping is unavailable; this is not visibility, atomic paint or input/crop authority.").with_structured(sample),
+                        Err(refusal) => refusal.to_tool_result(),
+                    };
+                }
+                let locator = match args.get("locator") {
+                    None => super::dom_inspection::DomLocator::default(),
+                    Some(value) => {
+                        match serde_json::from_value::<super::dom_inspection::DomLocator>(
+                            value.clone(),
+                        ) {
+                            Ok(locator) => locator,
+                            Err(error) => {
+                                return ToolResult::error(format!("invalid DOM locator: {error}"))
+                            }
+                        }
+                    }
+                };
+                for value in [
+                    &locator.role,
+                    &locator.name,
+                    &locator.label,
+                    &locator.text,
+                    &locator.test_id,
+                    &locator.css,
+                ]
+                .into_iter()
+                .flatten()
+                {
+                    if value.trim().is_empty()
+                        || value.chars().count() > 256
+                        || value.contains('\0')
+                    {
+                        return ToolResult::error(
+                            "DOM locator must contain bounded, nonempty strings without NUL",
+                        );
+                    }
+                }
+                let integer = |key: &str, default: usize, max: usize| -> Result<usize, String> {
+                    match args.get(key) {
+                        None => Ok(default),
+                        Some(value) => value
+                            .as_u64()
+                            .filter(|value| *value >= 1 && *value <= max as u64)
+                            .map(|value| value as usize)
+                            .ok_or_else(|| format!("{key} must be an integer in 1..={max}")),
+                    }
+                };
+                let max_nodes = match integer("max_nodes", 100, 200) {
+                    Ok(v) => v,
+                    Err(e) => return ToolResult::error(e),
+                };
+                let max_depth = match integer("max_depth", 16, 32) {
+                    Ok(v) => v,
+                    Err(e) => return ToolResult::error(e),
+                };
+                let include_hidden = match args.get("include_hidden") {
+                    None => true,
+                    Some(Value::Bool(v)) => *v,
+                    Some(_) => return ToolResult::error("include_hidden must be boolean"),
+                };
+                let scope = match args.get("scope_ref") {
+                    None => None,
+                    Some(Value::String(v)) if !v.is_empty() && v.len() <= 256 => Some(v.as_str()),
+                    Some(_) => {
+                        return ToolResult::error(
+                            "scope_ref must be a bounded current readonly DOM ref",
+                        )
+                    }
+                };
+                return match self
+                    .engine
+                    .snapshot_tab_dom(
+                        &session,
+                        &target_id,
+                        &tab_id,
+                        &locator,
+                        scope,
+                        include_hidden,
+                        max_nodes,
+                        max_depth,
+                    )
+                    .await
+                {
+                    Ok(snapshot) => {
+                        let guidance = if snapshot
+                            .pointer("/snapshot/complete")
+                            .and_then(Value::as_bool)
+                            == Some(true)
+                        {
+                            "Readonly DOM inspection. CSS bounds do not grant native input authority; DOM/layout/native paint are separate samples."
+                        } else {
+                            "Partial readonly DOM inspection: absence is unknown outside the collected slice. Narrow the scope or raise the bounded limits. CSS bounds do not grant native input authority."
+                        };
+                        ToolResult::text(guidance).with_structured(snapshot)
+                    }
+                    Err(refusal) => refusal.to_tool_result(),
+                };
+            }
+            if ["locator", "include_hidden", "max_nodes", "max_depth"]
+                .iter()
+                .any(|key| args.get(*key).is_some())
+            {
+                return ToolResult::error(
+                    "DOM locator and collection limits require snapshot_format=dom_inspect_v1",
                 );
             }
             if snapshot_format == "semantic_v2" {
@@ -469,7 +673,7 @@ impl Tool for GetBrowserStateTool {
                 if include_screenshot {
                     return match self
                         .engine
-                        .capture_tab_screenshot(&session, &target_id, &tab_id)
+                        .capture_tab_screenshot(&session, &target_id, &tab_id, screenshot_mode)
                         .await
                     {
                         Ok(screenshot) => with_tab_screenshot(snapshot, screenshot),
@@ -522,7 +726,7 @@ impl Tool for GetBrowserStateTool {
             if include_screenshot {
                 return match self
                     .engine
-                    .capture_tab_screenshot(&session, &target_id, &tab_id)
+                    .capture_tab_screenshot(&session, &target_id, &tab_id, screenshot_mode)
                     .await
                 {
                     Ok(screenshot) => with_tab_screenshot(snapshot, screenshot),
@@ -2764,6 +2968,78 @@ mod tests {
         ] {
             let result = tool.invoke(args).await;
             assert_eq!(result.is_error, Some(true));
+        }
+    }
+
+    #[tokio::test]
+    async fn unclipped_capture_metadata_does_not_invent_css_or_native_geometry() {
+        for mode in [
+            BrowserScreenshotMode::SurfaceUnclipped,
+            BrowserScreenshotMode::NativeView,
+        ] {
+            let screenshot = BrowserTabScreenshot {
+                mode,
+                data_base64: "private-sample".into(),
+                width: 1332,
+                height: 819,
+                viewport_css_width: None,
+                viewport_css_height: None,
+                pixel_to_css_scale_x: None,
+                pixel_to_css_scale_y: None,
+            };
+            let result = with_tab_screenshot(
+                ToolResult::text("sample").with_structured(json!({"status":"ok"})),
+                screenshot,
+            );
+            let metadata = &structured(&result)["screenshot"];
+            assert_eq!(metadata["source"], "cdp_tab");
+            assert_eq!(metadata["capture_mode"], mode.as_str());
+            for key in [
+                "coordinate_space",
+                "viewport_css_width",
+                "viewport_css_height",
+                "pixel_to_css_scale_x",
+                "pixel_to_css_scale_y",
+                "capture_bounds",
+            ] {
+                assert!(
+                    metadata.get(key).is_none(),
+                    "Unproven mapping {key}: {metadata}"
+                );
+            }
+            assert_eq!(metadata["width"], 1332);
+            assert_eq!(metadata["height"], 819);
+            assert!(matches!(&result.content[0], Content::Image { .. }));
+        }
+    }
+
+    #[tokio::test]
+    async fn screenshot_modes_reject_invalid_requests_before_browser_access() {
+        let tool = GetBrowserStateTool::new(engine());
+        for (args, expected) in [
+            (
+                json!({"pid": 2, "window_id": 7, "session": "capture-run", "screenshot_mode": "native_view", "include_screenshot": true}),
+                "screenshot_mode requires snapshot mode",
+            ),
+            (
+                json!({"target_id": "bt-fixture", "tab_id": "tab-fixture", "session": "capture-run", "screenshot_mode": "native_view"}),
+                "screenshot_mode requires include_screenshot=true",
+            ),
+            (
+                json!({"target_id": "bt-fixture", "tab_id": "tab-fixture", "session": "capture-run", "include_screenshot": true, "screenshot_mode": "guess"}),
+                "screenshot_mode must be viewport, surface_unclipped or native_view",
+            ),
+            (
+                json!({"target_id": "bt-fixture", "tab_id": "tab-fixture", "session": "capture-run", "include_screenshot": true, "screenshot_mode": null}),
+                "screenshot_mode must be viewport, surface_unclipped or native_view",
+            ),
+        ] {
+            let result = tool.invoke(args).await;
+            assert_eq!(result.is_error, Some(true));
+            assert!(
+                matches!(&result.content[0], Content::Text { text, .. } if text == expected),
+                "{result:?}"
+            );
         }
     }
 
