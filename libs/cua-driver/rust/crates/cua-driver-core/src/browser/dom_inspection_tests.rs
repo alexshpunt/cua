@@ -32,6 +32,7 @@ struct State {
     geometry_missing_unique: bool,
     geometry_context_fault: String,
     geometry_exception: bool,
+    fractional_geometry: bool,
     geometry_detaches: bool,
     geometry_navigates: bool,
     geometry_cleanup_fails: bool,
@@ -188,7 +189,8 @@ async fn bound() -> (Fixture, String, String) {
                 if state.geometry_exception {json!({"exceptionDetails":{"text":"side effect check refused"}})} else {
                     json!({"result":{"type":"object","value":{
                         "connected":!state.geometry_detaches,"same_document":true,
-                        "bounds":{"x":10.5,"y":20.25,"width":80.0,"height":30.0},
+                        "bounds":{"x":10.5,"y":if state.fractional_geometry {182.89584350585938} else {20.25},
+                            "width":if state.fractional_geometry {241.33334350585938} else {80.0},"height":30.0},
                         "scroll":{"x":0.0,"y":120.0},
                         "visual_viewport":{"offset_x":0.0,"offset_y":0.0,
                             "page_x":0.0,"page_y":120.0,"width":800.0,"height":600.0,"scale":1.0}
@@ -331,6 +333,38 @@ async fn explicit_geometry_reads_current_ref_without_minting_pixel_authority() {
         .calls
         .iter()
         .any(|(method, _)| method == "Runtime.releaseObjectGroup"));
+}
+
+#[tokio::test]
+async fn cssom_fractional_geometry_preserves_exact_cdp_float64_values() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["attributes"]["id"] == "main-btn")
+        .unwrap()["ref"]
+        .clone();
+    f.state.lock().unwrap().fractional_geometry = true;
+    let mut request = args(&target, &tab);
+    request["geometry_ref"] = reference;
+    let result = structured(&tool.invoke(request).await);
+    assert_eq!(result["mode"], "element_geometry", "{result}");
+    for (field, expected) in [
+        ("y", 182.89584350585938_f64),
+        ("width", 241.33334350585938_f64),
+    ] {
+        let actual = result["bounds"][field]
+            .as_f64()
+            .expect("finite CSSOM coordinate");
+        assert_eq!(
+            actual.to_bits(),
+            expected.to_bits(),
+            "CDP JSON must preserve {field} exactly: {actual} versus {expected}"
+        );
+    }
 }
 
 #[tokio::test]
