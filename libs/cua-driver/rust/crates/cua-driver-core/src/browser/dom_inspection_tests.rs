@@ -32,6 +32,7 @@ struct State {
     geometry_missing_unique: bool,
     geometry_context_fault: String,
     geometry_exception: bool,
+    actionability_reply: Option<Value>,
     fractional_geometry: bool,
     geometry_detaches: bool,
     geometry_navigates: bool,
@@ -304,6 +305,100 @@ fn args(target: &str, tab: &str) -> Value {
     json!({"target_id":target,"tab_id":tab,"session":"dom-inspection-tests","snapshot_format":"dom_inspect_v1"})
 }
 
+#[tokio::test]
+async fn readonly_actionability_uses_the_attested_world_without_dispatching_input() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"].as_array().unwrap().iter()
+        .find(|row| row["attributes"]["id"] == "main-btn").unwrap()["ref"].as_str().unwrap();
+    let sample = f.engine.inspect_dom_actionability("dom-inspection-tests", &target, &tab, reference).await.unwrap();
+    assert_eq!(sample.target.frame_id, "F_MAIN");
+    assert_eq!(sample.target.loader_id, "L_MAIN");
+    assert_eq!(sample.target.backend_node_id, 10);
+    assert!(sample.connected);
+    assert_eq!(sample.visible, Some(true));
+    assert_eq!(sample.enabled, Some(true));
+    assert_eq!(sample.editable, Some(false));
+    assert_eq!(sample.receives_pointer, Some(true));
+    assert_eq!(sample.bounds, Some([10.5, 20.25, 80.0, 30.0]));
+    let state = f.state.lock().unwrap();
+    assert!(state.calls.iter().any(|(method, params)| method == "Page.createIsolatedWorld" && params["worldName"] == "cua-driver-dom-actionability"));
+    assert!(state.calls.iter().any(|(method, _)| method == "Runtime.releaseObjectGroup"));
+    assert!(!state.calls.iter().any(|(method, _)| method.starts_with("Input.") || method.starts_with("Emulation.") ||
+        matches!(method.as_str(), "DOM.focus" | "DOM.scrollIntoViewIfNeeded" | "Page.bringToFront")));
+}
+
+#[tokio::test]
+async fn readonly_actionability_refuses_invalid_state_source_context_and_cleanup() {
+    for fault in ["malformed", "exception", "detached", "navigation", "context", "cleanup"] {
+        let (f, target, tab) = bound().await;
+        let tool = GetBrowserStateTool::new(f.engine.clone());
+        let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+        let reference = snapshot["elements"].as_array().unwrap().iter()
+            .find(|row| row["attributes"]["id"] == "main-btn").unwrap()["ref"].as_str().unwrap();
+        {
+            let mut state = f.state.lock().unwrap();
+            match fault {
+                "malformed" => state.actionability_reply = Some(json!({"result":{"type":"object","value":{"connected":true,"same_document":true}}})),
+                "exception" => state.geometry_exception = true,
+                "detached" => state.geometry_detaches = true,
+                "navigation" => state.geometry_navigates = true,
+                "context" => state.geometry_context_fault = "frame".into(),
+                "cleanup" => state.geometry_cleanup_fails = true,
+                _ => unreachable!(),
+            }
+        }
+        let error = f.engine.inspect_dom_actionability("dom-inspection-tests", &target, &tab, reference).await.unwrap_err();
+        assert_eq!(error.code, if matches!(fault, "detached" | "navigation") {
+            BrowserRefusalCode::BrowserRefStale
+        } else { BrowserRefusalCode::BrowserRouteUnavailable }, "{fault}: {error:?}");
+        let state = f.state.lock().unwrap();
+        assert!(state.calls.iter().any(|(method, _)| method == "Runtime.releaseObjectGroup"), "{fault}");
+        assert!(!state.calls.iter().any(|(method, _)| method.starts_with("Input.") || method.starts_with("Emulation.")));
+        if fault == "context" { assert!(!state.calls.iter().any(|(method, _)| method == "Runtime.callFunctionOn")); }
+    }
+}
+
+#[tokio::test]
+async fn cancelled_readonly_actionability_still_releases_only_its_object_group() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"].as_array().unwrap().iter()
+        .find(|row| row["attributes"]["id"] == "main-btn").unwrap()["ref"].as_str().unwrap();
+    let resolved = Arc::new(tokio::sync::Notify::new());
+    let released = Arc::new(tokio::sync::Notify::new());
+    {
+        let mut state = f.state.lock().unwrap();
+        state.geometry_resolved = Some(resolved.clone());
+        state.geometry_released = Some(released.clone());
+    }
+    {
+        let operation = f.engine.inspect_dom_actionability("dom-inspection-tests", &target, &tab, reference);
+        tokio::pin!(operation);
+        tokio::select! { biased;
+            _ = resolved.notified() => {},
+            _ = &mut operation => panic!("actionability completed before cancellation seam"),
+        }
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(1), released.notified()).await
+        .expect("cancelled actionability must request bounded owned cleanup");
+    assert!(!f.state.lock().unwrap().calls.iter().any(|(method, _)| method == "Runtime.callFunctionOn" || method.starts_with("Input.")));
+}
+
+#[tokio::test]
+async fn child_frame_actionability_refuses_without_evaluating_a_main_world() {
+    let (f, target, tab) = bound().await;
+    let tool = GetBrowserStateTool::new(f.engine.clone());
+    let snapshot = structured(&tool.invoke(args(&target, &tab)).await);
+    let reference = snapshot["elements"].as_array().unwrap().iter()
+        .find(|row| row["attributes"]["id"] == "inner-btn").unwrap()["ref"].as_str().unwrap();
+    let count = f.state.lock().unwrap().calls.len();
+    let error = f.engine.inspect_dom_actionability("dom-inspection-tests", &target, &tab, reference).await.unwrap_err();
+    assert_eq!(error.code, BrowserRefusalCode::BrowserRouteUnavailable);
+    assert_eq!(f.state.lock().unwrap().calls.len(), count);
+}
 #[tokio::test]
 async fn explicit_geometry_reads_current_ref_without_minting_pixel_authority() {
     let (f, target, tab) = bound().await;
