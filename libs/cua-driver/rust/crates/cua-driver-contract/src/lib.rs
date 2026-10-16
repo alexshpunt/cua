@@ -19,7 +19,9 @@ pub mod cursor;
 mod cursor_tools;
 mod desktop;
 mod displays;
+mod dom_action_output;
 pub use displays::*;
+pub use dom_action_output::*;
 mod inputs;
 mod outputs;
 mod pointer;
@@ -325,6 +327,9 @@ pub fn tool_input_fields(name: &str) -> Option<&'static BTreeSet<String>> {
 /// MCP tool. Runtime-only tools can define a narrow shared schema here without
 /// committing every generated SDK to their broader platform-specific shape.
 pub fn tool_success_output_schema(name: &str) -> Option<Value> {
+    if name == "browser_dom_action" {
+        return Some(<DomActionResult as ToolOutput>::output_schema());
+    }
     tool_contract(name).and_then(|contract| contract.success_output_schema)
 }
 
@@ -337,6 +342,9 @@ pub fn tool_success_output_schema(name: &str) -> Option<Value> {
 /// holds every `structuredContent` a tool emits — refusals included — to this
 /// schema.
 pub fn advertised_tool_output_schema(name: &str) -> Option<Value> {
+    if name == "browser_dom_action" {
+        return Some(DomActionResult::advertised_output_schema());
+    }
     let success = if is_action_result_tool(name) {
         Some(<ActionResult as ToolOutput>::output_schema())
     } else {
@@ -353,7 +361,7 @@ pub fn advertised_tool_output_schema(name: &str) -> Option<Value> {
 /// against each other across the whole manifest.
 pub fn advertises_output_schema(name: &str) -> bool {
     is_action_result_tool(name)
-        || name == "list_windows"
+        || matches!(name, "list_windows" | "browser_dom_action")
         || tool_index()
             .get(name)
             .is_some_and(|entry| entry.advertises_output_schema)
@@ -362,6 +370,10 @@ pub fn advertises_output_schema(name: &str) -> bool {
 /// Validate a successful structured payload against the Rust output type that
 /// also generates its SDK schema. Returns `Ok(false)` for non-SDK tools.
 pub fn validate_success_output(name: &str, value: Value) -> Result<bool, String> {
+    if name == "browser_dom_action" {
+        DomActionResult::from_value(value)?;
+        return Ok(true);
+    }
     if is_action_result_tool(name) {
         validate_typed_output::<ActionResult>(value)?;
         return Ok(true);

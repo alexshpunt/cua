@@ -297,6 +297,8 @@ pub enum ToolOperation {
     BrowserSnapshotSemanticV2,
     BrowserClickTrusted,
     BrowserClickDomEvent,
+    BrowserDomActionTrusted,
+    BrowserDomActionDomEvent,
     BrowserTypeInsertText,
     BrowserTypeKeystrokes,
     BrowserPrepareIsolated,
@@ -335,6 +337,8 @@ impl ToolOperation {
             Self::BrowserSnapshotSemanticV2 => "browser_snapshot_semantic_v2",
             Self::BrowserClickTrusted => "browser_click_trusted",
             Self::BrowserClickDomEvent => "browser_click_dom_event",
+            Self::BrowserDomActionTrusted => "browser_dom_action_trusted",
+            Self::BrowserDomActionDomEvent => "browser_dom_action_dom_event",
             Self::BrowserTypeInsertText => "browser_type_insert_text",
             Self::BrowserTypeKeystrokes => "browser_type_keystrokes",
             Self::BrowserPrepareIsolated => "browser_prepare_isolated",
@@ -359,6 +363,51 @@ impl ToolOperation {
     }
 }
 
+#[cfg(test)]
+#[test]
+fn dom_action_admission_observes_only_closed_routes_not_request_content() {
+    for (route, expected) in [
+        ("dom_event", "browser_dom_action_dom_event"),
+        ("trusted", "browser_dom_action_trusted"),
+    ] {
+        let args = serde_json::json!({"input_route":route,"request":{"action":"fill","text":"private input","locator":{"css":"#private"}}});
+        let operation = tool_operation("browser_dom_action", Some(&args));
+        assert_eq!(operation.as_str(), expected);
+        assert!(is_computer_action("browser_dom_action", operation));
+    }
+    assert_eq!(
+        tool_operation("browser_dom_action", Some(&serde_json::json!({}))),
+        ToolOperation::Other
+    );
+    assert_eq!(
+        tool_operation(
+            "browser_dom_action",
+            Some(&serde_json::json!({"input_route":"private"}))
+        ),
+        ToolOperation::Other
+    );
+    let response = Response::ok(
+        serde_json::json!(1),
+        serde_json::json!({
+            "structuredContent":{"status":"refused","refusal":{"code":"browser_input_trust_unavailable",
+            "message":"private refusal","detail":{"text":"private typed value"}}}
+        }),
+    );
+    let observed = ToolObservationTimer::start_with_operation(
+        "browser_dom_action".into(),
+        ToolOperation::BrowserDomActionTrusted,
+        true,
+        true,
+        StdioExecutionPath::DirectDaemon,
+    )
+    .finish(&response);
+    assert_eq!(
+        observed.refusal_code,
+        ToolRefusalCode::BrowserInputTrustUnavailable
+    );
+    assert!(observed.computer_action);
+    assert!(!format!("{observed:?}").contains("private"));
+}
 pub fn tool_operation(tool_name: &str, args: Option<&serde_json::Value>) -> ToolOperation {
     let string_arg = |key: &str| {
         args.and_then(|value| value.get(key))
@@ -394,6 +443,12 @@ pub fn tool_operation(tool_name: &str, args: Option<&serde_json::Value>) -> Tool
             None | Some("trusted") => ToolOperation::BrowserClickTrusted,
             Some("dom_event") => ToolOperation::BrowserClickDomEvent,
             Some(_) => ToolOperation::Other,
+        },
+        // The public route is explicit; observation never retains nested locator/text data.
+        "browser_dom_action" => match string_arg("input_route") {
+            Some("trusted") => ToolOperation::BrowserDomActionTrusted,
+            Some("dom_event") => ToolOperation::BrowserDomActionDomEvent,
+            _ => ToolOperation::Other,
         },
         "browser_type" => match string_arg("mode") {
             None | Some("insert_text") => ToolOperation::BrowserTypeInsertText,
@@ -471,7 +526,7 @@ pub fn is_computer_action(tool_name: &str, operation: ToolOperation) -> bool {
     }
     if matches!(
         tool_name,
-        "browser_set_input_files" | "browser_download" | "browser_pointer"
+        "browser_set_input_files" | "browser_download" | "browser_pointer" | "browser_dom_action"
     ) {
         return true;
     }
@@ -725,6 +780,7 @@ fn structured_refusal_code(tool_name: &str, result: Option<&serde_json::Value>) 
             | "browser_set_input_files"
             | "browser_download"
             | "browser_pointer"
+            | "browser_dom_action"
     ) {
         return ToolRefusalCode::None;
     }
