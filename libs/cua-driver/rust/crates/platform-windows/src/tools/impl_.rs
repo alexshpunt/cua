@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use cua_driver_core::action_record::ActionTransport;
 
 mod pointer;
+mod readonly_crop;
 mod scroll;
 mod window_management;
 mod window_restore;
@@ -9135,33 +9136,30 @@ impl Tool for ZoomTool {
     fn def(&self) -> &ToolDef {
         ZOOM_DEF.get_or_init(|| ToolDef {
             name: "zoom".into(),
-            // Description ported from Swift `ZoomTool.swift`.
-            description: "Zoom into a rectangular region of a window screenshot at full (native) \
-                resolution. Use this when `get_window_state` returned a resized image and you \
-                need to read small text, identify icons, or verify UI details.\n\n\
-                Coordinates `x1, y1, x2, y2` are in the same pixel space as the screenshot \
-                returned by `get_window_state` (i.e. the resized image if `max_image_dimension` \
-                is active). The maximum zoom region width is 500 px in scaled-image coordinates.\n\n\
-                A 20% padding is automatically added on every side of the requested region so \
-                the target remains visible even if the caller's coordinates are slightly off.\n\n\
-                After a zoom, pass `from_zoom=true` to click/type_text to auto-translate \
-                coordinates back to full-window space. Coordinate actions return \
-                `screenshot_context_missing` when no current snapshot contains a \
-                screenshot owned by this session. `from_zoom` actions return \
-                `zoom_context_missing` when the zoom was never created or was replaced; call \
-                `get_window_state`, then `zoom`, again on the same connection.\n\n\
-                Windows-specific: `window_id` is the canonical addressing field (HWND). \
-                `pid` is preferred when available; otherwise the driver resolves the unique \
-                current snapshot owned by this session and window.".into(),
+            description: "Use zoom to inspect window details. Omit capture_backend for the legacy \
+                padded JPEG zoom. Select wgc for a fresh, lossless readonly crop of original WGC \
+                pixels. WGC crops grant no input or from_zoom authority; paint freshness remains unverified.".into(),
             input_schema: json!({
                 "type":"object","required":["window_id","x1","y1","x2","y2"],"properties":{
-                    "pid":{"type":"integer","description":"Optional target process ID. When omitted, the unique current snapshot for this session and HWND is used."},
-                    "window_id":{"type":"integer","description":"HWND of the target window."},
-                    "x1":{"type":"number","description":"Left edge of the region (resized-image pixels)."},
-                    "y1":{"type":"number","description":"Top edge of the region (resized-image pixels)."},
-                    "x2":{"type":"number","description":"Right edge of the region (resized-image pixels)."},
-                    "y2":{"type":"number","description":"Bottom edge of the region (resized-image pixels)."}
-                },"additionalProperties":false
+                    "capture_backend":{"type":"string","enum":["default","wgc"],"description":"Omit or use default for legacy screenshot-coordinate zoom (500 px width limit, 20% padding, from_zoom context). Use wgc for lossless screen-physical cropping without padding, resizing, snapshot replacement or input context; explicit pid and runtime session are required."},
+                    "pid":{"type":"integer","description":"Use the exact target PID for WGC. Legacy zoom may omit it to resolve the unique session-owned snapshot."},
+                    "window_id":{"type":"integer","description":"HWND of the exact target window."},
+                    "x1":{"type":"number","description":"Left edge: resized screenshot pixels for legacy zoom; integer screen-physical pixels for WGC."},
+                    "y1":{"type":"number","description":"Top edge: resized screenshot pixels for legacy zoom; integer screen-physical pixels for WGC."},
+                    "x2":{"type":"number","description":"Right edge: resized screenshot pixels for legacy zoom; integer screen-physical pixels for WGC."},
+                    "y2":{"type":"number","description":"Bottom edge: resized screenshot pixels for legacy zoom; integer screen-physical pixels for WGC."}
+                },"additionalProperties":false,
+                "allOf":[{
+                    "if":{"properties":{"capture_backend":{"const":"wgc"}},"required":["capture_backend"]},
+                    "then":{"required":["pid"],"properties":{
+                        "pid":{"minimum":1,"maximum":2147483647},
+                        "window_id":{"minimum":1},
+                        "x1":{"type":"integer","minimum":-2147483648,"maximum":2147483647},
+                        "y1":{"type":"integer","minimum":-2147483648,"maximum":2147483647},
+                        "x2":{"type":"integer","minimum":-2147483648,"maximum":2147483647},
+                        "y2":{"type":"integer","minimum":-2147483648,"maximum":2147483647}
+                    }}
+                }]
             }),
             // Swift annotation: idempotent: false.
             read_only: true, destructive: false, idempotent: false, open_world: false,
@@ -9169,6 +9167,14 @@ impl Tool for ZoomTool {
     }
 
     async fn invoke(&self, args: Value) -> ToolResult {
+        match args.get("capture_backend") {
+            None => {}
+            Some(Value::String(backend)) if backend == "default" => {}
+            Some(Value::String(backend)) if backend == "wgc" => {
+                return readonly_crop::invoke(&self.state, &args).await;
+            }
+            _ => return readonly_crop::refusal("invalid_capture_backend"),
+        }
         let requested_pid = match args.get("pid") {
             None => None,
             Some(value) => match value.as_i64().and_then(|pid| i32::try_from(pid).ok()) {

@@ -498,6 +498,9 @@ pub(super) fn create(target: &super::Target) -> Result<Box<dyn super::Backend>> 
 }
 
 impl super::Backend for Native {
+    fn validate(&mut self) -> Result<()> {
+        self.capture.validate(&self.target)
+    }
     fn read(&mut self, max_dimension: u32, control: &super::Control) -> Result<super::Frame> {
         control.check()?;
         let before = frame_bounds(self.target.hwnd)?;
