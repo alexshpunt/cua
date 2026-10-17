@@ -17,55 +17,64 @@ pub(crate) const READ_FUNCTION: &str = r#"function(node) {
     const rect = Element.prototype.getBoundingClientRect.call(node);
     const bounds = [rect.x, rect.y, rect.width, rect.height];
     const visible = fact(() => {
-        const boxes = Element.prototype.getClientRects.call(node);
         const style = getComputedStyle(node);
-        return boxes.length > 0 && rect.width > 0 && rect.height > 0 &&
-            style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse';
+        // A positive bounding rectangle cannot be the empty-client-rect fallback.
+        // getClientRects is not side-effect-free in Blink's debugger bindings.
+        return rect.width > 0 && rect.height > 0 && style.display !== 'none' &&
+            style.visibility !== 'hidden' && style.visibility !== 'collapse';
     });
     const enabled = fact(() => {
-        if (Element.prototype.matches.call(node, ':disabled')) return false;
-        // Modal blocking/escape is not an inert-attribute inheritance rule.
-        // Until the active top-layer dialog is independently attested, keep it unknown.
-        const roots = [document];
+        const roots = [document], pending = [document];
         let visited = 0;
-        while (roots.length) {
+        // Native getters bound the author/open-shadow walk before any selector query.
+        while (pending.length) {
             if (++visited > 2000) return null;
-            const root = roots.pop();
-            const walker = Document.prototype.createTreeWalker.call(document, root, NodeFilter.SHOW_ALL);
-            for (let current = TreeWalker.prototype.nextNode.call(walker); current;
-                current = TreeWalker.prototype.nextNode.call(walker)) {
-                if (++visited > 2000) return null;
-                if (get(Node.prototype, 'nodeType', current) !== 1) continue;
-                if (Element.prototype.matches.call(current, ':modal')) return null;
+            const current = pending.pop();
+            const sibling = get(Node.prototype, 'nextSibling', current);
+            const child = get(Node.prototype, 'firstChild', current);
+            if (sibling) pending.push(sibling);
+            if (child) pending.push(child);
+            if (get(Node.prototype, 'nodeType', current) === 1) {
                 const shadow = get(Element.prototype, 'shadowRoot', current);
                 if (shadow) {
-                    if (roots.length >= 128) return null;
-                    roots.push(shadow);
+                    if (get(ShadowRoot.prototype, 'mode', shadow) !== 'open' || roots.length >= 128) return null;
+                    roots.push(shadow); pending.push(shadow);
                 }
             }
         }
-        const css_interactivity = CSS.supports('interactivity', 'inert');
-        if (css_interactivity !== true && css_interactivity !== false) return null;
+        let disabled = false;
+        for (const root of roots) {
+            const query = root === document ? Document.prototype.querySelectorAll : DocumentFragment.prototype.querySelectorAll;
+            const modal = query.call(root, ':modal');
+            if (get(NodeList.prototype, 'length', modal) !== 0) return null;
+            const rows = query.call(root, ':disabled');
+            const count = get(NodeList.prototype, 'length', rows);
+            if (!Number.isInteger(count) || count < 0 || count > 2000) return null;
+            for (let i = 0; i < count; i++) if (NodeList.prototype.item.call(rows, i) === node) disabled = true;
+        }
+        if (disabled) return false;
         let ancestor = node;
         for (let depth = 0; ancestor && depth < 32; depth++) {
             let slot = null;
             if (get(Node.prototype, 'nodeType', ancestor) === 1) {
-                const interactivity = CSSStyleDeclaration.prototype.getPropertyValue.call(
-                    getComputedStyle(ancestor), 'interactivity').trim();
-                if (css_interactivity) {
-                    if (interactivity === 'inert') return ancestor === node ? false : null;
-                    if (interactivity !== 'auto') return null;
-                } else if (interactivity !== '') return null;
                 if (Element.prototype.hasAttribute.call(ancestor, 'inert')) return false;
                 const aria = Element.prototype.getAttribute.call(ancestor, 'aria-disabled');
                 if (aria !== null && aria.trim().toLowerCase() === 'true') return false;
+                // The named CSS getter is side-effect-free; CSS.supports and
+                // getPropertyValue are not. Missing support remains unknown.
+                const interactivity = getComputedStyle(ancestor).interactivity;
+                if (interactivity === 'inert') return ancestor === node ? false : null;
+                if (interactivity !== 'auto') return null;
                 slot = get(Element.prototype, 'assignedSlot', ancestor);
             }
             if (ancestor === document) return true;
             const parent = get(Node.prototype, 'parentNode', ancestor);
-            ancestor = slot || parent || (ancestor instanceof ShadowRoot ? get(ShadowRoot.prototype, 'host', ancestor) : null);
+            if (!parent && ancestor instanceof ShadowRoot) {
+                if (get(ShadowRoot.prototype, 'mode', ancestor) !== 'open') return null;
+                ancestor = get(ShadowRoot.prototype, 'host', ancestor);
+            } else ancestor = slot || parent;
         }
-        return ancestor ? null : true;
+        return null;
     });
     const editable = fact(() => {
         if (enabled === null) return null;
@@ -78,21 +87,22 @@ pub(crate) const READ_FUNCTION: &str = r#"function(node) {
         if (node instanceof HTMLTextAreaElement) return !get(HTMLTextAreaElement.prototype, 'readOnly', node);
         return node instanceof HTMLElement && get(HTMLElement.prototype, 'isContentEditable', node);
     });
-    const receives_pointer = fact(() => {
+    const hit_test = fact(() => {
+        const viewport = window.visualViewport;
+        if (!viewport || viewport.scale !== 1 || viewport.offsetLeft !== 0 || viewport.offsetTop !== 0) return null;
         if (rect.width <= 0 || rect.height <= 0) return false;
-        const x = rect.x + rect.width / 2, y = rect.y + rect.height / 2;
-        let hit = Document.prototype.elementFromPoint.call(document, x, y);
-        for (let depth = 0; hit && depth < 32; depth++) {
-            if (hit === node || Node.prototype.contains.call(node, hit)) return true;
-            const shadow = get(Element.prototype, 'shadowRoot', hit);
-            if (!shadow) return false;
-            const next = ShadowRoot.prototype.elementFromPoint.call(shadow, x, y);
-            if (next === hit) return null;
-            hit = next;
-        }
-        return null;
+        const sx = window.scrollX, sy = window.scrollY;
+        // DOM.getNodeForLocation consumes integral document-CSS coordinates.
+        // Choose floor(center + scroll) once, then prove that point stays inside.
+        const x = Math.floor(rect.x + rect.width / 2 + sx), y = Math.floor(rect.y + rect.height / 2 + sy);
+        const vx = x - sx, vy = y - sy;
+        if (!Number.isSafeInteger(x) || !Number.isSafeInteger(y) || Math.abs(x) > 1000000000 || Math.abs(y) > 1000000000) return null;
+        if (vx < rect.x || vx >= rect.x + rect.width || vy < rect.y || vy >= rect.y + rect.height ||
+            vx < 0 || vy < 0 || vx >= window.innerWidth || vy >= window.innerHeight) return false;
+        return {x, y, scroll_x:sx, scroll_y:sy, width:window.innerWidth, height:window.innerHeight};
     });
-    return {connected, same_document, bounds, visible, enabled, editable, receives_pointer};
+    // Only CUA's separately source-qualified readonly native hit test can fill this fact.
+    return {connected, same_document, bounds, visible, enabled, editable, receives_pointer:null, hit_test};
 }"#;
 
 const UNAVAILABLE: &str = "dom_action_state_unavailable";
