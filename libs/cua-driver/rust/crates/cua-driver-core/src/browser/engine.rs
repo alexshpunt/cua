@@ -2868,6 +2868,7 @@ impl BrowserEngine {
         let mut css_matches = HashSet::new();
         let mut scope = None;
         let mut collection_complete = omitted.frames == 0 && omitted.nodes == 0;
+        let mut excluded = dom_inspection::DomExclusions::default();
         let mut visited = 0;
         for source in &sources {
             if visited >= 2_000 {
@@ -2878,6 +2879,7 @@ impl BrowserEngine {
             let (mut rows, coverage) =
                 collect(&source.document, &source.key, 2_000 - visited, max_depth);
             visited += coverage.visited;
+            excluded.merge(&coverage.excluded);
             omitted.nodes += coverage.node_omitted;
             omitted.depth += coverage.depth_omitted;
             omitted.text += coverage.text_truncated;
@@ -3098,6 +3100,7 @@ impl BrowserEngine {
                 "complete":false,"geometry_complete":false,
                 "metadata_complete":collection_complete && visibility_complete && !truncated,
                 "collection_complete":collection_complete,
+                "collection_scope":dom_inspection::COLLECTION_SCOPE,"excluded":excluded,
                 "matched_count":matched_count,"returned_count":elements.len(),"truncated":truncated,
                 "omitted":{"nodes":omitted.nodes,"depth":omitted.depth,"frames":omitted.frames,
                     "metadata":omitted.metadata,"text":omitted.text,"hidden_filtered":hidden_filtered},
@@ -3501,7 +3504,8 @@ fn dom_sources(
         visited: &mut usize,
         omissions: &mut DomNativeOmissions,
     ) {
-        if depth > 64 || *visited >= 2_000 {
+        let user_agent = dom_inspection::is_user_agent_shadow_root(node);
+        if (!user_agent && depth > 64) || *visited >= 2_000 {
             omissions.nodes += 1;
             if let Some(object) = node.as_object_mut() {
                 object.remove("children");
@@ -3511,6 +3515,11 @@ fn dom_sources(
             return;
         }
         *visited += 1;
+        // Keep this raw root for Collector's single explicit exclusion count,
+        // but never admit its internal documents/query roots or visit descendants.
+        if user_agent {
+            return;
+        }
         if node["nodeType"] == 9 || (node["nodeType"] == 11 && node["shadowRootType"] == "open") {
             if let Some(id) = node["nodeId"].as_i64() {
                 if roots.len() < 64 {
