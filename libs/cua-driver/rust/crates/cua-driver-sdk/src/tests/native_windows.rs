@@ -76,6 +76,45 @@ fn typed_discovery_decodes_native_platform_variants() {
 }
 
 #[test]
+fn native_focus_diagnostic_survives_sdk_raw_forwarding_and_mcp_without_losing_unknown_prefix() {
+    let diagnostic = json!({
+        "format":"native_focus_api_v1", "cause":"not_determined",
+        "source":{"current_thread_id":7,"foreground_thread_id":8,"target_thread_id":9,
+            "foreground_window":90,"target_window":91},
+        "attachment_requested":true,"attachment_return":{"succeeded":false,"error":5},
+        "attachment_owned":false,"activation_return":false,
+        "foreground_before_detach":90,"detachment_requested":true,
+        "detachment_return":{"succeeded":false,"error":87},"foreground_after_detach":90,
+    });
+    let payload = json!({
+        "pid":42,"window_id":91,"state_id":"control-state","operation":"focus",
+        "route":"native","status":"unknown","effect":"unknown",
+        "mutation_attempted":true,"mutation_accepted":false,"postcondition_confirmed":false,
+        "before":null,"observed":null,"requested_bounds":null,
+        "code":"foreground_unavailable","native_focus_diagnostic":diagnostic,
+    });
+    let result = normalize_result(
+        "manage_window",
+        json!({
+            "isError":true,"content":[],"structuredContent":payload,
+        }),
+    )
+    .unwrap();
+    assert!(result.is_error);
+    assert_eq!(result.error_code.as_deref(), Some("foreground_unavailable"));
+    assert_eq!(
+        serde_json::from_str::<Value>(result.structured_json.as_ref().unwrap()).unwrap(),
+        payload
+    );
+    let forwarded = cua_driver_core::mcp_result::conforming_tool_result(
+        "manage_window",
+        serde_json::from_str(&result.raw_json).unwrap(),
+    );
+    assert_eq!(forwarded["isError"], true);
+    assert_eq!(forwarded["structuredContent"], payload);
+}
+
+#[test]
 fn typed_methods_preserve_both_native_refusal_shapes() {
     for refusal in [
         json!({"code":"surface_identity_unproven", "message":"Window is not proven", "effect":"refused"}),
