@@ -309,16 +309,19 @@ impl BrowserEngine {
                 },
             )?;
             evidence.drain(&mut events, &frame_session, &identity.frame_id)?;
-            let mut projected_window = None;
+            // NativeWindowInfo bounds serve CDP correlation (Chromium DIP on Windows).
+            // NativeBrowserViewport bounds are physical pixels. Never compare or fit
+            // those spaces: retain DIP continuity separately from first == second below.
+            let mut initial_cdp_window = None;
             if let DomNodeSample::NativeGeometry(css) = &sample {
                 let css = dom_native_sample::NativeSample(css.clone());
+                if !validated.native.geometry_exact {
+                    return Err(stale("native CDP-correlation window geometry is not exact"));
+                }
+                initial_cdp_window = Some(validated.native.bounds);
                 let first = self.platform.native_browser_viewport(
                     validated.record.pid, validated.record.window_id,
                 ).await?;
-                if !validated.native.geometry_exact || first.window != validated.native.bounds {
-                    return Err(stale("native window changed before viewport measurement"));
-                }
-                projected_window = Some(first.window);
                 let version = validated.conn.call_bounded(
                     None, "Browser.getVersion", json!({}), REPLY_LIMIT,
                 ).await.map_err(|_| unavailable("browser version evidence unavailable"))?;
@@ -371,8 +374,8 @@ impl BrowserEngine {
             let current = self
                 .revalidate_for_mutation(session, target_id, Some(tab_id))
                 .await?;
-            if projected_window.is_some_and(|bounds| !current.native.geometry_exact || bounds != current.native.bounds) {
-                return Err(stale("native window geometry changed after viewport measurement"));
+            if initial_cdp_window.is_some_and(|bounds| !current.native.geometry_exact || bounds != current.native.bounds) {
+                return Err(stale("native CDP-correlation window geometry changed after viewport measurement"));
             }
             // Revalidation may create a new flattened attachment to the same
             // target. Its session label is not the document/source identity.
