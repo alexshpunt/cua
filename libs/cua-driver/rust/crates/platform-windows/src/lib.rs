@@ -138,6 +138,8 @@ mod clipboard;
 #[cfg(any(target_os = "windows", test))]
 mod persistent_wgc;
 #[cfg(any(target_os = "windows", test))]
+mod wgc_crop;
+#[cfg(any(target_os = "windows", test))]
 mod window_focus_diagnostic;
 #[cfg(any(target_os = "windows", test))]
 mod window_restore_state;

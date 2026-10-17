@@ -95,11 +95,15 @@ impl Control {
 /// Native resource seam: creation, reads and destruction all run on the same worker.
 trait Backend {
     fn read(&mut self, max_dimension: u32, control: &Control) -> Result<Frame>;
+    fn validate(&mut self) -> Result<()> {
+        Ok(())
+    }
 }
 type Factory = fn(&Target) -> Result<Box<dyn Backend>>;
 
 struct Request {
     max_dimension: u32,
+    crop: Option<crate::wgc_crop::Region>,
     cancelled: Arc<AtomicBool>,
     reply: oneshot::Sender<Result<Frame>>,
     deadline: Instant,
@@ -138,6 +142,25 @@ impl Manager {
     }
 
     pub(crate) async fn capture(&self, target: Target, max_dimension: u32) -> Result<Frame> {
+        self.request(target, max_dimension, None).await
+    }
+
+    /// Keep crop decoding/encoding inside the owned worker's cancellation,
+    /// session, deadline and native-lifetime checks. Never resize this read.
+    pub(crate) async fn crop(
+        &self,
+        target: Target,
+        region: crate::wgc_crop::Region,
+    ) -> Result<Frame> {
+        self.request(target, 0, Some(region)).await
+    }
+
+    async fn request(
+        &self,
+        target: Target,
+        max_dimension: u32,
+        crop: Option<crate::wgc_crop::Region>,
+    ) -> Result<Frame> {
         ensure!(!target.session.is_empty(), "wgc_runtime_session_required");
         let cancelled = Arc::new(AtomicBool::new(false));
         let _pending = Pending(cancelled.clone());
@@ -156,6 +179,7 @@ impl Manager {
                 .requests
                 .try_send(Request {
                     max_dimension,
+                    crop,
                     cancelled,
                     reply,
                     deadline: Instant::now() + REQUEST_LIMIT,
@@ -219,6 +243,13 @@ fn spawn(target: Target, factory: Factory) -> Result<Worker> {
                     control.check()?;
                     frame.metadata["resources_reused"] = serde_json::json!(reused);
                     frame.metadata["setup_ms"] = serde_json::json!(setup_ms);
+                    if let Some(region) = request.crop {
+                        frame = crate::wgc_crop::crop(frame, region, &target)
+                            .map_err(anyhow::Error::msg)?;
+                        control.check()?;
+                        backend.as_mut().unwrap().validate()?;
+                        control.check()?;
+                    }
                     Ok(frame)
                 })();
                 let failed = result.is_err();
