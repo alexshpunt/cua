@@ -38,6 +38,7 @@
 mod adapter_support;
 pub mod binding;
 pub mod cdp_ws;
+mod dom_action_hit;
 mod dom_action_key;
 mod dom_action_operation;
 mod dom_action_progress;
@@ -50,6 +51,7 @@ mod dom_cssom_sample;
 pub mod dom_geometry;
 mod dom_inspection;
 pub mod dom_pixel_match;
+mod dom_read_diagnostic;
 pub mod download;
 pub mod engine;
 mod grant;

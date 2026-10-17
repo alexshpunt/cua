@@ -1,6 +1,7 @@
 //! Explicit readonly CSSOM geometry; never a CSS-to-native-pixel mapping.
 
 use super::super::cdp_ws::{BoundedCdpEvents, BoundedEventError};
+use super::super::dom_action_hit::{self, HitProbe};
 use super::super::dom_action_sample;
 use super::super::dom_action_wait::{ActionState, ActionTarget};
 use super::super::dom_cssom_sample;
@@ -14,7 +15,7 @@ const REPLY_LIMIT: usize = 16 * 1024;
 const EVENT_LIMIT: usize = 512;
 
 /// Only these native readonly functions can cross the attested-world boundary.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum DomNodeSampleKind {
     Geometry,
     Actionability,
@@ -52,7 +53,7 @@ impl DomNodeSampleKind {
                     if reason == "dom_action_ref_stale" {
                         stale("actionability source detached or changed document")
                     } else {
-                        unavailable("fixed side-effect-checked actionability sample is unavailable")
+                        unavailable("dom_action_state_unavailable")
                     }
                 }),
         }
@@ -250,14 +251,71 @@ impl BrowserEngine {
                 }),
             )
             .await?;
-            let sample = kind.parse(
-                &reply,
-                ActionTarget {
-                    frame_id: identity.frame_id.clone(),
-                    loader_id: identity.loader_id.clone(),
-                    backend_node_id: entry.backend_node_id,
-                },
-            )?;
+            let target = ActionTarget {
+                frame_id: identity.frame_id.clone(),
+                loader_id: identity.loader_id.clone(),
+                backend_node_id: entry.backend_node_id,
+            };
+            let mut sample = kind.parse(&reply, target.clone())?;
+            if let DomNodeSample::Actionability(state) = &mut sample {
+                if reply.pointer("/result/value/receives_pointer") != Some(&Value::Null) {
+                    return Err(unavailable("dom_action_hit_unavailable"));
+                }
+                state.receives_pointer = match dom_action_hit::probe(&reply).map_err(unavailable)? {
+                    HitProbe::Outside => Some(false),
+                    HitProbe::Unknown => None,
+                    HitProbe::Point { x, y } => {
+                        let hit = AttestedHit {
+                            conn: &validated.conn,
+                            session: &frame_session,
+                            frame_id: &identity.frame_id,
+                            context_id,
+                            unique_id: &unique_id,
+                            group: &group,
+                            object_id,
+                        };
+                        let first = hit.sample(x, y).await?;
+                        evidence.drain(&mut events, &frame_session, &identity.frame_id)?;
+                        let confirmation = read(
+                            &validated.conn,
+                            &frame_session,
+                            "Runtime.callFunctionOn",
+                            json!({
+                                "functionDeclaration":kind.function(),"uniqueContextId":unique_id,
+                                "arguments":[{"objectId":object_id}],"returnByValue":true,
+                                "awaitPromise":false,"userGesture":false,"throwOnSideEffect":true
+                            }),
+                        )
+                        .await?;
+                        // Parse the whole second state, then require exact facts, bounds,
+                        // document point and scroll continuity around both native hit tests.
+                        kind.parse(&confirmation, target)?;
+                        if confirmation.pointer("/result/value") != reply.pointer("/result/value") {
+                            return Err(unavailable("dom_action_sample_changed"));
+                        }
+                        let second = hit.sample(x, y).await?;
+                        if first != second {
+                            return Err(unavailable("dom_action_hit_changed"));
+                        }
+                        let after = read(
+                            &validated.conn,
+                            &frame_session,
+                            "Runtime.callFunctionOn",
+                            json!({
+                                "functionDeclaration":kind.function(),"uniqueContextId":unique_id,
+                                "arguments":[{"objectId":object_id}],"returnByValue":true,
+                                "awaitPromise":false,"userGesture":false,"throwOnSideEffect":true
+                            }),
+                        )
+                        .await?;
+                        kind.parse(&after, state.target.clone())?;
+                        if after.pointer("/result/value") != reply.pointer("/result/value") {
+                            return Err(unavailable("dom_action_sample_changed"));
+                        }
+                        first.1
+                    }
+                };
+            }
             evidence.drain(&mut events, &frame_session, &identity.frame_id)?;
             let current = self
                 .revalidate_for_mutation(session, target_id, Some(tab_id))
@@ -313,6 +371,84 @@ impl BrowserEngine {
     }
 }
 
+/// One native hit source, resolved only inside this request's attested document/world.
+struct AttestedHit<'a> {
+    conn: &'a CdpConnection,
+    session: &'a str,
+    frame_id: &'a str,
+    context_id: i64,
+    unique_id: &'a str,
+    group: &'a str,
+    object_id: &'a str,
+}
+impl AttestedHit<'_> {
+    async fn sample(&self, x: i64, y: i64) -> Result<(i64, Option<bool>), BrowserRefusal> {
+        // Chromium's inspector multiplies document-CSS x/y by LayoutZoomFactor,
+        // then DocumentToFrame subtracts layout scroll. This is not a screen point.
+        // UA internals explicitly retarget to their author host; authored closed
+        // shadow roots are NOT retargeted and remain unknown in HIT_FUNCTION.
+        let native = read(
+            self.conn,
+            self.session,
+            "DOM.getNodeForLocation",
+            json!({
+                "x":x,"y":y,"includeUserAgentShadowDOM":false,"ignorePointerEventsNone":false
+            }),
+        )
+        .await?;
+        let backend = dom_action_hit::hit_identity(&native, self.frame_id).map_err(unavailable)?;
+        let description = read_node(
+            self.conn,
+            self.session,
+            "DOM.describeNode",
+            json!({
+                "backendNodeId":backend,"depth":0,"pierce":false
+            }),
+        )
+        .await?;
+        let node = description
+            .get("node")
+            .ok_or_else(|| unavailable("dom_action_hit_unavailable"))?;
+        if node.get("backendNodeId").and_then(Value::as_i64) != Some(backend)
+            || node.get("nodeType").and_then(Value::as_i64) != Some(1)
+            || node.get("shadowRootType").is_some()
+            || node.get("pseudoType").is_some()
+            || node.get("contentDocument").is_some()
+            || matches!(
+                node.get("nodeName").and_then(Value::as_str),
+                Some("IFRAME" | "FRAME" | "OBJECT" | "EMBED")
+            )
+        {
+            return Err(unavailable("dom_action_hit_unavailable"));
+        }
+        let resolved = read_node(self.conn, self.session, "DOM.resolveNode", json!({
+            "backendNodeId":backend,"executionContextId":self.context_id,"objectGroup":self.group
+        })).await?;
+        if resolved.pointer("/object/type").and_then(Value::as_str) != Some("object")
+            || resolved.pointer("/object/subtype").and_then(Value::as_str) != Some("node")
+        {
+            return Err(stale("dom_action_ref_stale"));
+        }
+        let hit_object = resolved
+            .pointer("/object/objectId")
+            .and_then(Value::as_str)
+            .filter(|id| !id.is_empty() && id.len() <= 1024)
+            .ok_or_else(|| stale("dom_action_ref_stale"))?;
+        let reply = read(self.conn, self.session, "Runtime.callFunctionOn", json!({
+            "functionDeclaration":dom_action_hit::HIT_FUNCTION,"uniqueContextId":self.unique_id,
+            "arguments":[{"objectId":self.object_id},{"objectId":hit_object}],
+            "returnByValue":true,"awaitPromise":false,"userGesture":false,"throwOnSideEffect":true
+        })).await?;
+        let relation = dom_action_hit::relation(&reply).map_err(|reason| {
+            if reason == "dom_action_ref_stale" {
+                stale(reason)
+            } else {
+                unavailable(reason)
+            }
+        })?;
+        Ok((backend, relation))
+    }
+}
 /// Owns only this request's remote handles. Cancellation cannot skip release.
 struct RemoteObjectGroup {
     conn: Arc<CdpConnection>,
@@ -381,14 +517,7 @@ async fn read(
         .call_bounded(Some(session), method, args, REPLY_LIMIT)
         .await
         .map_err(|_| unavailable("bounded isolated geometry protocol read is unavailable"))?;
-    if !reply.is_object()
-        || reply.get("exceptionDetails").is_some()
-        || reply.get("wasThrown").and_then(Value::as_bool) == Some(true)
-    {
-        return Err(unavailable(
-            "isolated geometry protocol read reported an exception or malformed reply",
-        ));
-    }
+    super::super::dom_read_diagnostic::check(method, &reply).map_err(unavailable)?;
     Ok(reply)
 }
 
