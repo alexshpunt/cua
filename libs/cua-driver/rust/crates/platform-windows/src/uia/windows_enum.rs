@@ -137,6 +137,26 @@ where
     }
 }
 
+/// Share the process-wide UIA budget with readonly native viewport measurement.
+/// A timed-out provider retains the permit until it returns; retries cannot
+/// create an unbounded collection of stuck COM workers.
+pub(crate) fn run_readonly_with_deadline<T, F>(
+    stage: &'static str,
+    timeout: Duration,
+    f: F,
+) -> Result<T, &'static str>
+where
+    T: Send + 'static,
+    F: FnOnce(Arc<AtomicBool>) -> T + Send + 'static,
+{
+    run_uia_single_flight(uia_single_flight(), stage, timeout, "refusal", f).map_err(|error| {
+        match error {
+            UiaDeadlineError::Timeout => "native viewport UIA deadline exceeded",
+            UiaDeadlineError::Busy => "native viewport UIA provider is busy",
+            UiaDeadlineError::Unavailable => "native viewport UIA worker unavailable",
+        }
+    })
+}
 fn run_uia_with_deadline<T, F>(
     stage: &'static str,
     timeout: Duration,
