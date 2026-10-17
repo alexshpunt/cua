@@ -386,10 +386,12 @@ pub trait BrowserPlatform: Send + Sync {
         window_id: u64,
     ) -> Result<NativeWindowInfo, BrowserRefusal>;
 
-    /// Measure the exact visible browser content client area in physical desktop
-    /// pixels, without input or activation. Callers must separately prove that
-    /// their CDP tab is selected. Ambiguous or unavailable native widgets refuse;
-    /// implementations must never infer browser chrome insets from window size.
+    /// Measure a unique, ready native content viewport in physical screen pixels,
+    /// without input or activation. Return an opaque native identity for continuity
+    /// only. Callers must separately bracket this with exact selected-tab/document
+    /// proof. The current candidate uses Windows Chromium RootWebArea; other
+    /// platforms refuse explicitly. Never substitute a renderer HWND, container,
+    /// inferred chrome inset or first-match document for an attested viewport.
     async fn native_browser_viewport(
         &self,
         _pid: i64,
