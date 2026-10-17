@@ -52,7 +52,7 @@ async fn form_ua_internals_allow_preparation_but_author_gaps_and_duplicates_stil
             state.dom_layout = Some(layout);
             state.actionability_reply = Some(json!({"result":{"type":"object","value":{
                 "connected":true,"same_document":true,"bounds":[10.5,20.25,80.0,30.0],
-                "visible":true,"enabled":true,"editable":true,"receives_pointer":true
+                "visible":true,"enabled":true,"editable":true,"receives_pointer":null,"hit_test":{"x":50,"y":155,"scroll_x":0.0,"scroll_y":120.0,"width":800.0,"height":600.0}
             }}}));
         }
         let request = parse_request(
@@ -142,7 +142,7 @@ async fn known_native_refusal_acknowledges_only_the_completed_prefix() {
     f.state.lock().unwrap().dispatch_negative_step = "beforeinput".into();
     f.state.lock().unwrap().actionability_reply = Some(json!({"result":{"type":"object","value":{
         "connected":true,"same_document":true,"bounds":[10.5,20.25,80.0,30.0],
-        "visible":true,"enabled":true,"editable":true,"receives_pointer":true
+        "visible":true,"enabled":true,"editable":true,"receives_pointer":null,"hit_test":{"x":50,"y":155,"scroll_x":0.0,"scroll_y":120.0,"width":800.0,"height":600.0}
     }}}));
     let request = parse_request(
         &json!({"action":"fill","locator":{"test_id":"live-value"},"text":"private"}),
@@ -353,11 +353,12 @@ async fn every_declared_action_uses_the_closed_plan_without_coordinate_or_input_
         json!({"action":"scroll_into_view"}),
     ] {
         let (f, target, tab, context) = source().await;
-        f.state.lock().unwrap().actionability_reply =
-            Some(json!({"result":{"type":"object","value":{
+        f.state.lock().unwrap().actionability_reply = Some(
+            json!({"result":{"type":"object","value":{
                 "connected":true,"same_document":true,"bounds":[10.5,20.25,80.0,30.0],
-                "visible":true,"enabled":true,"editable":true,"receives_pointer":true
-            }}}));
+                "visible":true,"enabled":true,"editable":true,"receives_pointer":null,"hit_test":{"x":50,"y":155,"scroll_x":0.0,"scroll_y":120.0,"width":800.0,"height":600.0}
+            }}}),
+        );
         let mut data = data;
         data["locator"] = json!({"test_id":"live-value"});
         data["timeout_ms"] = json!(1000);

@@ -147,7 +147,7 @@ async fn a_hidden_candidate_expires_with_an_explicit_no_mutation_prefix() {
     let (f, target, tab, context) = source().await;
     f.state.lock().unwrap().actionability_reply = Some(json!({"result":{"type":"object","value":{
         "connected":true,"same_document":true,"bounds":[10.5,20.25,80.0,30.0],
-        "visible":false,"enabled":true,"editable":false,"receives_pointer":true
+        "visible":false,"enabled":true,"editable":false,"receives_pointer":null,"hit_test":{"x":50,"y":155,"scroll_x":0.0,"scroll_y":120.0,"width":800.0,"height":600.0}
     }}}));
     let mut request = request("click");
     request.timeout_ms = 200;
