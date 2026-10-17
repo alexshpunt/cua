@@ -1947,7 +1947,18 @@ fn normalize_result(tool: &str, raw: Value) -> Result<ToolResult, DriverError> {
         .get("isError")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let action = if !is_error && cua_driver_core::action_record::is_action_tool(tool) {
+    let action = if !is_error && tool == "browser_dom_action" {
+        let structured = structured.ok_or_else(|| DriverError::Protocol {
+            reason: "browser_dom_action response omitted DomActionResult".into(),
+        })?;
+        // Keep the complete prefix receipt in structured_json. Only the legacy
+        // action accessor projects the nested result, after validating both.
+        let receipt = cua_driver_contract::DomActionResult::from_value(structured.clone())
+            .map_err(|error| DriverError::Protocol {
+                reason: format!("{tool} returned an invalid DomActionResult: {error}"),
+            })?;
+        Some(receipt.action_result)
+    } else if !is_error && cua_driver_core::action_record::is_action_tool(tool) {
         let structured = structured.ok_or_else(|| DriverError::Protocol {
             reason: format!("{tool} response omitted ActionResult"),
         })?;
