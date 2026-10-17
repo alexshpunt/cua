@@ -194,6 +194,7 @@ struct NativeBackend {
     initial: Option<WindowControlSample>,
     mutation_attempted: bool,
     mutation_accepted: bool,
+    focus_diagnostic: Option<crate::window_focus_diagnostic::FocusDiagnostic>,
 }
 
 impl NativeBackend {
@@ -329,7 +330,9 @@ impl Backend for NativeBackend {
             WindowManagementOperation::Focus => {
                 self.alive()?;
                 self.mutation_attempted = true;
-                if !unsafe { crate::input::force_foreground_attached(hwnd) } {
+                let (confirmed, diagnostic) = crate::window_focus_diagnostic::focus(hwnd);
+                self.focus_diagnostic = Some(diagnostic);
+                if !confirmed {
                     return Err(failure("foreground_unavailable", "Windows refused foreground activation; no restore, keys, pointer or replay fallback was attempted"));
                 }
             }
@@ -438,7 +441,7 @@ impl Tool for ManageWindowTool {
         match tokio::task::spawn_blocking(move || {
             let _admission = admission;
             let mut backend = NativeBackend { admitted, flag, started: Instant::now(), initial: None,
-                mutation_attempted: false, mutation_accepted: false };
+                mutation_attempted: false, mutation_accepted: false, focus_diagnostic: None };
             let report = window_management::execute(&input, &mut backend);
             // Read-only sampling after failure preserves completed native effects, not new authority.
             let observed = if report.failure.is_some() {
@@ -464,6 +467,10 @@ impl Tool for ManageWindowTool {
                 let effect = if backend.mutation_attempted { "unknown" } else { "refused" };
                 payload["effect"] = json!(effect); payload["status"] = json!(effect);
                 payload["code"] = json!(error.code); payload["detail"] = json!(error.detail);
+                if let Some(diagnostic) = backend.focus_diagnostic {
+                    payload["native_focus_diagnostic"] = serde_json::to_value(diagnostic)
+                        .expect("fixed native focus observations serialize");
+                }
                 return ToolResult::error("Native window management did not complete all confirmations. Read fresh state; never replay a possibly completed prefix.")
                     .with_structured(payload);
             }
