@@ -41,6 +41,96 @@ async fn pointer_readiness_uses_document_css_native_hit_identity_and_same_world_
 }
 
 #[tokio::test]
+async fn each_dispatch_step_requires_fresh_attested_hits_without_replaying_a_completed_prefix() {
+    for fault in ["none", "before_first", "after_first", "changed_after_first"] {
+        let (f, target, tab, reference) = source().await;
+        f.state.lock().unwrap().dispatch_hit_fault = fault.into();
+        let mut args = command(&target, &tab, &reference);
+        args["request"]["action"] = json!("double_click");
+        args["request"]["timeout_ms"] = json!(2000);
+        let result = structured(
+            &BrowserDomActionTool::new(f.engine.clone())
+                .invoke(args)
+                .await,
+        );
+        let state = f.state.lock().unwrap();
+        let steps: Vec<&str> = state
+            .calls
+            .iter()
+            .filter_map(|(method, args)| {
+                (method == "Runtime.callFunctionOn"
+                    && args["functionDeclaration"]
+                        == crate::browser::dom_action_operation::STEP_FUNCTION)
+                    .then(|| args["arguments"][1]["value"]["name"].as_str().unwrap())
+            })
+            .collect();
+        if fault == "none" {
+            assert_eq!(result["status"], "dispatched", "{result}");
+            assert_eq!(steps, ["click", "click", "dblclick"]);
+            // Each effect must have its own two-hit/three-sample bracket,
+            // not just reuse the earlier preparation evidence.
+            let mut hits = 0;
+            let mut samples = 0;
+            for (method, args) in &state.calls {
+                if method == "Runtime.callFunctionOn"
+                    && args["functionDeclaration"]
+                        == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION
+                {
+                    hits = 0;
+                    samples = 0;
+                } else if method == "DOM.getNodeForLocation" {
+                    hits += 1;
+                } else if method == "Runtime.callFunctionOn"
+                    && args["functionDeclaration"]
+                        == crate::browser::dom_action_sample::READ_FUNCTION
+                {
+                    samples += 1;
+                } else if method == "Runtime.callFunctionOn"
+                    && args["functionDeclaration"]
+                        == crate::browser::dom_action_operation::STEP_FUNCTION
+                {
+                    assert_eq!(hits, 2);
+                    assert_eq!(samples, 3);
+                    hits = 0;
+                    samples = 0;
+                }
+            }
+        } else {
+            assert_eq!(result["status"], "refused", "{fault}: {result}");
+            let prefix = if fault == "before_first" {
+                json!([])
+            } else {
+                json!(["click"])
+            };
+            assert_eq!(
+                result["progress"]["attempted_steps"], prefix,
+                "{fault}: {result}"
+            );
+            assert_eq!(result["progress"]["acknowledged_steps"], prefix);
+            assert_eq!(result["progress"]["in_flight"], Value::Null);
+            assert_eq!(result["progress"]["cleanup"], "confirmed");
+            assert_eq!(steps.len(), if fault == "before_first" { 0 } else { 1 });
+            assert_eq!(
+                result["refusal"]["code"],
+                if fault == "changed_after_first" {
+                    "browser_route_unavailable"
+                } else {
+                    "browser_action_unavailable"
+                }
+            );
+            assert_eq!(
+                result["refusal"]["message"],
+                if fault == "changed_after_first" {
+                    "dom_action_hit_changed"
+                } else {
+                    "dom_action_readiness_changed"
+                }
+            );
+        }
+        assert!(cua_driver_contract::DomActionResult::from_value(result).is_ok());
+    }
+}
+#[tokio::test]
 async fn unsupported_changed_or_exceptional_hits_preserve_zero_attempts_and_closed_diagnostics() {
     for fault in [
         "frame",

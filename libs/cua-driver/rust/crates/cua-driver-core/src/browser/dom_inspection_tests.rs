@@ -59,6 +59,7 @@ struct State {
     dispatch_signal: Option<Arc<tokio::sync::Notify>>,
     dispatch_preflight_refused: bool,
     dispatch_negative_step: String,
+    dispatch_hit_fault: String,
     dispatch_signal_step: String,
     dispatch_stall_step: String,
     dispatch_missing_unique: bool,
@@ -294,7 +295,13 @@ async fn bound() -> (Fixture, String, String) {
                     assert_eq!(call.params["awaitPromise"],false);
                     assert_eq!(call.params["userGesture"],false);
                     if function == crate::browser::dom_action_operation::PREFLIGHT_FUNCTION {
+                        if state.dispatch_hit_fault == "before_first" { state.hit_relation = Some(json!(false)); }
                         return MockReply::ok(json!({"result":{"value":{"ok":!state.dispatch_preflight_refused}}}));
+                    }
+                    match state.dispatch_hit_fault.as_str() {
+                        "after_first" => state.hit_relation = Some(json!(false)),
+                        "changed_after_first" => state.hit_changes = true,
+                        _ => {}
                     }
                     let step = call.params["arguments"][1]["value"]["name"].as_str().unwrap();
                     if state.dispatch_signal_step.is_empty() || state.dispatch_signal_step==step {
