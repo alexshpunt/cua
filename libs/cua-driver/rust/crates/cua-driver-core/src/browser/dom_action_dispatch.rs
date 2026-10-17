@@ -137,11 +137,7 @@ impl BrowserEngine {
                 )
             }
             Err(error) => {
-                let reason = if error.message == "dom_action_timeout" {
-                    "dom_action_timeout"
-                } else {
-                    "dom_action_dispatch_refused"
-                };
+                let reason = super::super::dom_action_reason::progress_reason(&error.message);
                 let status = if reason == "dom_action_timeout" {
                     "timeout"
                 } else if progress.snapshot()["in_flight"].is_null() {

@@ -1,6 +1,6 @@
 //! Bounded, read-only DOM records. Native CDP frame and layout proof stays with the caller.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
@@ -34,6 +34,60 @@ pub(crate) struct DomLocator {
     pub(crate) css: Option<String>,
 }
 
+/// Coverage excludes browser-owned internals, not authored closed shadow trees.
+pub(crate) const COLLECTION_SCOPE: &str = "author_dom_with_open_shadow";
+
+/// Text-free, fixed host buckets; browser-generated names and identities are never exported.
+#[derive(Debug, Clone, Default, Serialize)]
+pub(crate) struct UserAgentShadowHosts {
+    input: usize,
+    select: usize,
+    option: usize,
+    textarea: usize,
+    button: usize,
+    other: usize,
+}
+
+/// Explicit excluded scope. Each counted root consumes one collection visit;
+/// its browser-owned descendants consume neither author depth nor node budget.
+#[derive(Debug, Clone, Default, Serialize)]
+pub(crate) struct DomExclusions {
+    user_agent_shadow_roots: usize,
+    user_agent_shadow_hosts: UserAgentShadowHosts,
+}
+impl DomExclusions {
+    fn record(&mut self, host: &str) {
+        self.user_agent_shadow_roots += 1;
+        let hosts = &mut self.user_agent_shadow_hosts;
+        let bucket = match host {
+            tag if tag.eq_ignore_ascii_case("input") => &mut hosts.input,
+            tag if tag.eq_ignore_ascii_case("select") => &mut hosts.select,
+            tag if tag.eq_ignore_ascii_case("option") => &mut hosts.option,
+            tag if tag.eq_ignore_ascii_case("textarea") => &mut hosts.textarea,
+            tag if tag.eq_ignore_ascii_case("button") => &mut hosts.button,
+            _ => &mut hosts.other,
+        };
+        *bucket += 1;
+    }
+
+    pub(crate) fn merge(&mut self, other: &Self) {
+        self.user_agent_shadow_roots += other.user_agent_shadow_roots;
+        let hosts = &mut self.user_agent_shadow_hosts;
+        let added = &other.user_agent_shadow_hosts;
+        hosts.input += added.input;
+        hosts.select += added.select;
+        hosts.option += added.option;
+        hosts.textarea += added.textarea;
+        hosts.button += added.button;
+        hosts.other += added.other;
+    }
+}
+
+/// Only Chromium's explicit native UA discriminator excludes a tree. Missing,
+/// malformed and authored closed roots retain ordinary incomplete coverage.
+pub(crate) fn is_user_agent_shadow_root(node: &Value) -> bool {
+    node["nodeType"] == 11 && node["shadowRootType"] == "user-agent"
+}
 /// Omission counters are known lower bounds, not a guessed count of unseen descendants.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct DomCoverage {
@@ -42,6 +96,7 @@ pub(crate) struct DomCoverage {
     pub(crate) depth_omitted: usize,
     pub(crate) node_omitted: usize,
     pub(crate) text_truncated: usize,
+    pub(crate) excluded: DomExclusions,
 }
 
 const MAX_NODES: usize = 2_000;
@@ -206,6 +261,17 @@ impl Collector {
         if let Some(roots) = node.get("shadowRoots") {
             if let Some(roots) = roots.as_array() {
                 for (index, root) in roots.iter().enumerate() {
+                    if is_user_agent_shadow_root(root) {
+                        if self.coverage.visited >= self.max_nodes {
+                            self.omitted(roots.len() - index);
+                            break;
+                        }
+                        self.coverage.visited += 1;
+                        self.coverage
+                            .excluded
+                            .record(node["nodeName"].as_str().unwrap_or(""));
+                        continue;
+                    }
                     if self.skip_remaining(depth + 1, roots.len() - index) {
                         break;
                     }
