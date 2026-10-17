@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// An exact semantic intent, not an action ladder.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum SemanticOperation {
     Invoke,
@@ -14,7 +14,7 @@ pub enum SemanticOperation {
 }
 
 /// Snapshot-bound Windows UIA operation. Physical and foreground delivery are not accepted.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, uniffi::Record)]
 #[serde(deny_unknown_fields)]
 pub struct SemanticActionInput {
     /// Process that owns the exact top-level target window.

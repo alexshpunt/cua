@@ -68,6 +68,19 @@ from ._native_contract import (
     AppInfo,
     ClickPosition,
     ElementFrame,
+    GetDisplayStateInput,
+    ListDisplaysInput,
+    PointerMoveInput,
+    PointerScrollInput,
+    ScrollUnit,
+    SemanticActionInput,
+    SemanticOperation,
+    WindowControlStateInput,
+    WindowManagementInput,
+    WindowManagementOperation,
+    WindowManagementSpace,
+    WindowRestoreInput,
+    WindowStatusInput,
     GetWindowStateInput,
     InputDeliveryMode,
     ListAppsInput,
@@ -79,7 +92,6 @@ from ._native_contract import (
     WindowElement,
     WindowInfo,
     WindowStateOutput,
-
     ActionDelivery,
     ActionDeliveryMode,
     ActionEffect,
@@ -182,6 +194,7 @@ def _create_configured_with_authorization_host_python_sdk(cls, options, host):
         options, host, SdkClientKind.PYTHON
     )
 
+
 def _create_configured_with_activity_observer_python_sdk(cls, options, observer):
     """Create a runtime with a content-free activity observer."""
 
@@ -223,6 +236,19 @@ __all__ = [
     "AppInfo",
     "ClickPosition",
     "ElementFrame",
+    "GetDisplayStateInput",
+    "ListDisplaysInput",
+    "PointerMoveInput",
+    "PointerScrollInput",
+    "ScrollUnit",
+    "SemanticActionInput",
+    "SemanticOperation",
+    "WindowControlStateInput",
+    "WindowManagementInput",
+    "WindowManagementOperation",
+    "WindowManagementSpace",
+    "WindowRestoreInput",
+    "WindowStatusInput",
     "GetWindowStateInput",
     "InputDeliveryMode",
     "ListAppsInput",
@@ -234,7 +260,6 @@ __all__ = [
     "WindowElement",
     "WindowInfo",
     "WindowStateOutput",
-
     "ActionCompletion",
     "ActionDelivery",
     "ActionDeliveryMode",
