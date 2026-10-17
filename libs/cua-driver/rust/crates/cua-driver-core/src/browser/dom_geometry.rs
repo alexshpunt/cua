@@ -134,75 +134,96 @@ mod tests {
             height,
         }
     }
-    #[test]
-    fn an_unmeasured_candidate_cannot_establish_native_viewport_uniqueness() {
-        let bounds = rect(9.0, 120.0, 1332.0, 831.0);
-        assert_eq!(
-            unique_native_viewport(&[Some(bounds), None]),
-            Err("dom_native_viewport_unavailable")
-        );
-        assert_eq!(
-            unique_native_viewport(&[]),
-            Err("dom_native_viewport_ambiguous")
-        );
-        assert_eq!(
-            unique_native_viewport(&[Some(bounds), Some(bounds)]),
-            Err("dom_native_viewport_ambiguous")
-        );
-        assert_eq!(unique_native_viewport(&[Some(bounds)]), Ok(bounds));
-    }
     fn native() -> NativeBrowserViewport {
         NativeBrowserViewport {
             window: rect(-1440.0, 30.0, 1350.0, 960.0),
             viewport: rect(-1431.0, 150.0, 1332.0, 831.0),
-            source: "win32_render_widget_client",
+            source: "uia_root_web_area",
+            identity: vec![42, 7, 1],
+        }
+    }
+    fn css() -> CssViewport {
+        CssViewport {
+            width: 888.0,
+            height: 554.0,
+            dpr: 1.5,
+            visual_scale: 1.0,
+            offset_x: 0.0,
+            offset_y: 0.0,
         }
     }
     #[test]
-    fn measured_viewport_maps_scrolled_css_at_non_unit_dpi_and_negative_desktop_origin() {
-        let mapped = map_document_bounds(
-            &rect(40.0, 220.0, 120.0, 30.0),
-            &rect(0.0, 200.0, 888.0, 554.0),
-            &native(),
-            1.5,
-        )
-        .unwrap();
+    fn sampled_dpr_maps_current_viewport_bounds_at_a_negative_screen_origin() {
+        let mapped = map_layout_bounds(&rect(40.0, 20.0, 120.0, 30.0), css(), &native()).unwrap();
         assert_eq!(mapped.screen, rect(-1371.0, 180.0, 180.0, 45.0));
         assert!(!mapped.clipped);
     }
     #[test]
-    fn offscreen_elements_are_refused_and_partial_elements_are_explicitly_clipped() {
-        let viewport = rect(0.0, 200.0, 888.0, 554.0);
-        assert_eq!(
-            map_document_bounds(&rect(10.0, 100.0, 20.0, 30.0), &viewport, &native(), 1.5),
-            Err("dom_element_outside_viewport")
-        );
-        let mapped =
-            map_document_bounds(&rect(-10.0, 190.0, 30.0, 30.0), &viewport, &native(), 1.5)
-                .unwrap();
-        assert_eq!(mapped.screen, rect(-1431.0, 150.0, 30.0, 30.0));
-        assert!(mapped.clipped);
+    fn fractional_edges_are_enclosed_without_rounding_the_scale_or_fitting_an_offset() {
+        let mapped = map_layout_bounds(&rect(0.5, 1.25, 2.0, 2.5), css(), &native()).unwrap();
+        assert_eq!(mapped.screen, rect(-1431.0, 151.0, 4.0, 5.0));
     }
     #[test]
-    fn unproven_geometry_is_not_replaced_with_chrome_inset_guesses() {
-        let viewport = rect(0.0, 0.0, 888.0, 554.0);
-        let element = rect(10.0, 10.0, 20.0, 30.0);
+    fn even_one_physical_pixel_of_viewport_disagreement_refuses() {
+        for delta in [-1.0, 1.0] {
+            let mut sample = native();
+            sample.viewport.height += delta;
+            assert_eq!(
+                map_layout_bounds(&rect(1.0, 1.0, 10.0, 10.0), css(), &sample),
+                Err("dom_viewport_scale_mismatch")
+            );
+        }
+    }
+    #[test]
+    fn visual_zoom_and_offsets_are_not_silently_treated_as_layout_coordinates() {
+        let bounds = rect(1.0, 1.0, 10.0, 10.0);
+        for changed in [
+            CssViewport {
+                visual_scale: 1.25,
+                ..css()
+            },
+            CssViewport {
+                offset_x: 0.25,
+                ..css()
+            },
+            CssViewport {
+                offset_y: 1.0,
+                ..css()
+            },
+        ] {
+            assert_eq!(
+                map_layout_bounds(&bounds, changed, &native()),
+                Err("dom_visual_viewport_unqualified")
+            );
+        }
+    }
+    #[test]
+    fn clipping_is_explicit_and_offscreen_geometry_refuses() {
         assert_eq!(
-            map_document_bounds(&element, &viewport, &native(), 1.0),
-            Err("dom_viewport_scale_mismatch")
+            map_layout_bounds(&rect(1.0, -100.0, 2.0, 3.0), css(), &native()),
+            Err("dom_element_outside_viewport")
         );
-        let mut invalid = native();
-        invalid.viewport.x = invalid.window.x - 1.0;
+        let clipped = map_layout_bounds(&rect(-10.0, -20.0, 30.0, 40.0), css(), &native()).unwrap();
+        assert!(clipped.clipped);
+        assert_eq!(clipped.screen, rect(-1431.0, 150.0, 30.0, 30.0));
+    }
+    #[test]
+    fn a_legacy_widget_unknown_identity_or_unbounded_geometry_is_not_a_native_root() {
+        let bounds = rect(1.0, 1.0, 10.0, 10.0);
+        let mut sample = native();
+        sample.source = "win32_render_widget_client";
         assert_eq!(
-            map_document_bounds(&element, &viewport, &invalid, 1.5),
-            Err("dom_native_viewport_invalid")
+            map_layout_bounds(&bounds, css(), &sample),
+            Err("dom_native_viewport_unqualified")
+        );
+        sample = native();
+        sample.identity.clear();
+        assert_eq!(
+            map_layout_bounds(&bounds, css(), &sample),
+            Err("dom_native_viewport_unqualified")
         );
         assert_eq!(
-            map_document_bounds(&element, &viewport, &native(), f64::NAN),
-            Err("dom_css_geometry_invalid")
-        );
-        assert_eq!(
-            map_document_bounds(&rect(0.0, 0.0, -1.0, 2.0), &viewport, &native(), 1.5),
+            map_layout_bounds(&rect(f64::NAN, 1.0, 1.0, 1.0), css(), &native()),
             Err("dom_css_geometry_invalid")
         );
     }
