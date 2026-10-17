@@ -9141,25 +9141,14 @@ impl Tool for ZoomTool {
                 pixels. WGC crops grant no input or from_zoom authority; paint freshness remains unverified.".into(),
             input_schema: json!({
                 "type":"object","required":["window_id","x1","y1","x2","y2"],"properties":{
-                    "capture_backend":{"type":"string","enum":["default","wgc"],"description":"Omit or use default for legacy screenshot-coordinate zoom (500 px width limit, 20% padding, from_zoom context). Use wgc for lossless screen-physical cropping without padding, resizing, snapshot replacement or input context; explicit pid and runtime session are required."},
-                    "pid":{"type":"integer","description":"Use the exact target PID for WGC. Legacy zoom may omit it to resolve the unique session-owned snapshot."},
-                    "window_id":{"type":"integer","description":"HWND of the exact target window."},
-                    "x1":{"type":"number","description":"Left edge: resized screenshot pixels for legacy zoom; integer screen-physical pixels for WGC."},
-                    "y1":{"type":"number","description":"Top edge: resized screenshot pixels for legacy zoom; integer screen-physical pixels for WGC."},
-                    "x2":{"type":"number","description":"Right edge: resized screenshot pixels for legacy zoom; integer screen-physical pixels for WGC."},
-                    "y2":{"type":"number","description":"Bottom edge: resized screenshot pixels for legacy zoom; integer screen-physical pixels for WGC."}
-                },"additionalProperties":false,
-                "allOf":[{
-                    "if":{"properties":{"capture_backend":{"const":"wgc"}},"required":["capture_backend"]},
-                    "then":{"required":["pid"],"properties":{
-                        "pid":{"minimum":1,"maximum":2147483647},
-                        "window_id":{"minimum":1},
-                        "x1":{"type":"integer","minimum":-2147483648,"maximum":2147483647},
-                        "y1":{"type":"integer","minimum":-2147483648,"maximum":2147483647},
-                        "x2":{"type":"integer","minimum":-2147483648,"maximum":2147483647},
-                        "y2":{"type":"integer","minimum":-2147483648,"maximum":2147483647}
-                    }}
-                }]
+                    "capture_backend":{"type":"string","enum":["default","wgc"],"description":"Omit or use default for legacy screenshot-coordinate zoom (500 px width limit, 20% padding, from_zoom context). Use wgc with an explicit pid and a live runtime session for lossless screen-physical cropping; keep the entire region inside the captured frame. WGC crops have no padding, resizing, snapshot replacement or input context."},
+                    "pid":{"type":"integer","minimum":1,"maximum":2147483647,"description":"Use the exact target PID for WGC. Legacy zoom may omit it to resolve the unique session-owned snapshot."},
+                    "window_id":{"type":"integer","minimum":1,"description":"Use the HWND of the exact target window."},
+                    "x1":{"type":"number","description":"Use resized screenshot pixels for the left edge in legacy zoom. For WGC, use integer screen-physical pixels in -2147483648..2147483647."},
+                    "y1":{"type":"number","description":"Use resized screenshot pixels for the top edge in legacy zoom. For WGC, use integer screen-physical pixels in -2147483648..2147483647."},
+                    "x2":{"type":"number","description":"Use a right edge greater than x1 in resized screenshot pixels for legacy zoom. For WGC, use integer screen-physical pixels in -2147483648..2147483647."},
+                    "y2":{"type":"number","description":"Use a bottom edge greater than y1 in resized screenshot pixels for legacy zoom. For WGC, use integer screen-physical pixels in -2147483648..2147483647."}
+                },"additionalProperties":false
             }),
             // Swift annotation: idempotent: false.
             read_only: true, destructive: false, idempotent: false, open_world: false,
