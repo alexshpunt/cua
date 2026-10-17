@@ -137,7 +137,7 @@ impl BrowserEngine {
                 )
             }
             Err(error) => {
-                let reason = super::super::dom_action_reason::progress_reason(&error.message);
+                let reason = crate::browser::dom_action_reason::progress_reason(&error.message);
                 let status = if reason == "dom_action_timeout" {
                     "timeout"
                 } else if progress.snapshot()["in_flight"].is_null() {
