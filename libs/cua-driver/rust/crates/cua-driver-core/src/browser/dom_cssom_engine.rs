@@ -258,63 +258,17 @@ impl BrowserEngine {
             };
             let mut sample = kind.parse(&reply, target.clone())?;
             if let DomNodeSample::Actionability(state) = &mut sample {
-                if reply.pointer("/result/value/receives_pointer") != Some(&Value::Null) {
-                    return Err(unavailable("dom_action_hit_unavailable"));
+                AttestedHit {
+                    conn: &validated.conn,
+                    session: &frame_session,
+                    frame_id: &identity.frame_id,
+                    context_id,
+                    unique_id: &unique_id,
+                    group: &group,
+                    object_id,
                 }
-                state.receives_pointer = match dom_action_hit::probe(&reply).map_err(unavailable)? {
-                    HitProbe::Outside => Some(false),
-                    HitProbe::Unknown => None,
-                    HitProbe::Point { x, y } => {
-                        let hit = AttestedHit {
-                            conn: &validated.conn,
-                            session: &frame_session,
-                            frame_id: &identity.frame_id,
-                            context_id,
-                            unique_id: &unique_id,
-                            group: &group,
-                            object_id,
-                        };
-                        let first = hit.sample(x, y).await?;
-                        evidence.drain(&mut events, &frame_session, &identity.frame_id)?;
-                        let confirmation = read(
-                            &validated.conn,
-                            &frame_session,
-                            "Runtime.callFunctionOn",
-                            json!({
-                                "functionDeclaration":kind.function(),"uniqueContextId":unique_id,
-                                "arguments":[{"objectId":object_id}],"returnByValue":true,
-                                "awaitPromise":false,"userGesture":false,"throwOnSideEffect":true
-                            }),
-                        )
-                        .await?;
-                        // Parse the whole second state, then require exact facts, bounds,
-                        // document point and scroll continuity around both native hit tests.
-                        kind.parse(&confirmation, target)?;
-                        if confirmation.pointer("/result/value") != reply.pointer("/result/value") {
-                            return Err(unavailable("dom_action_sample_changed"));
-                        }
-                        let second = hit.sample(x, y).await?;
-                        if first != second {
-                            return Err(unavailable("dom_action_hit_changed"));
-                        }
-                        let after = read(
-                            &validated.conn,
-                            &frame_session,
-                            "Runtime.callFunctionOn",
-                            json!({
-                                "functionDeclaration":kind.function(),"uniqueContextId":unique_id,
-                                "arguments":[{"objectId":object_id}],"returnByValue":true,
-                                "awaitPromise":false,"userGesture":false,"throwOnSideEffect":true
-                            }),
-                        )
-                        .await?;
-                        kind.parse(&after, state.target.clone())?;
-                        if after.pointer("/result/value") != reply.pointer("/result/value") {
-                            return Err(unavailable("dom_action_sample_changed"));
-                        }
-                        first.1
-                    }
-                };
+                .qualify_pointer(&reply, state, &mut evidence, &mut events)
+                .await?;
             }
             evidence.drain(&mut events, &frame_session, &identity.frame_id)?;
             let current = self
@@ -382,6 +336,54 @@ struct AttestedHit<'a> {
     object_id: &'a str,
 }
 impl AttestedHit<'_> {
+    /// Shared by inspection and every dispatch step in that step's retained world.
+    /// Never import pointer readiness from the JavaScript sample itself.
+    async fn qualify_pointer(
+        &self,
+        reply: &Value,
+        state: &mut ActionState,
+        evidence: &mut ContextEvidence,
+        events: &mut BoundedCdpEvents,
+    ) -> Result<(), BrowserRefusal> {
+        if reply.pointer("/result/value/receives_pointer") != Some(&Value::Null) {
+            return Err(unavailable("dom_action_hit_unavailable"));
+        }
+        state.receives_pointer = match dom_action_hit::probe(reply).map_err(unavailable)? {
+            HitProbe::Outside => Some(false),
+            HitProbe::Unknown => None,
+            HitProbe::Point { x, y } => {
+                let first = self.sample(x, y).await?;
+                evidence.drain(events, self.session, self.frame_id)?;
+                self.confirm_sample(reply, &state.target).await?;
+                evidence.drain(events, self.session, self.frame_id)?;
+                let second = self.sample(x, y).await?;
+                evidence.drain(events, self.session, self.frame_id)?;
+                if first != second {
+                    return Err(unavailable("dom_action_hit_changed"));
+                }
+                self.confirm_sample(reply, &state.target).await?;
+                first.1
+            }
+        };
+        evidence.drain(events, self.session, self.frame_id)
+    }
+
+    async fn confirm_sample(
+        &self,
+        expected: &Value,
+        target: &ActionTarget,
+    ) -> Result<(), BrowserRefusal> {
+        let reply = read(self.conn, self.session, "Runtime.callFunctionOn", json!({
+            "functionDeclaration":dom_action_sample::READ_FUNCTION,"uniqueContextId":self.unique_id,
+            "arguments":[{"objectId":self.object_id}],"returnByValue":true,
+            "awaitPromise":false,"userGesture":false,"throwOnSideEffect":true
+        })).await?;
+        DomNodeSampleKind::Actionability.parse(&reply, target.clone())?;
+        if reply.pointer("/result/value") != expected.pointer("/result/value") {
+            return Err(unavailable("dom_action_sample_changed"));
+        }
+        Ok(())
+    }
     async fn sample(&self, x: i64, y: i64) -> Result<(i64, Option<bool>), BrowserRefusal> {
         // Chromium's inspector multiplies document-CSS x/y by LayoutZoomFactor,
         // then DocumentToFrame subtracts layout scroll. This is not a screen point.
