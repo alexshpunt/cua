@@ -83,7 +83,17 @@ impl BrowserEngine {
                     // handlers run. No fresh locator lookup, retargeting or replay is allowed.
                     lease.check_source().await?;
                     let sampled=lease.call(dom_action_sample::READ_FUNCTION,Value::Null,true).await?;
-                    let state=dom_action_sample::parse_sample(&sampled,lease.target.clone()).map_err(refusal)?;
+                    let mut state=dom_action_sample::parse_sample(&sampled,lease.target.clone()).map_err(refusal)?;
+                    AttestedHit {
+                        conn: &lease.validated.conn,
+                        session: &lease.validated.cdp_session,
+                        frame_id: &lease.target.frame_id,
+                        context_id: lease.evidence.id,
+                        unique_id: &lease.unique,
+                        group: &lease.group,
+                        object_id: &lease.object,
+                    }.qualify_pointer(&sampled,&mut state,&mut lease.evidence,&mut lease.events).await?;
+                    lease.check_source().await?;
                     check_ready(&state,&current,required)?;
                     if step.name=="dwell" {
                         let ms=step.argument.as_u64().filter(|ms|*ms<=10_000)
