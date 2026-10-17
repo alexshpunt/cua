@@ -10,3 +10,33 @@ pub(super) fn progress_reason(message: &str) -> &'static str {
         _ => "dom_action_dispatch_refused",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_readiness_causes_survive_without_native_error_prose() {
+        for reason in [
+            "dom_action_coverage_incomplete",
+            "dom_action_ambiguous",
+            "dom_action_timeout",
+            "dom_action_ref_stale",
+            "dom_action_source_changed",
+        ] {
+            assert_eq!(progress_reason(reason), reason);
+        }
+    }
+
+    #[test]
+    fn unknown_private_messages_never_become_progress_identifiers() {
+        for message in [
+            "private frame F_SECRET node 4932",
+            "dom_action_coverage_incomplete: target private-id",
+            "dom_action_arbitrary_new_reason",
+            "",
+        ] {
+            assert_eq!(progress_reason(message), "dom_action_dispatch_refused");
+        }
+    }
+}

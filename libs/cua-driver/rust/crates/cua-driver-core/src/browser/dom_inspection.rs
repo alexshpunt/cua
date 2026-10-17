@@ -790,6 +790,131 @@ mod tests {
         assert!(!coverage.complete);
     }
 
+    fn user_agent_root(id: i64, children: Vec<Value>) -> Value {
+        json!({"nodeType":11,"nodeId":id,"backendNodeId":id,"shadowRootType":"user-agent",
+            "childNodeCount":children.len(),"children":children})
+    }
+
+    fn form_with_user_agent_roots() -> Value {
+        let mut input = element(1, "INPUT", json!(["data-testid", "value"]), vec![]);
+        input["shadowRoots"] = json!([user_agent_root(101, vec![])]);
+        let options = (3..=5)
+            .map(|id| {
+                let mut option = element(id, "OPTION", json!(["value", id.to_string()]), vec![]);
+                option["shadowRoots"] = json!([user_agent_root(100 + id, vec![])]);
+                option
+            })
+            .collect();
+        let mut select = element(2, "SELECT", json!([]), options);
+        select["shadowRoots"] = json!([user_agent_root(102, vec![])]);
+        document(vec![input, select])
+    }
+
+    #[test]
+    fn browser_owned_form_internals_do_not_make_author_dom_incomplete() {
+        let (rows, coverage) = collect(&form_with_user_agent_roots(), "main", 32, 8);
+        assert!(coverage.complete, "{coverage:?}");
+        assert_eq!(coverage.node_omitted, 0);
+        assert_eq!(
+            serde_json::to_value(&coverage.excluded).unwrap(),
+            json!({
+                "user_agent_shadow_roots":5,
+                "user_agent_shadow_hosts":{"input":1,"select":1,"option":3,"textarea":0,"button":0,"other":0}
+            })
+        );
+        assert_eq!(
+            rows.iter().map(|row| row.tag.as_str()).collect::<Vec<_>>(),
+            vec!["input", "select", "option", "option", "option"]
+        );
+    }
+
+    #[test]
+    fn user_agent_descendants_never_spend_the_author_node_or_depth_budget() {
+        let mut host = element(1, "INPUT", json!([]), vec![]);
+        host["shadowRoots"] = json!([user_agent_root(
+            100,
+            (200..3200)
+                .map(|id| element(id, "DIV", json!([]), vec![]))
+                .collect()
+        )]);
+        let (rows, coverage) = collect(&document(vec![host]), "main", 3, 1);
+        assert!(coverage.complete, "{coverage:?}");
+        assert_eq!(coverage.visited, 3);
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn explicit_ua_exclusions_do_not_hide_closed_unknown_or_missing_author_children() {
+        for fault in ["closed", "unknown", "missing_children", "wrong_node_kind"] {
+            let mut tree = form_with_user_agent_roots();
+            let input = &mut tree["root"]["children"][0];
+            match fault {
+                "missing_children" => {
+                    input.as_object_mut().unwrap().remove("childNodeCount");
+                }
+                "wrong_node_kind" => {
+                    input["shadowRoots"][0]["nodeType"] = json!(1);
+                }
+                kind => {
+                    input["shadowRoots"][0]["shadowRootType"] = json!(kind);
+                }
+            }
+            let (_, coverage) = collect(&tree, "main", 32, 8);
+            assert!(!coverage.complete, "{fault}: {coverage:?}");
+            assert_eq!(coverage.node_omitted, 1, "{fault}");
+            assert_eq!(
+                coverage.excluded.user_agent_shadow_roots,
+                if fault == "missing_children" { 5 } else { 4 },
+                "{fault}"
+            );
+        }
+    }
+
+    #[test]
+    fn excluded_root_counts_are_bounded_and_host_buckets_remain_text_free() {
+        let hosts = [
+            "INPUT",
+            "SELECT",
+            "OPTION",
+            "TEXTAREA",
+            "BUTTON",
+            "private-custom-name",
+        ];
+        let rows = hosts
+            .into_iter()
+            .enumerate()
+            .map(|(index, tag)| {
+                let mut host = element(index as i64 + 1, tag, json!([]), vec![]);
+                host["shadowRoots"] = json!([user_agent_root(index as i64 + 101, vec![])]);
+                host
+            })
+            .collect::<Vec<_>>();
+        let (_, coverage) = collect(&document(rows.clone()), "main", 32, 8);
+        let excluded = serde_json::to_value(&coverage.excluded).unwrap();
+        assert_eq!(excluded["user_agent_shadow_roots"], 6);
+        assert_eq!(
+            excluded["user_agent_shadow_hosts"],
+            json!({
+                "input":1,"select":1,"option":1,"textarea":1,"button":1,"other":1
+            })
+        );
+        assert!(!excluded.to_string().contains("private-custom-name"));
+        let mut combined = coverage.excluded.clone();
+        combined.merge(&coverage.excluded);
+        assert_eq!(
+            serde_json::to_value(combined).unwrap(),
+            json!({
+                "user_agent_shadow_roots":12,
+                "user_agent_shadow_hosts":{"input":2,"select":2,"option":2,"textarea":2,"button":2,"other":2}
+            })
+        );
+        let (_, limited) = collect(&document(rows), "main", 4, 8);
+        assert!(!limited.complete);
+        assert_eq!(limited.visited, 4);
+        assert_eq!(limited.excluded.user_agent_shadow_roots, 1);
+        assert!(limited.excluded.user_agent_shadow_roots <= limited.visited);
+    }
+
     #[test]
     fn unsupported_shadow_or_unavailable_embedded_documents_are_truthfully_partial() {
         let mut host = element(1, "DIV", json!([]), vec![]);

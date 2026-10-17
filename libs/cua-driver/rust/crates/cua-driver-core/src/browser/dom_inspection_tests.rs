@@ -26,6 +26,8 @@ struct State {
     bad_metadata: bool,
     unmatched_css_node: bool,
     single_frame: bool,
+    dom_document: Option<Value>,
+    dom_layout: Option<Value>,
     missing_layout_identity: bool,
     long_live_value: bool,
     distinct_attachment_ids: bool,
@@ -155,6 +157,65 @@ fn document(detached: bool) -> Value {
             element(10,10,"BUTTON",json!(["id","main-btn","data-testid","save","aria-label","Save"]),vec![json!({"nodeType":3,"nodeId":110,"backendNodeId":110,"nodeValue":"Save draft"})]),
             element(11,11,"BUTTON",json!(["hidden","","aria-label","Save"]),vec![]),
             element(12,12,"INPUT",json!(["value","markup-only","type","checkbox"]),vec![]),iframe,shadow]) ]}})
+}
+// A realistic authored form plus native UA roots. UA descendants deliberately
+// contain forbidden extra frame/query roots and more than the author visit budget.
+fn author_form_fixture() -> (Value, Value) {
+    let root = |id: i64, children: Vec<Value>| {
+        json!({"nodeType":11,"nodeId":id,
+        "backendNodeId":id,"shadowRootType":"user-agent","childNodeCount":children.len(),"children":children})
+    };
+    let mut private_frame = element(901, 901, "IFRAME", json!([]), vec![]);
+    private_frame["contentDocument"] = json!({"nodeType":9,"nodeId":902,"backendNodeId":902,
+        "frameId":"PRIVATE_UA_FRAME","childNodeCount":0,"children":[]});
+    let mut private_host = element(903, 903, "DIV", json!([]), vec![]);
+    private_host["shadowRoots"] = json!([{"nodeType":11,"nodeId":904,"backendNodeId":904,
+        "shadowRootType":"open","childNodeCount":0,"children":[]}]);
+    let mut internals = vec![private_frame, private_host];
+    internals.extend((10_000..13_000).map(|id| element(id, id, "DIV", json!([]), vec![])));
+    let mut input = element(
+        12,
+        12,
+        "INPUT",
+        json!(["data-testid", "live-value"]),
+        vec![],
+    );
+    input["shadowRoots"] = json!([root(101, internals)]);
+    let options = (14..=16)
+        .map(|id| {
+            let mut option = element(id, id, "OPTION", json!(["value", id.to_string()]), vec![]);
+            option["shadowRoots"] = json!([root(id + 100, vec![])]);
+            option
+        })
+        .collect();
+    let mut select = element(13, 13, "SELECT", json!([]), options);
+    select["shadowRoots"] = json!([root(113, vec![])]);
+    let button = element(
+        10,
+        10,
+        "BUTTON",
+        json!([
+            "id",
+            "main-btn",
+            "data-testid",
+            "save",
+            "aria-label",
+            "Save"
+        ]),
+        vec![],
+    );
+    let mut shadow = element(20, 20, "DIV", json!([]), vec![]);
+    shadow["shadowRoots"] = json!([{"nodeType":11,"nodeId":150,"backendNodeId":150,
+        "shadowRootType":"open","childNodeCount":1,"children":[element(21,21,"BUTTON",json!([]),vec![])]}]);
+    let document = json!({"root":{"nodeType":9,"nodeId":100,"backendNodeId":100,"frameId":"F_MAIN",
+        "documentURL":"https://fixture.test/","childNodeCount":4,"children":[input,select,button,shadow]}});
+    let backends = vec![12, 13, 14, 15, 16, 10, 20, 21];
+    let indices = (0..backends.len()).collect::<Vec<_>>();
+    let layout = json!({"strings":["F_MAIN","block","visible","1"],"documents":[{
+        "frameId":0,"nodes":{"backendNodeId":backends},
+        "layout":{"nodeIndex":indices,"styles":vec![vec![1,2,3];8]}
+    }]});
+    (document, layout)
 }
 async fn bound() -> (Fixture, String, String) {
     let state = Arc::new(Mutex::new(State {
@@ -287,6 +348,7 @@ async fn bound() -> (Fixture, String, String) {
             },
             "DOM.getDocument"=> {
                 if state.switch_during_collection {state.selected=false;}
+                if let Some(document) = &state.dom_document { return MockReply::ok(document.clone()); }
                 if state.single_frame {
                     return MockReply::ok(json!({"root":{"nodeType":9,"nodeId":100,"backendNodeId":100,"frameId":"F_MAIN","childNodeCount":1,
                         "children":[element(12,12,"INPUT",json!(["data-testid","live-value"]),vec![])]}}));
@@ -311,7 +373,7 @@ async fn bound() -> (Fixture, String, String) {
                 else {json!({"nodes":[{"backendDOMNodeId":10,"role":{"value":"button"},"name":{"value":"Save"}},
                     {"backendDOMNodeId":11,"role":{"value":"button"},"name":{"value":"Save"}},
                     {"backendDOMNodeId":12,"role":{"value":"checkbox"},"value":{"value":"live-value"},"properties":[{"name":"checked","value":{"value":true}},{"name":"disabled","value":{"value":false}}]}]})},
-            "DOMSnapshot.captureSnapshot"=>if state.bad_metadata {json!({})} else if state.single_frame {
+            "DOMSnapshot.captureSnapshot"=>if let Some(layout)=&state.dom_layout {layout.clone()} else if state.bad_metadata {json!({})} else if state.single_frame {
                 json!({"strings":["F_MAIN","block","visible","1",if state.long_live_value {"é".repeat(1025)} else {"live-value".to_owned()}],
                     "documents":[{"frameId":0,"nodes":{"backendNodeId":if state.missing_layout_identity {vec![999]} else {vec![12]},
                         "inputValue":{"index":[0],"value":[4]}},
@@ -355,6 +417,53 @@ fn structured(result: &crate::protocol::ToolResult) -> Value {
 }
 fn args(target: &str, tab: &str) -> Value {
     json!({"target_id":target,"tab_id":tab,"session":"dom-inspection-tests","snapshot_format":"dom_inspect_v1"})
+}
+
+#[tokio::test]
+async fn author_dom_scope_reports_ua_exclusions_without_admitting_internal_query_roots_or_frames() {
+    let (f, target, tab) = bound().await;
+    let (document, layout) = author_form_fixture();
+    {
+        let mut state = f.state.lock().unwrap();
+        state.single_frame = true;
+        state.dom_document = Some(document);
+        state.dom_layout = Some(layout);
+    }
+    let mut request = args(&target, &tab);
+    request["include_hidden"] = json!(true);
+    request["locator"] = json!({"css":"button[data-testid='save']:not([disabled])"});
+    let result = structured(
+        &GetBrowserStateTool::new(f.engine.clone())
+            .invoke(request)
+            .await,
+    );
+    assert_eq!(
+        result["snapshot"]["collection_scope"],
+        "author_dom_with_open_shadow"
+    );
+    assert_eq!(result["snapshot"]["collection_complete"], true, "{result}");
+    assert_eq!(result["snapshot"]["omitted"]["nodes"], 0);
+    assert_eq!(result["snapshot"]["omitted"]["frames"], 0);
+    assert_eq!(
+        result["snapshot"]["excluded"],
+        json!({"user_agent_shadow_roots":5,
+        "user_agent_shadow_hosts":{"input":1,"select":1,"option":3,"textarea":0,"button":0,"other":0}})
+    );
+    assert_eq!(result["elements"].as_array().unwrap().len(), 1);
+    assert_eq!(result["elements"][0]["attributes"]["id"], "main-btn");
+    assert!(!result.to_string().contains("PRIVATE_UA_FRAME"));
+    let state = f.state.lock().unwrap();
+    let roots = state
+        .calls
+        .iter()
+        .filter(|(method, _)| method == "DOM.querySelectorAll")
+        .map(|(_, params)| params["nodeId"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+    assert_eq!(roots, vec![100, 150]);
+    assert!(!state
+        .calls
+        .iter()
+        .any(|(method, _)| method.starts_with("Input.")));
 }
 
 #[tokio::test]

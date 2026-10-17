@@ -6,6 +6,107 @@ use crate::browser::dom_action_request::parse_request;
 use crate::browser::engine::DomActionRoute;
 
 #[tokio::test]
+async fn form_ua_internals_allow_preparation_but_author_gaps_and_duplicates_still_refuse() {
+    for fault in ["none", "closed", "missing_children", "duplicate"] {
+        let (f, target, tab, context) = source().await;
+        let (mut document, mut layout) = author_form_fixture();
+        match fault {
+            "closed" => document["root"]["children"][0]["shadowRoots"]
+                .as_array_mut()
+                .unwrap()
+                .push(json!({"nodeType":11,"nodeId":301,"backendNodeId":301,
+                    "shadowRootType":"closed","childNodeCount":0,"children":[]})),
+            "missing_children" => {
+                document["root"]["children"][0]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("childNodeCount");
+            }
+            "duplicate" => {
+                let mut duplicate = document["root"]["children"][0].clone();
+                duplicate["nodeId"] = json!(17);
+                duplicate["backendNodeId"] = json!(17);
+                document["root"]["children"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(duplicate);
+                document["root"]["childNodeCount"] = json!(5);
+                layout["documents"][0]["nodes"]["backendNodeId"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!(17));
+                layout["documents"][0]["layout"]["nodeIndex"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!(8));
+                layout["documents"][0]["layout"]["styles"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!([1, 2, 3]));
+            }
+            _ => {}
+        }
+        {
+            let mut state = f.state.lock().unwrap();
+            state.dom_document = Some(document);
+            state.dom_layout = Some(layout);
+            state.actionability_reply = Some(json!({"result":{"type":"object","value":{
+                "connected":true,"same_document":true,"bounds":[10.5,20.25,80.0,30.0],
+                "visible":true,"enabled":true,"editable":true,"receives_pointer":true
+            }}}));
+        }
+        let request = parse_request(
+            &json!({"action":"fill","locator":{"test_id":"live-value"},"text":"Ada"}),
+        )
+        .unwrap();
+        let progress = DomActionProgress::default();
+        let result = f
+            .engine
+            .dispatch_dom_action(
+                "dom-inspection-tests",
+                &target,
+                &tab,
+                &context,
+                &request,
+                DomActionRoute::DomEvent,
+                progress.clone(),
+            )
+            .await;
+        if fault == "none" {
+            let result = result.unwrap();
+            assert_eq!(result["status"], "dispatched");
+            assert_eq!(
+                progress.snapshot()["acknowledged_steps"],
+                json!(["focus", "beforeinput", "fill", "input"])
+            );
+            assert_eq!(
+                dispatched_steps(&f.state.lock().unwrap()),
+                ["focus", "beforeinput", "fill", "input"]
+            );
+        } else {
+            let error = result.unwrap_err();
+            let reason = if fault == "duplicate" {
+                "dom_action_ambiguous"
+            } else {
+                "dom_action_coverage_incomplete"
+            };
+            assert_eq!(
+                error.code,
+                BrowserRefusalCode::BrowserActionUnavailable,
+                "{fault}"
+            );
+            assert_eq!(error.message, reason, "{fault}");
+            assert_eq!(progress.snapshot()["reason"], reason, "{fault}");
+            assert_eq!(progress.snapshot()["mutation_attempted"], false, "{fault}");
+            assert!(
+                dispatched_steps(&f.state.lock().unwrap()).is_empty(),
+                "{fault}"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn an_unknown_normal_keyup_is_never_replayed_as_cleanup() {
     let (f, target, tab, context) = source().await;
     f.state.lock().unwrap().dispatch_fail_step = "keyup".into();
