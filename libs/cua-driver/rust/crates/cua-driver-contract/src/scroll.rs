@@ -31,7 +31,7 @@ fn delta_schema(_: &mut SchemaGenerator) -> Schema {
 }
 
 /// One detent is 120 native wheel-delta units, not a line or content pixel.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
 pub enum ScrollUnit {
     WheelDetents,
@@ -61,7 +61,7 @@ pub enum ScrollAxis {
 }
 
 /// A current overview point belonging to one exact Windows window.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, uniffi::Record)]
 #[serde(deny_unknown_fields)]
 pub struct PointerScrollInput {
     /// Process that owns the exact target window.

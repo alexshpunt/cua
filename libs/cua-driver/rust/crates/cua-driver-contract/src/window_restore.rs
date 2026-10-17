@@ -33,7 +33,7 @@ fn validate_state(tool: &str, pid: u32, window_id: u64, state_id: &str) -> Resul
 }
 
 /// Read native state without pixels, a UI tree, activation or input.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, uniffi::Record)]
 #[serde(deny_unknown_fields)]
 pub struct WindowStatusInput {
     /// Process that owns the exact target window.
@@ -56,7 +56,7 @@ impl ToolInput for WindowStatusInput {
 }
 
 /// One fresh, narrowly scoped state reference; no screenshot coordinates are accepted.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, uniffi::Record)]
 #[serde(deny_unknown_fields)]
 pub struct WindowRestoreInput {
     /// Process that owns the exact target window.
