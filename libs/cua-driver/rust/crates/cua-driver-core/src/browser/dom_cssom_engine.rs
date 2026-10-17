@@ -1,9 +1,10 @@
-//! Explicit readonly CSSOM geometry; never a CSS-to-native-pixel mapping.
+//! Attested readonly CSSOM samples and an explicitly requested native candidate.
 
 use super::super::cdp_ws::{BoundedCdpEvents, BoundedEventError};
 use super::super::dom_action_sample;
 use super::super::dom_action_wait::{ActionState, ActionTarget};
 use super::super::dom_cssom_sample;
+use super::super::{dom_geometry::map_layout_bounds, dom_native_sample};
 use super::*;
 use std::time::Duration;
 
@@ -17,6 +18,7 @@ const EVENT_LIMIT: usize = 512;
 #[derive(Clone, Copy)]
 enum DomNodeSampleKind {
     Geometry,
+    NativeGeometry,
     Actionability,
 }
 
@@ -24,6 +26,7 @@ impl DomNodeSampleKind {
     fn world(self) -> &'static str {
         match self {
             Self::Geometry => dom_cssom_sample::WORLD_NAME,
+            Self::NativeGeometry => dom_native_sample::WORLD_NAME,
             Self::Actionability => dom_action_sample::WORLD_NAME,
         }
     }
@@ -31,6 +34,7 @@ impl DomNodeSampleKind {
     fn function(self) -> &'static str {
         match self {
             Self::Geometry => dom_cssom_sample::READ_FUNCTION,
+            Self::NativeGeometry => dom_native_sample::READ_FUNCTION,
             Self::Actionability => dom_action_sample::READ_FUNCTION,
         }
     }
@@ -44,6 +48,15 @@ impl DomNodeSampleKind {
                         stale("geometry source detached or changed document")
                     } else {
                         unavailable("fixed side-effect-checked geometry sample is unavailable")
+                    }
+                }),
+            Self::NativeGeometry => dom_native_sample::parse_sample(reply)
+                .map(|sample| DomNodeSample::NativeGeometry(sample.0))
+                .map_err(|reason| {
+                    if reason == "dom_geometry_source_detached" {
+                        stale("native geometry source detached or changed document")
+                    } else {
+                        unavailable(reason)
                     }
                 }),
             Self::Actionability => dom_action_sample::parse_sample(reply, target)
@@ -61,6 +74,7 @@ impl DomNodeSampleKind {
 
 enum DomNodeSample {
     Geometry(Value),
+    NativeGeometry(Value),
     Actionability(ActionState),
 }
 
@@ -106,6 +120,30 @@ impl BrowserEngine {
         Ok(output)
     }
 
+    /// Project one main-document ref with a directly measured native RootWebArea.
+    /// This opt-in candidate is not paint-atomic, raster-qualified or input authority.
+    pub(crate) async fn inspect_dom_native_geometry(
+        &self,
+        session: &str,
+        target_id: &str,
+        tab_id: &str,
+        reference: &str,
+    ) -> Result<Value, BrowserRefusal> {
+        let _interval = self.lock_mutation(session, target_id, tab_id).await?;
+        match self
+            .sample_dom_ref(
+                session,
+                target_id,
+                tab_id,
+                reference,
+                DomNodeSampleKind::NativeGeometry,
+            )
+            .await?
+        {
+            DomNodeSample::NativeGeometry(sample) => Ok(sample),
+            _ => Err(unavailable("readonly sample kind changed")),
+        }
+    }
     /// Read actionability from a current inspection ref without granting action authority.
     /// This samples only the main/open-shadow document; dispatch must independently revalidate.
     pub(crate) async fn inspect_dom_actionability(
@@ -127,7 +165,9 @@ impl BrowserEngine {
             .await?
         {
             DomNodeSample::Actionability(sample) => Ok(sample),
-            DomNodeSample::Geometry(_) => Err(unavailable("readonly sample kind changed")),
+            DomNodeSample::Geometry(_) | DomNodeSample::NativeGeometry(_) => {
+                Err(unavailable("readonly sample kind changed"))
+            }
         }
     }
 
@@ -158,6 +198,15 @@ impl BrowserEngine {
                     .invalidate_tab_snapshots(session, target_id, tab_id);
                 stale("geometry requires an attested document")
             })?;
+        if matches!(kind, DomNodeSampleKind::NativeGeometry)
+            && [&identity.frame_id, &identity.loader_id]
+                .iter()
+                .any(|id| id.len() > 256 || id.contains('\0'))
+        {
+            return Err(unavailable(
+                "native geometry document identity is not bounded",
+            ));
+        }
         if entry.frame.kind != FrameKind::Main || entry.frame.oopif_target_id.is_some() {
             return Err(unavailable("child-frame geometry is not qualified"));
         }
@@ -171,6 +220,7 @@ impl BrowserEngine {
             .await?;
         let prefix = match kind {
             DomNodeSampleKind::Geometry => "cua-dom-geometry",
+            DomNodeSampleKind::NativeGeometry => "cua-dom-native-geometry",
             DomNodeSampleKind::Actionability => "cua-dom-actionability",
         };
         let group = format!("{prefix}-{}", Uuid::new_v4());
@@ -250,7 +300,7 @@ impl BrowserEngine {
                 }),
             )
             .await?;
-            let sample = kind.parse(
+            let mut sample = kind.parse(
                 &reply,
                 ActionTarget {
                     frame_id: identity.frame_id.clone(),
@@ -259,9 +309,71 @@ impl BrowserEngine {
                 },
             )?;
             evidence.drain(&mut events, &frame_session, &identity.frame_id)?;
+            let mut projected_window = None;
+            if let DomNodeSample::NativeGeometry(css) = &sample {
+                let css = dom_native_sample::NativeSample(css.clone());
+                let first = self.platform.native_browser_viewport(
+                    validated.record.pid, validated.record.window_id,
+                ).await?;
+                if !validated.native.geometry_exact || first.window != validated.native.bounds {
+                    return Err(stale("native window changed before viewport measurement"));
+                }
+                projected_window = Some(first.window);
+                let version = validated.conn.call_bounded(
+                    None, "Browser.getVersion", json!({}), REPLY_LIMIT,
+                ).await.map_err(|_| unavailable("browser version evidence unavailable"))?;
+                let mut browser_version = json!({});
+                for field in ["product", "revision"] {
+                    let text = version.get(field).and_then(Value::as_str)
+                        .filter(|text| !text.is_empty() && text.len() <= 256 && !text.contains('\0'))
+                        .ok_or_else(|| unavailable("browser version evidence is not bounded"))?;
+                    browser_version[field] = json!(text);
+                }
+                let second = self.platform.native_browser_viewport(
+                    validated.record.pid, validated.record.window_id,
+                ).await?;
+                if first != second {
+                    return Err(stale("native viewport source changed during geometry sample"));
+                }
+                let after = read(
+                    &validated.conn, &frame_session, "Runtime.callFunctionOn",
+                    json!({"functionDeclaration":kind.function(),"uniqueContextId":unique_id,
+                        "arguments":[{"objectId":object_id}],"returnByValue":true,
+                        "awaitPromise":false,"userGesture":false,"throwOnSideEffect":true}),
+                ).await?;
+                let after = dom_native_sample::parse_sample(&after).map_err(|reason| {
+                    if reason == "dom_geometry_source_detached" {
+                        stale("native geometry source detached or changed document")
+                    } else { unavailable(reason) }
+                })?;
+                if css != after {
+                    return Err(stale("CSS/native geometry source changed during measurement"));
+                }
+                let mapped = map_layout_bounds(&css.bounds(), css.viewport(), &first)
+                    .map_err(unavailable)?;
+                sample = DomNodeSample::NativeGeometry(json!({
+                    "format":"native_dom_geometry_v1","status":"ok","mode":"native_element_geometry",
+                    "ref":reference,"source_ref":reference,"target_id":target_id,"tab_id":tab_id,
+                    "source":{"frame_id":identity.frame_id,"loader_id":identity.loader_id,
+                        "backend_node_id":entry.backend_node_id,"context_unique_id":unique_id,
+                        "generation":validated.record.generation},
+                    "frame":{"kind":"main"},"css_sample":css.0,
+                    "native":{"platform":"windows","pid":validated.record.pid,"window_id":validated.record.window_id,
+                        "window":first.window,"viewport":first.viewport,"source":first.source,
+                        "automation_id":"RootWebArea","framework":"Chrome","opaque_runtime_id":first.identity},
+                    "physical_enclosing_rect":mapped.screen,"clipped":mapped.clipped,
+                    "coordinate_space":"screen_physical_pixels","browser_version":browser_version,
+                    "projection":"root_origin_plus_floor_start_ceil_end_at_sampled_dpr",
+                    "qualification":"candidate_not_raster_qualified",
+                    "atomic":false,"input_authority":false
+                }));
+            }
             let current = self
                 .revalidate_for_mutation(session, target_id, Some(tab_id))
                 .await?;
+            if projected_window.is_some_and(|bounds| !current.native.geometry_exact || bounds != current.native.bounds) {
+                return Err(stale("native window geometry changed after viewport measurement"));
+            }
             // Revalidation may create a new flattened attachment to the same
             // target. Its session label is not the document/source identity.
             if !Arc::ptr_eq(&current.conn, &validated.conn)
