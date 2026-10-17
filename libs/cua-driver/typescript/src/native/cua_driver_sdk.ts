@@ -6,12 +6,12 @@
 import nativeModule from "./cua_driver_sdk-ffi.js";
 import { type UniffiRustFutureContinuationCallback, type UniffiForeignFutureDroppedCallback, type UniffiForeignFutureDroppedCallbackStruct, type UniffiVTableCallbackInterfaceCuaDriverSdkDriverActivityObserver, type UniffiForeignFutureResultRustBuffer, type UniffiForeignFutureCompleterustBuffer, type UniffiVTableCallbackInterfaceCuaDriverSdkDriverAuthorizationHost, type UniffiVTableCallbackInterfaceCuaDriverSdkDriverServiceTransport, type UniffiForeignFutureResultVoid, type UniffiForeignFutureCompletevoid, type UniffiVTableCallbackInterfaceCuaDriverSdkForeignDriverEnvelopeChannel,
 } from "./cua_driver_sdk-ffi.js";
-import { type ActionResult, type ClickInput, type ClipboardReadInput, type ClipboardWriteInput, type DragInput, type EndSessionInput, type EndSessionOutput, type EscalateSessionInput, type GetAgentCursorStateInput, type GetCursorPositionInput, type GetDesktopStateInput, type GetScreenSizeInput, type GetSessionInput, type GetSessionStateInput, type GetWindowStateInput, type HotkeyInput, type InvokeMenuInput, type ListAppsInput, type ListAppsOutput, type ListSessionsInput, type ListSessionsOutput, type ListWindowsInput, type ListWindowsOutput, type MoveCursorInput, type ParseVisualRegionsInput, type PressKeyInput, type ScrollInput, type SessionOutput, type SessionStateOutput, type SetAgentCursorEnabledInput, type SetAgentCursorMotionInput, type SetAgentCursorThemeInput, type SetWindowFrameInput, type StartSessionInput, type StartSessionOutput, type TypeTextInput, type VerifyStateInput, type VerifyStateOutput, type WindowStateOutput,
+import { type ActionResult, type ClickInput, type ClipboardReadInput, type ClipboardWriteInput, type DragInput, type EndSessionInput, type EndSessionOutput, type EscalateSessionInput, type GetAgentCursorStateInput, type GetCursorPositionInput, type GetDesktopStateInput, type GetDisplayStateInput, type GetScreenSizeInput, type GetSessionInput, type GetSessionStateInput, type GetWindowStateInput, type HotkeyInput, type InvokeMenuInput, type ListAppsInput, type ListAppsOutput, type ListDisplaysInput, type ListSessionsInput, type ListSessionsOutput, type ListWindowsInput, type ListWindowsOutput, type MoveCursorInput, type ParseVisualRegionsInput, type PointerMoveInput, type PointerScrollInput, type PressKeyInput, type ScrollInput, type SemanticActionInput, type SessionOutput, type SessionStateOutput, type SetAgentCursorEnabledInput, type SetAgentCursorMotionInput, type SetAgentCursorThemeInput, type SetWindowFrameInput, type StartSessionInput, type StartSessionOutput, type TypeTextInput, type VerifyStateInput, type VerifyStateOutput, type WindowControlStateInput, type WindowManagementInput, type WindowRestoreInput, type WindowStateOutput, type WindowStatusInput,
 } from "./cua_driver_contract.js";
 import { type FfiConverter, type UniffiByteArray, type UniffiGcObject, type UniffiHandle, type UniffiObjectFactory, type UniffiReferenceHolder, type UniffiRustCallStatus, AbstractFfiConverterByteArray, FfiConverterArray, FfiConverterArrayBuffer, FfiConverterBool, FfiConverterInt32, FfiConverterObject, FfiConverterObjectWithCallbacks, FfiConverterOptional, FfiConverterUInt16, FfiConverterUInt32, FfiConverterUInt64, FfiConverterUInt8, RustBuffer, UniffiAbstractObject, UniffiEnum, UniffiError, UniffiInternalError, UniffiResult, UniffiRustCaller, destructorGuardSymbol, pointerLiteralSymbol, uniffiCreateFfiConverterString, uniffiCreateRecord, uniffiRustCallAsync, uniffiTraitInterfaceCall, uniffiTraitInterfaceCallAsyncWithError, uniffiTraitInterfaceCallWithError, uniffiTypeNameSymbol, variantOrdinalSymbol,
 } from "@ubjs/core";
 import uniffiCuaDriverContractModule from "./cua_driver_contract.js";
-const { FfiConverterTypeActionResult, FfiConverterTypeClickInput, FfiConverterTypeClipboardReadInput, FfiConverterTypeClipboardWriteInput, FfiConverterTypeDragInput, FfiConverterTypeEndSessionInput, FfiConverterTypeEndSessionOutput, FfiConverterTypeEscalateSessionInput, FfiConverterTypeGetAgentCursorStateInput, FfiConverterTypeGetCursorPositionInput, FfiConverterTypeGetDesktopStateInput, FfiConverterTypeGetScreenSizeInput, FfiConverterTypeGetSessionInput, FfiConverterTypeGetSessionStateInput, FfiConverterTypeGetWindowStateInput, FfiConverterTypeHotkeyInput, FfiConverterTypeInvokeMenuInput, FfiConverterTypeListAppsInput, FfiConverterTypeListAppsOutput, FfiConverterTypeListSessionsInput, FfiConverterTypeListSessionsOutput, FfiConverterTypeListWindowsInput, FfiConverterTypeListWindowsOutput, FfiConverterTypeMoveCursorInput, FfiConverterTypeParseVisualRegionsInput, FfiConverterTypePressKeyInput, FfiConverterTypeScrollInput, FfiConverterTypeSessionOutput, FfiConverterTypeSessionStateOutput, FfiConverterTypeSetAgentCursorEnabledInput, FfiConverterTypeSetAgentCursorMotionInput, FfiConverterTypeSetAgentCursorThemeInput, FfiConverterTypeSetWindowFrameInput, FfiConverterTypeStartSessionInput, FfiConverterTypeStartSessionOutput, FfiConverterTypeTypeTextInput, FfiConverterTypeVerifyStateInput, FfiConverterTypeVerifyStateOutput, FfiConverterTypeWindowStateOutput } = uniffiCuaDriverContractModule.converters;
+const { FfiConverterTypeActionResult, FfiConverterTypeClickInput, FfiConverterTypeClipboardReadInput, FfiConverterTypeClipboardWriteInput, FfiConverterTypeDragInput, FfiConverterTypeEndSessionInput, FfiConverterTypeEndSessionOutput, FfiConverterTypeEscalateSessionInput, FfiConverterTypeGetAgentCursorStateInput, FfiConverterTypeGetCursorPositionInput, FfiConverterTypeGetDesktopStateInput, FfiConverterTypeGetDisplayStateInput, FfiConverterTypeGetScreenSizeInput, FfiConverterTypeGetSessionInput, FfiConverterTypeGetSessionStateInput, FfiConverterTypeGetWindowStateInput, FfiConverterTypeHotkeyInput, FfiConverterTypeInvokeMenuInput, FfiConverterTypeListAppsInput, FfiConverterTypeListAppsOutput, FfiConverterTypeListDisplaysInput, FfiConverterTypeListSessionsInput, FfiConverterTypeListSessionsOutput, FfiConverterTypeListWindowsInput, FfiConverterTypeListWindowsOutput, FfiConverterTypeMoveCursorInput, FfiConverterTypeParseVisualRegionsInput, FfiConverterTypePointerMoveInput, FfiConverterTypePointerScrollInput, FfiConverterTypePressKeyInput, FfiConverterTypeScrollInput, FfiConverterTypeSemanticActionInput, FfiConverterTypeSessionOutput, FfiConverterTypeSessionStateOutput, FfiConverterTypeSetAgentCursorEnabledInput, FfiConverterTypeSetAgentCursorMotionInput, FfiConverterTypeSetAgentCursorThemeInput, FfiConverterTypeSetWindowFrameInput, FfiConverterTypeStartSessionInput, FfiConverterTypeStartSessionOutput, FfiConverterTypeTypeTextInput, FfiConverterTypeVerifyStateInput, FfiConverterTypeVerifyStateOutput, FfiConverterTypeWindowControlStateInput, FfiConverterTypeWindowManagementInput, FfiConverterTypeWindowRestoreInput, FfiConverterTypeWindowStateOutput, FfiConverterTypeWindowStatusInput } = uniffiCuaDriverContractModule.converters;
 const uniffiCaller = new UniffiRustCaller(() => ({ code: 0 }));
 
 const uniffiIsDebug =
@@ -3782,23 +3782,92 @@ export interface CuaDriverLike {
  */
     callTool(name: string, argumentsJson: string, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     click(input: ClickInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ActionResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     clipboardRead(input: ClipboardReadInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     clipboardWrite(input: ClipboardWriteInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     drag(input: DragInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     endSession(input: EndSessionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<EndSessionOutput>;
     escalateSession(input: EscalateSessionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<SessionStateOutput>;
     executionMode(): DriverExecutionMode;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     getAgentCursorState(input: GetAgentCursorStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     getCursorPosition(input: GetCursorPositionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     getDesktopState(input: GetDesktopStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    getDisplayState(input: GetDisplayStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     getScreenSize(input: GetScreenSizeInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     getSession(input: GetSessionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<SessionOutput>;
     getSessionState(input: GetSessionStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<SessionStateOutput>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    getWindowControlState(input: WindowControlStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     getWindowState(input: GetWindowStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<WindowStateOutput>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    getWindowStatus(input: WindowStatusInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     hotkey(input: HotkeyInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     invokeMenu(input: InvokeMenuInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     isAvailable(): boolean;
     listApps(input: ListAppsInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ListAppsOutput>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    listDisplays(input: ListDisplaysInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
 /**
  * Content-free lifecycle summaries for the trusted host's runtime or
  * host-lease namespace. This is deliberately separate from the
@@ -3811,15 +3880,85 @@ export interface CuaDriverLike {
  */
     listToolsJson(asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<string>;
     listWindows(input: ListWindowsInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ListWindowsOutput>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    manageWindow(input: WindowManagementInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     metadata(asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<DriverMetadata>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     moveCursor(input: MoveCursorInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    movePointer(input: PointerMoveInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     parseVisualRegions(input: ParseVisualRegionsInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     pressKey(input: PressKeyInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    restoreWindow(input: WindowRestoreInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     runtimeScopePrefix(): string | undefined;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     scroll(input: ScrollInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    scrollAt(input: PointerScrollInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    semanticAction(input: SemanticActionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     setAgentCursorEnabled(input: SetAgentCursorEnabledInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     setAgentCursorMotion(input: SetAgentCursorMotionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     setAgentCursorTheme(input: SetAgentCursorThemeInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     setWindowFrame(input: SetWindowFrameInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
 /**
  * Stop accepting new embedded operations. Repeated calls are harmless;
@@ -3832,7 +3971,17 @@ export interface CuaDriverLike {
  */
     socketPath(): string;
     startSession(input: StartSessionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<StartSessionOutput>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     typeText(input: TypeTextInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     verifyState(input: VerifyStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
 }
 /**
@@ -4168,6 +4317,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async clipboardRead(input: ClipboardReadInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4200,6 +4354,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async clipboardWrite(input: ClipboardWriteInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4232,6 +4391,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async drag(input: DragInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4345,6 +4509,11 @@ private constructor(pointer: UniffiHandle) {
     ));
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async getAgentCursorState(input: GetAgentCursorStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4377,6 +4546,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async getCursorPosition(input: GetCursorPositionInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4409,6 +4583,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async getDesktopState(input: GetDesktopStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4441,6 +4620,48 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    async getDisplayState(input: GetDisplayStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_get_display_state(
+                    uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypeGetDisplayStateInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async getScreenSize(input: GetScreenSizeInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4537,6 +4758,43 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    async getWindowControlState(input: WindowControlStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_control_state(
+                    uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypeWindowControlStateInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
     async getWindowState(input: GetWindowStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<WindowStateOutput> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4569,6 +4827,48 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    async getWindowStatus(input: WindowStatusInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_status(
+                    uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypeWindowStatusInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async hotkey(input: HotkeyInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4601,6 +4901,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async invokeMenu(input: InvokeMenuInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4664,6 +4969,43 @@ private constructor(pointer: UniffiHandle) {
             // export. The bytes the runtime hands back must be deserialized
             // here using the per-callable return-type converter.
             /*liftFunc:*/ FfiConverterTypeListAppsOutput.lift.bind(FfiConverterTypeListAppsOutput),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    async listDisplays(input: ListDisplaysInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_list_displays(
+                    uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypeListDisplaysInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
             /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
             /*asyncOpts:*/ asyncOpts_,
             /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
@@ -4812,6 +5154,43 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    async manageWindow(input: WindowManagementInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_manage_window(
+                    uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypeWindowManagementInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
     async metadata(asyncOpts_?: { signal: AbortSignal }): Promise<DriverMetadata> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4844,6 +5223,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async moveCursor(input: MoveCursorInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4876,6 +5260,48 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    async movePointer(input: PointerMoveInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_move_pointer(
+                    uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypePointerMoveInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async parseVisualRegions(input: ParseVisualRegionsInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4908,6 +5334,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async pressKey(input: PressKeyInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4916,6 +5347,43 @@ private constructor(pointer: UniffiHandle) {
             /*rustFutureFunc:*/ () => {
                 return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_press_key(
                     uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypePressKeyInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    async restoreWindow(input: WindowRestoreInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_restore_window(
+                    uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypeWindowRestoreInput.lower(input, nativeModule().rustbuffer_alloc)
                 );
             },
             /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
@@ -4957,6 +5425,11 @@ private constructor(pointer: UniffiHandle) {
     ));
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async scroll(input: ScrollInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -4989,6 +5462,85 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    async scrollAt(input: PointerScrollInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_scroll_at(
+                    uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypePointerScrollInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
+    async semanticAction(input: SemanticActionInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriver_semantic_action(
+                    uniffiTypeCuaDriverObjectFactory.clonePointer(this),FfiConverterTypeSemanticActionInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async setAgentCursorEnabled(input: SetAgentCursorEnabledInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5021,6 +5573,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async setAgentCursorMotion(input: SetAgentCursorMotionInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5053,6 +5610,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async setAgentCursorTheme(input: SetAgentCursorThemeInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5085,6 +5647,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async setWindowFrame(input: SetWindowFrameInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5201,6 +5768,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async typeText(input: TypeTextInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5233,6 +5805,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool with validated input.
+ * Native platform limitations, refusals and observations remain
+ * in the result; no fallback is added.
+ */
     async verifyState(input: VerifyStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5349,7 +5926,17 @@ export interface CuaDriverSessionLike {
 
     callTool(name: string, argumentsJson: string, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     click(input: ClickInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ActionResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     clipboardRead(input: ClipboardReadInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     clipboardWrite(input: ClipboardWriteInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
 /**
  * Revoke the session-bound authority and release its native handle.
@@ -5358,31 +5945,170 @@ export interface CuaDriverSessionLike {
  * cleanup, but trusted hosts should call it at their lifecycle boundary.
  */
     close(): void;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     drag(input: DragInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     endSession(input: EndSessionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<EndSessionOutput>;
     escalateSession(input: EscalateSessionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<SessionStateOutput>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     getAgentCursorState(input: GetAgentCursorStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     getCursorPosition(input: GetCursorPositionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     getDesktopState(input: GetDesktopStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    getDisplayState(input: GetDisplayStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     getScreenSize(input: GetScreenSizeInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     getSession(input: GetSessionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<SessionOutput>;
     getSessionState(input: GetSessionStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<SessionStateOutput>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    getWindowControlState(input: WindowControlStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     getWindowState(input: GetWindowStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<WindowStateOutput>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    getWindowStatus(input: WindowStatusInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     hotkey(input: HotkeyInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     invokeMenu(input: InvokeMenuInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     listApps(input: ListAppsInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ListAppsOutput>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    listDisplays(input: ListDisplaysInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     listSessions(input: ListSessionsInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ListSessionsOutput>;
     listWindows(input: ListWindowsInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ListWindowsOutput>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    manageWindow(input: WindowManagementInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     moveCursor(input: MoveCursorInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    movePointer(input: PointerMoveInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     parseVisualRegions(input: ParseVisualRegionsInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     pressKey(input: PressKeyInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    restoreWindow(input: WindowRestoreInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     scroll(input: ScrollInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    scrollAt(input: PointerScrollInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    semanticAction(input: SemanticActionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     setAgentCursorEnabled(input: SetAgentCursorEnabledInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     setAgentCursorMotion(input: SetAgentCursorMotionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     setAgentCursorTheme(input: SetAgentCursorThemeInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     setWindowFrame(input: SetWindowFrameInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
     startSession(input: StartSessionInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<StartSessionOutput>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     typeText(input: TypeTextInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     verifyState(input: VerifyStateInput, asyncOpts_?: { signal: AbortSignal }) /*throws*/: Promise<ToolResult>;
 }
 /**
@@ -5470,6 +6196,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async clipboardRead(input: ClipboardReadInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5502,6 +6233,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async clipboardWrite(input: ClipboardWriteInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5549,6 +6285,11 @@ private constructor(pointer: UniffiHandle) {
     );
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async drag(input: DragInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5645,6 +6386,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async getAgentCursorState(input: GetAgentCursorStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5677,6 +6423,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async getCursorPosition(input: GetCursorPositionInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5709,6 +6460,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async getDesktopState(input: GetDesktopStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5741,6 +6497,48 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    async getDisplayState(input: GetDisplayStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriversession_get_display_state(
+                    uniffiTypeCuaDriverSessionObjectFactory.clonePointer(this),FfiConverterTypeGetDisplayStateInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async getScreenSize(input: GetScreenSizeInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5837,6 +6635,43 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    async getWindowControlState(input: WindowControlStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_control_state(
+                    uniffiTypeCuaDriverSessionObjectFactory.clonePointer(this),FfiConverterTypeWindowControlStateInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
     async getWindowState(input: GetWindowStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<WindowStateOutput> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5869,6 +6704,48 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    async getWindowStatus(input: WindowStatusInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_status(
+                    uniffiTypeCuaDriverSessionObjectFactory.clonePointer(this),FfiConverterTypeWindowStatusInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async hotkey(input: HotkeyInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5901,6 +6778,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async invokeMenu(input: InvokeMenuInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -5953,6 +6835,43 @@ private constructor(pointer: UniffiHandle) {
             // export. The bytes the runtime hands back must be deserialized
             // here using the per-callable return-type converter.
             /*liftFunc:*/ FfiConverterTypeListAppsOutput.lift.bind(FfiConverterTypeListAppsOutput),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    async listDisplays(input: ListDisplaysInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriversession_list_displays(
+                    uniffiTypeCuaDriverSessionObjectFactory.clonePointer(this),FfiConverterTypeListDisplaysInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
             /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
             /*asyncOpts:*/ asyncOpts_,
             /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
@@ -6029,6 +6948,48 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    async manageWindow(input: WindowManagementInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriversession_manage_window(
+                    uniffiTypeCuaDriverSessionObjectFactory.clonePointer(this),FfiConverterTypeWindowManagementInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async moveCursor(input: MoveCursorInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -6061,6 +7022,48 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    async movePointer(input: PointerMoveInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriversession_move_pointer(
+                    uniffiTypeCuaDriverSessionObjectFactory.clonePointer(this),FfiConverterTypePointerMoveInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async parseVisualRegions(input: ParseVisualRegionsInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -6093,6 +7096,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async pressKey(input: PressKeyInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -6125,6 +7133,48 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    async restoreWindow(input: WindowRestoreInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriversession_restore_window(
+                    uniffiTypeCuaDriverSessionObjectFactory.clonePointer(this),FfiConverterTypeWindowRestoreInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async scroll(input: ScrollInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -6157,6 +7207,85 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    async scrollAt(input: PointerScrollInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriversession_scroll_at(
+                    uniffiTypeCuaDriverSessionObjectFactory.clonePointer(this),FfiConverterTypePointerScrollInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
+    async semanticAction(input: SemanticActionInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
+    const __stack = uniffiIsDebug ? new Error().stack : undefined;
+    try {
+        return await uniffiRustCallAsync(
+            /*rustCaller:*/ uniffiCaller,
+            /*rustFutureFunc:*/ () => {
+                return nativeModule().uniffi_cua_driver_sdk_fn_method_cuadriversession_semantic_action(
+                    uniffiTypeCuaDriverSessionObjectFactory.clonePointer(this),FfiConverterTypeSemanticActionInput.lower(input, nativeModule().rustbuffer_alloc)
+                );
+            },
+            /*pollFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            /*cancelFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_cancel_rust_buffer,
+            /*completeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            /*freeFunc:*/ nativeModule().ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            // Async returns always go through the JS-side converter: the
+            // FFI symbol returns the future handle (u64), and the user-level
+            // RustBuffer comes back via the shared `rust_future_complete_*`
+            // export. The bytes the runtime hands back must be deserialized
+            // here using the per-callable return-type converter.
+            /*liftFunc:*/ FfiConverterTypeToolResult.lift.bind(FfiConverterTypeToolResult),
+            /*liftString:*/ FfiConverterString.lift.bind(FfiConverterString),
+            /*asyncOpts:*/ asyncOpts_,
+            /*errorHandler:*/ FfiConverterTypeDriverError.lift.bind(FfiConverterTypeDriverError)
+        );
+    } catch (__error: any) {
+        if (uniffiIsDebug && __error instanceof Error) {
+            __error.stack = __stack;
+        }
+        throw __error;
+    }
+    }
+
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async setAgentCursorEnabled(input: SetAgentCursorEnabledInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -6189,6 +7318,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async setAgentCursorMotion(input: SetAgentCursorMotionInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -6221,6 +7355,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async setAgentCursorTheme(input: SetAgentCursorThemeInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -6253,6 +7392,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async setWindowFrame(input: SetWindowFrameInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -6317,6 +7461,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async typeText(input: TypeTextInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -6349,6 +7498,11 @@ private constructor(pointer: UniffiHandle) {
     }
     }
 
+/**
+ * Dispatch this canonical tool within the bound session.
+ * Input validation, native limitations and refusal/observation
+ * metadata are preserved; no fallback is added.
+ */
     async verifyState(input: VerifyStateInput, asyncOpts_?: { signal: AbortSignal }): Promise<ToolResult> /*throws*/ {
     const __stack = uniffiIsDebug ? new Error().stack : undefined;
     try {
@@ -7662,13 +8816,13 @@ function uniffiEnsureInitialized() {
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_click() !== 22807) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_click");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_read() !== 58238) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_read() !== 28653) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_read");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_write() !== 8399) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_write() !== 29199) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_write");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_drag() !== 25742) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_drag() !== 2443) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_drag");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_end_session() !== 18486) {
@@ -7680,16 +8834,19 @@ function uniffiEnsureInitialized() {
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_execution_mode() !== 2639) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_execution_mode");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_agent_cursor_state() !== 45642) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_agent_cursor_state() !== 55114) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_get_agent_cursor_state");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_cursor_position() !== 34285) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_cursor_position() !== 24536) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_get_cursor_position");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_desktop_state() !== 65084) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_desktop_state() !== 4133) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_get_desktop_state");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_screen_size() !== 55616) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_display_state() !== 52952) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_get_display_state");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_screen_size() !== 23081) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_get_screen_size");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_session() !== 17834) {
@@ -7698,13 +8855,19 @@ function uniffiEnsureInitialized() {
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_session_state() !== 49966) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_get_session_state");
     }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_control_state() !== 30553) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_control_state");
+    }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_state() !== 62142) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_state");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_hotkey() !== 53333) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_status() !== 4119) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_status");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_hotkey() !== 18894) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_hotkey");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_invoke_menu() !== 13118) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_invoke_menu() !== 15322) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_invoke_menu");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_is_available() !== 42961) {
@@ -7712,6 +8875,9 @@ function uniffiEnsureInitialized() {
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_list_apps() !== 35505) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_list_apps");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_list_displays() !== 817) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_list_displays");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_list_host_sessions_json() !== 13193) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_list_host_sessions_json");
@@ -7725,34 +8891,49 @@ function uniffiEnsureInitialized() {
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_list_windows() !== 52601) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_list_windows");
     }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_manage_window() !== 28222) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_manage_window");
+    }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_metadata() !== 55026) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_metadata");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_move_cursor() !== 18320) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_move_cursor() !== 21389) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_move_cursor");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_parse_visual_regions() !== 15013) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_move_pointer() !== 44073) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_move_pointer");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_parse_visual_regions() !== 10668) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_parse_visual_regions");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_press_key() !== 63712) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_press_key() !== 32016) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_press_key");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_restore_window() !== 671) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_restore_window");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_runtime_scope_prefix() !== 2453) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_runtime_scope_prefix");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll() !== 52290) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll() !== 49363) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_enabled() !== 26268) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll_at() !== 40103) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll_at");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_semantic_action() !== 55516) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_semantic_action");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_enabled() !== 21045) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_enabled");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_motion() !== 12578) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_motion() !== 16213) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_motion");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_theme() !== 53908) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_theme() !== 42790) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_theme");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_set_window_frame() !== 6509) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_set_window_frame() !== 54966) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_set_window_frame");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_shutdown() !== 36331) {
@@ -7764,10 +8945,10 @@ function uniffiEnsureInitialized() {
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_start_session() !== 45055) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_start_session");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_type_text() !== 25156) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_type_text() !== 43997) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_type_text");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_verify_state() !== 26193) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriver_verify_state() !== 25548) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriver_verify_state");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_call_tool() !== 52859) {
@@ -7776,16 +8957,16 @@ function uniffiEnsureInitialized() {
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_click() !== 50816) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_click");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_read() !== 23560) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_read() !== 52452) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_read");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_write() !== 45732) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_write() !== 25499) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_write");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_close() !== 58108) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_close");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_drag() !== 5854) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_drag() !== 54279) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_drag");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_end_session() !== 42785) {
@@ -7794,16 +8975,19 @@ function uniffiEnsureInitialized() {
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_escalate_session() !== 34392) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_escalate_session");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_agent_cursor_state() !== 60344) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_agent_cursor_state() !== 19847) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_agent_cursor_state");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_cursor_position() !== 54838) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_cursor_position() !== 34312) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_cursor_position");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_desktop_state() !== 26695) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_desktop_state() !== 2479) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_desktop_state");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_screen_size() !== 9763) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_display_state() !== 54544) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_display_state");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_screen_size() !== 42028) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_screen_size");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_session() !== 54666) {
@@ -7812,17 +8996,26 @@ function uniffiEnsureInitialized() {
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_session_state() !== 55370) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_session_state");
     }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_control_state() !== 19940) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_control_state");
+    }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_state() !== 21266) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_state");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_hotkey() !== 12820) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_status() !== 5741) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_status");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_hotkey() !== 24505) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_hotkey");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_invoke_menu() !== 2742) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_invoke_menu() !== 42077) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_invoke_menu");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_apps() !== 51520) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_apps");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_displays() !== 64655) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_displays");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_sessions() !== 32840) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_sessions");
@@ -7830,37 +9023,52 @@ function uniffiEnsureInitialized() {
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_windows() !== 20571) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_windows");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_cursor() !== 35768) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_manage_window() !== 47105) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_manage_window");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_cursor() !== 49847) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_cursor");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_parse_visual_regions() !== 31748) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_pointer() !== 41326) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_pointer");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_parse_visual_regions() !== 61098) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_parse_visual_regions");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_press_key() !== 36768) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_press_key() !== 9986) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_press_key");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll() !== 8013) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_restore_window() !== 41398) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_restore_window");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll() !== 53968) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_enabled() !== 37153) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll_at() !== 44262) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll_at");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_semantic_action() !== 61709) {
+        throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_semantic_action");
+    }
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_enabled() !== 4362) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_enabled");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_motion() !== 26144) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_motion() !== 1184) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_motion");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_theme() !== 29734) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_theme() !== 35871) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_theme");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_window_frame() !== 65413) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_window_frame() !== 8743) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_window_frame");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_start_session() !== 13118) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_start_session");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_type_text() !== 63241) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_type_text() !== 8249) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_type_text");
     }
-    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_verify_state() !== 36472) {
+    if (nativeModule().uniffi_cua_driver_sdk_checksum_method_cuadriversession_verify_state() !== 58312) {
         throw new UniffiInternalError.ApiChecksumMismatch("uniffi_cua_driver_sdk_checksum_method_cuadriversession_verify_state");
     }
     if (nativeModule().uniffi_cua_driver_sdk_checksum_method_driveractivityobserver_on_activity() !== 9786) {
