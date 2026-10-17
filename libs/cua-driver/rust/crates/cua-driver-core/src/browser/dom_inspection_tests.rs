@@ -32,6 +32,8 @@ struct State {
     long_live_value: bool,
     distinct_attachment_ids: bool,
     geometry_missing_unique: bool,
+    native_geometry_fault: String,
+    native_geometry_calls: usize,
     geometry_context_fault: String,
     geometry_exception: bool,
     actionability_reply: Option<Value>,
@@ -88,22 +90,71 @@ impl BrowserPlatform for Platform {
         pid: i64,
         window_id: u64,
     ) -> Result<NativeWindowInfo, BrowserRefusal> {
+        let state = self.state.lock().unwrap();
         Ok(NativeWindowInfo {
             pid,
             window_id,
-            title: if self.state.lock().unwrap().selected {
+            title: if state.selected {
                 "Fixture"
             } else {
                 "Other tab"
             }
             .into(),
-            bounds: Rect::new(0., 0., 800., 600.),
+            bounds: Rect::new(
+                if state.native_geometry_fault == "window" && state.native_geometry_calls > 0 {
+                    1.
+                } else {
+                    0.
+                },
+                0.,
+                800.,
+                600.,
+            ),
             geometry_exact: true,
             ownership: NativeOwnershipProof {
                 method: NativeOwnershipMethod::WindowServerOwner,
                 owner_pid: pid,
                 detail: None,
             },
+        })
+    }
+    async fn native_browser_viewport(
+        &self,
+        _: i64,
+        _: u64,
+    ) -> Result<crate::browser::dom_geometry::NativeBrowserViewport, BrowserRefusal> {
+        let mut state = self.state.lock().unwrap();
+        state.native_geometry_calls += 1;
+        if state.native_geometry_fault == "unavailable" {
+            return Err(BrowserRefusal::new(
+                BrowserRefusalCode::BrowserRouteUnavailable,
+                "native RootWebArea pending",
+            ));
+        }
+        if state.native_geometry_fault == "navigation" {
+            state.navigated = true;
+        }
+        Ok(crate::browser::dom_geometry::NativeBrowserViewport {
+            window: Rect::new(0., 0., 800., 600.),
+            viewport: Rect::new(
+                10.,
+                100.,
+                if state.native_geometry_fault == "one_pixel" {
+                    751.
+                } else {
+                    750.
+                },
+                450.,
+            ),
+            source: "uia_root_web_area",
+            identity: vec![
+                42,
+                if state.native_geometry_fault == "identity" && state.native_geometry_calls > 1 {
+                    2
+                } else {
+                    1
+                },
+            ],
         })
     }
     async fn is_only_exact_native_window(
@@ -151,6 +202,8 @@ mod action_hit_tests;
 mod action_prepare_tests;
 #[path = "dom_action_tool_tests.rs"]
 mod action_tool_tests;
+#[path = "dom_native_geometry_tests.rs"]
+mod native_geometry_tests;
 struct Fixture {
     engine: Arc<BrowserEngine>,
     state: Arc<Mutex<State>>,
@@ -248,6 +301,7 @@ async fn bound() -> (Fixture, String, String) {
                 if !state.selected || state.duplicate_title { targets.push(json!({"targetId":"T2","type":"page","title":if state.duplicate_title {"Fixture"} else {"Other tab"},"url":"https://other.test/"})); }
                 json!({"targetInfos":targets})
             },
+            "Browser.getVersion"=>json!({"product":"Chrome/145.0.fixture","revision":"@fixture-revision"}),
             "Browser.getWindowForTarget"=>json!({"windowId":1,"bounds":{"left":0,"top":0,"width":800,"height":600,"windowState":"normal"}}),
             "Browser.getWindowBounds"=>json!({"bounds":{"left":0,"top":0,"width":800,"height":600,"windowState":"normal"}}),
             "Target.attachToTarget"=>json!({"sessionId":if state.distinct_attachment_ids {
@@ -344,6 +398,16 @@ async fn bound() -> (Fixture, String, String) {
                     if state.actionability_sample_changes && state.actionability_reads>=2 {reply["result"]["value"]["bounds"][0]=json!(11.5);}
                     reply
                 } else {
+                    if function == crate::browser::dom_native_sample::READ_FUNCTION {
+                        return MockReply::ok(json!({"result":{"type":"object","value":{
+                            "connected":!state.geometry_detaches,"same_document":true,
+                            "bounds":{"x":10.5,"y":if state.native_geometry_fault=="css" && state.native_geometry_calls > 0 {21.25} else {20.25},"width":80.0,"height":30.0},
+                            "scroll":{"x":0.0,"y":120.0},
+                            "layout_viewport":{"width":500.0,"height":300.0,"dpr":1.5},
+                            "visual_viewport":{"offset_x":0.0,"offset_y":0.0,"page_x":0.0,"page_y":120.0,
+                                "width":500.0,"height":300.0,"scale":1.0}
+                        }}}));
+                    }
                     assert_eq!(call.params["functionDeclaration"], crate::browser::dom_cssom_sample::READ_FUNCTION);
                     json!({"result":{"type":"object","value":{
                         "connected":!state.geometry_detaches,"same_document":true,
@@ -367,7 +431,7 @@ async fn bound() -> (Fixture, String, String) {
             "Page.createIsolatedWorld"=> {
                 assert_eq!(call.params["frameId"],"F_MAIN");
                 assert_eq!(call.params["grantUniveralAccess"],false);
-                if matches!(call.params["worldName"].as_str(), Some("cua-driver-dom-geometry" | "cua-driver-dom-actionability" | "cua-driver-dom-actions")) {
+                if matches!(call.params["worldName"].as_str(), Some("cua-driver-dom-geometry" | "cua-driver-dom-native-geometry" | "cua-driver-dom-actionability" | "cua-driver-dom-actions")) {
                     let world_name = call.params["worldName"].as_str().unwrap();
                     let fault = state.geometry_context_fault.as_str();
                     let event = crate::browser::mock_cdp::MockEvent {
