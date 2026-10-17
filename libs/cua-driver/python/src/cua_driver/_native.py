@@ -526,11 +526,11 @@ def _uniffi_check_api_checksums(lib):
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_click() != 22807:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_read() != 58238:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_read() != 28653:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_write() != 8399:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_clipboard_write() != 29199:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_drag() != 25742:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_drag() != 2443:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_end_session() != 18486:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
@@ -538,27 +538,35 @@ def _uniffi_check_api_checksums(lib):
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_execution_mode() != 2639:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_agent_cursor_state() != 45642:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_agent_cursor_state() != 55114:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_cursor_position() != 34285:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_cursor_position() != 24536:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_desktop_state() != 65084:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_desktop_state() != 4133:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_screen_size() != 55616:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_display_state() != 52952:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_screen_size() != 23081:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_session() != 17834:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_session_state() != 49966:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_control_state() != 30553:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_state() != 62142:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_hotkey() != 53333:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_status() != 4119:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_invoke_menu() != 13118:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_hotkey() != 18894:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_invoke_menu() != 15322:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_is_available() != 42961:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_apps() != 35505:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_displays() != 817:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_host_sessions_json() != 13193:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
@@ -568,25 +576,35 @@ def _uniffi_check_api_checksums(lib):
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_windows() != 52601:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_manage_window() != 28222:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_metadata() != 55026:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_move_cursor() != 18320:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_move_cursor() != 21389:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_parse_visual_regions() != 15013:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_move_pointer() != 44073:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_press_key() != 63712:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_parse_visual_regions() != 10668:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_press_key() != 32016:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_restore_window() != 671:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_runtime_scope_prefix() != 2453:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll() != 52290:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll() != 49363:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_enabled() != 26268:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll_at() != 40103:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_motion() != 12578:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_semantic_action() != 55516:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_theme() != 53908:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_enabled() != 21045:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_window_frame() != 6509:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_motion() != 16213:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_theme() != 42790:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_window_frame() != 54966:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_shutdown() != 36331:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
@@ -594,71 +612,89 @@ def _uniffi_check_api_checksums(lib):
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_start_session() != 45055:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_type_text() != 25156:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_type_text() != 43997:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_verify_state() != 26193:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriver_verify_state() != 25548:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_call_tool() != 52859:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_click() != 50816:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_read() != 23560:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_read() != 52452:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_write() != 45732:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_clipboard_write() != 25499:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_close() != 58108:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_drag() != 5854:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_drag() != 54279:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_end_session() != 42785:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_escalate_session() != 34392:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_agent_cursor_state() != 60344:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_agent_cursor_state() != 19847:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_cursor_position() != 54838:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_cursor_position() != 34312:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_desktop_state() != 26695:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_desktop_state() != 2479:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_screen_size() != 9763:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_display_state() != 54544:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_screen_size() != 42028:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_session() != 54666:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_session_state() != 55370:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_control_state() != 19940:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_state() != 21266:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_hotkey() != 12820:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_status() != 5741:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_invoke_menu() != 2742:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_hotkey() != 24505:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_invoke_menu() != 42077:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_apps() != 51520:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_displays() != 64655:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_sessions() != 32840:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_windows() != 20571:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_cursor() != 35768:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_manage_window() != 47105:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_parse_visual_regions() != 31748:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_cursor() != 49847:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_press_key() != 36768:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_pointer() != 41326:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll() != 8013:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_parse_visual_regions() != 61098:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_enabled() != 37153:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_press_key() != 9986:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_motion() != 26144:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_restore_window() != 41398:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_theme() != 29734:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll() != 53968:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_window_frame() != 65413:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll_at() != 44262:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_semantic_action() != 61709:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_enabled() != 4362:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_motion() != 1184:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_theme() != 35871:
+        raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_window_frame() != 8743:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_start_session() != 13118:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_type_text() != 63241:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_type_text() != 8249:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
-    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_verify_state() != 36472:
+    if lib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_verify_state() != 58312:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     if lib.uniffi_cua_driver_sdk_checksum_method_driveractivityobserver_on_activity() != 9786:
         raise InternalError("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
@@ -1314,6 +1350,11 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_desktop_state.argtypes 
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_desktop_state.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_display_state.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_display_state.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_screen_size.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
@@ -1329,11 +1370,21 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_session_state.argtypes 
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_session_state.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_control_state.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_control_state.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_state.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_state.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_status.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_status.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_hotkey.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
@@ -1354,6 +1405,11 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_list_apps.argtypes = (
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_list_apps.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_list_displays.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_list_displays.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_list_host_sessions_json.argtypes = (
     ctypes.c_uint64,
 )
@@ -1372,6 +1428,11 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_list_windows.argtypes = (
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_list_windows.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_manage_window.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_manage_window.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_metadata.argtypes = (
     ctypes.c_uint64,
 )
@@ -1381,6 +1442,11 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_move_cursor.argtypes = (
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_move_cursor.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_move_pointer.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_move_pointer.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_parse_visual_regions.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
@@ -1391,6 +1457,11 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_press_key.argtypes = (
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_press_key.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_restore_window.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_restore_window.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_runtime_scope_prefix.argtypes = (
     ctypes.c_uint64,
     ctypes.POINTER(_UniffiRustCallStatus),
@@ -1401,6 +1472,16 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_scroll.argtypes = (
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_scroll.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_scroll_at.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_scroll_at.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_semantic_action.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_semantic_action.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_set_agent_cursor_enabled.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
@@ -1501,6 +1582,11 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_desktop_state.ar
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_desktop_state.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_display_state.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_display_state.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_screen_size.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
@@ -1516,11 +1602,21 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_session_state.ar
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_session_state.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_control_state.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_control_state.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_state.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_state.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_status.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_status.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_hotkey.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
@@ -1536,6 +1632,11 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_list_apps.argtypes =
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_list_apps.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_list_displays.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_list_displays.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_list_sessions.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
@@ -1546,11 +1647,21 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_list_windows.argtype
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_list_windows.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_manage_window.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_manage_window.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_move_cursor.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_move_cursor.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_move_pointer.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_move_pointer.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_parse_visual_regions.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
@@ -1561,11 +1672,26 @@ _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_press_key.argtypes =
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_press_key.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_restore_window.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_restore_window.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_scroll.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
 )
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_scroll.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_scroll_at.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_scroll_at.restype = ctypes.c_uint64
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_semantic_action.argtypes = (
+    ctypes.c_uint64,
+    cua_driver._native_contract._UniffiRustBuffer,
+)
+_UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_semantic_action.restype = ctypes.c_uint64
 _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_set_agent_cursor_enabled.argtypes = (
     ctypes.c_uint64,
     cua_driver._native_contract._UniffiRustBuffer,
@@ -1800,6 +1926,9 @@ _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_cursor_position.r
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_desktop_state.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_desktop_state.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_display_state.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_display_state.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_screen_size.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_screen_size.restype = ctypes.c_uint16
@@ -1809,9 +1938,15 @@ _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_session.restype =
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_session_state.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_session_state.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_control_state.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_control_state.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_state.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_state.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_status.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_get_window_status.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_hotkey.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_hotkey.restype = ctypes.c_uint16
@@ -1824,6 +1959,9 @@ _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_is_available.restype 
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_apps.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_apps.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_displays.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_displays.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_host_sessions_json.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_host_sessions_json.restype = ctypes.c_uint16
@@ -1836,24 +1974,39 @@ _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_tools_json.resty
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_windows.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_list_windows.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_manage_window.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_manage_window.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_metadata.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_metadata.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_move_cursor.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_move_cursor.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_move_pointer.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_move_pointer.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_parse_visual_regions.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_parse_visual_regions.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_press_key.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_press_key.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_restore_window.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_restore_window.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_runtime_scope_prefix.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_runtime_scope_prefix.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll_at.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_scroll_at.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_semantic_action.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_semantic_action.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_enabled.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriver_set_agent_cursor_enabled.restype = ctypes.c_uint16
@@ -1914,6 +2067,9 @@ _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_cursor_pos
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_desktop_state.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_desktop_state.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_display_state.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_display_state.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_screen_size.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_screen_size.restype = ctypes.c_uint16
@@ -1923,9 +2079,15 @@ _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_session.re
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_session_state.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_session_state.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_control_state.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_control_state.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_state.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_state.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_status.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_get_window_status.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_hotkey.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_hotkey.restype = ctypes.c_uint16
@@ -1935,24 +2097,42 @@ _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_invoke_menu.re
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_apps.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_apps.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_displays.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_displays.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_sessions.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_sessions.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_windows.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_list_windows.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_manage_window.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_manage_window.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_cursor.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_cursor.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_pointer.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_move_pointer.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_parse_visual_regions.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_parse_visual_regions.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_press_key.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_press_key.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_restore_window.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_restore_window.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll_at.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_scroll_at.restype = ctypes.c_uint16
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_semantic_action.argtypes = (
+)
+_UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_semantic_action.restype = ctypes.c_uint16
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_enabled.argtypes = (
 )
 _UniffiLib.uniffi_cua_driver_sdk_checksum_method_cuadriversession_set_agent_cursor_enabled.restype = ctypes.c_uint16
@@ -5578,6 +5758,24 @@ class _UniffiFfiConverterTypeSdkClientKind(_UniffiConverterRustBuffer):
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 class CuaDriverProtocol(typing.Protocol):
 
     async def call_tool(self, name: str,arguments_json: str) -> ToolResult:
@@ -5590,10 +5788,25 @@ class CuaDriverProtocol(typing.Protocol):
     async def click(self, input: cua_driver._native_contract.ClickInput) -> cua_driver._native_contract.ActionResult:
         raise NotImplementedError
     async def clipboard_read(self, input: cua_driver._native_contract.ClipboardReadInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def clipboard_write(self, input: cua_driver._native_contract.ClipboardWriteInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def drag(self, input: cua_driver._native_contract.DragInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def end_session(self, input: cua_driver._native_contract.EndSessionInput) -> cua_driver._native_contract.EndSessionOutput:
         raise NotImplementedError
@@ -5602,26 +5815,84 @@ class CuaDriverProtocol(typing.Protocol):
     def execution_mode(self, ) -> DriverExecutionMode:
         raise NotImplementedError
     async def get_agent_cursor_state(self, input: cua_driver._native_contract.GetAgentCursorStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def get_cursor_position(self, input: cua_driver._native_contract.GetCursorPositionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def get_desktop_state(self, input: cua_driver._native_contract.GetDesktopStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+        raise NotImplementedError
+    async def get_display_state(self, input: cua_driver._native_contract.GetDisplayStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def get_screen_size(self, input: cua_driver._native_contract.GetScreenSizeInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def get_session(self, input: cua_driver._native_contract.GetSessionInput) -> cua_driver._native_contract.SessionOutput:
         raise NotImplementedError
     async def get_session_state(self, input: cua_driver._native_contract.GetSessionStateInput) -> cua_driver._native_contract.SessionStateOutput:
         raise NotImplementedError
+    async def get_window_control_state(self, input: cua_driver._native_contract.WindowControlStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+        raise NotImplementedError
     async def get_window_state(self, input: cua_driver._native_contract.GetWindowStateInput) -> cua_driver._native_contract.WindowStateOutput:
         raise NotImplementedError
+    async def get_window_status(self, input: cua_driver._native_contract.WindowStatusInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+        raise NotImplementedError
     async def hotkey(self, input: cua_driver._native_contract.HotkeyInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def invoke_menu(self, input: cua_driver._native_contract.InvokeMenuInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     def is_available(self, ) -> bool:
         raise NotImplementedError
     async def list_apps(self, input: cua_driver._native_contract.ListAppsInput) -> cua_driver._native_contract.ListAppsOutput:
+        raise NotImplementedError
+    async def list_displays(self, input: cua_driver._native_contract.ListDisplaysInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def list_host_sessions_json(self, ) -> str:
         """
@@ -5639,25 +5910,100 @@ class CuaDriverProtocol(typing.Protocol):
         raise NotImplementedError
     async def list_windows(self, input: cua_driver._native_contract.ListWindowsInput) -> cua_driver._native_contract.ListWindowsOutput:
         raise NotImplementedError
+    async def manage_window(self, input: cua_driver._native_contract.WindowManagementInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+        raise NotImplementedError
     async def metadata(self, ) -> DriverMetadata:
         raise NotImplementedError
     async def move_cursor(self, input: cua_driver._native_contract.MoveCursorInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+        raise NotImplementedError
+    async def move_pointer(self, input: cua_driver._native_contract.PointerMoveInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def parse_visual_regions(self, input: cua_driver._native_contract.ParseVisualRegionsInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def press_key(self, input: cua_driver._native_contract.PressKeyInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+        raise NotImplementedError
+    async def restore_window(self, input: cua_driver._native_contract.WindowRestoreInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     def runtime_scope_prefix(self, ) -> typing.Optional[str]:
         raise NotImplementedError
     async def scroll(self, input: cua_driver._native_contract.ScrollInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+        raise NotImplementedError
+    async def scroll_at(self, input: cua_driver._native_contract.PointerScrollInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+        raise NotImplementedError
+    async def semantic_action(self, input: cua_driver._native_contract.SemanticActionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def set_agent_cursor_enabled(self, input: cua_driver._native_contract.SetAgentCursorEnabledInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def set_agent_cursor_motion(self, input: cua_driver._native_contract.SetAgentCursorMotionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def set_agent_cursor_theme(self, input: cua_driver._native_contract.SetAgentCursorThemeInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def set_window_frame(self, input: cua_driver._native_contract.SetWindowFrameInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def shutdown(self, ) -> None:
         """
@@ -5674,8 +6020,18 @@ class CuaDriverProtocol(typing.Protocol):
     async def start_session(self, input: cua_driver._native_contract.StartSessionInput) -> cua_driver._native_contract.StartSessionOutput:
         raise NotImplementedError
     async def type_text(self, input: cua_driver._native_contract.TypeTextInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
     async def verify_state(self, input: cua_driver._native_contract.VerifyStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
         raise NotImplementedError
 
 class CuaDriver(CuaDriverProtocol):
@@ -6060,6 +6416,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def clipboard_read(self, input: cua_driver._native_contract.ClipboardReadInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeClipboardReadInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6077,6 +6438,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def clipboard_write(self, input: cua_driver._native_contract.ClipboardWriteInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeClipboardWriteInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6094,6 +6460,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def drag(self, input: cua_driver._native_contract.DragInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeDragInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6157,6 +6528,11 @@ class CuaDriver(CuaDriverProtocol):
         )
         return _uniffi_lift_return(_uniffi_ffi_result)
     async def get_agent_cursor_state(self, input: cua_driver._native_contract.GetAgentCursorStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetAgentCursorStateInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6174,6 +6550,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def get_cursor_position(self, input: cua_driver._native_contract.GetCursorPositionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetCursorPositionInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6191,6 +6572,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def get_desktop_state(self, input: cua_driver._native_contract.GetDesktopStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetDesktopStateInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6207,7 +6593,34 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def get_display_state(self, input: cua_driver._native_contract.GetDisplayStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeGetDisplayStateInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeGetDisplayStateInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_display_state(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def get_screen_size(self, input: cua_driver._native_contract.GetScreenSizeInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetScreenSizeInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6258,6 +6671,28 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def get_window_control_state(self, input: cua_driver._native_contract.WindowControlStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeWindowControlStateInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeWindowControlStateInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_control_state(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def get_window_state(self, input: cua_driver._native_contract.GetWindowStateInput) -> cua_driver._native_contract.WindowStateOutput:
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetWindowStateInput.check_lower(input)
@@ -6275,7 +6710,34 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def get_window_status(self, input: cua_driver._native_contract.WindowStatusInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeWindowStatusInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeWindowStatusInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_get_window_status(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def hotkey(self, input: cua_driver._native_contract.HotkeyInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeHotkeyInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6293,6 +6755,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def invoke_menu(self, input: cua_driver._native_contract.InvokeMenuInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeInvokeMenuInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6332,6 +6799,28 @@ class CuaDriver(CuaDriverProtocol):
         _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
         return await _uniffi_rust_call_async(
             _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_list_apps(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
+    async def list_displays(self, input: cua_driver._native_contract.ListDisplaysInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeListDisplaysInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeListDisplaysInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_list_displays(*_uniffi_lowered_args),
             _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
             _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
             _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
@@ -6408,6 +6897,28 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def manage_window(self, input: cua_driver._native_contract.WindowManagementInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeWindowManagementInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeWindowManagementInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_manage_window(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def metadata(self, ) -> DriverMetadata:
         _uniffi_lowered_args = (
             self._uniffi_clone_handle(),
@@ -6423,6 +6934,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def move_cursor(self, input: cua_driver._native_contract.MoveCursorInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeMoveCursorInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6439,7 +6955,34 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def move_pointer(self, input: cua_driver._native_contract.PointerMoveInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypePointerMoveInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypePointerMoveInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_move_pointer(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def parse_visual_regions(self, input: cua_driver._native_contract.ParseVisualRegionsInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeParseVisualRegionsInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6457,6 +7000,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def press_key(self, input: cua_driver._native_contract.PressKeyInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypePressKeyInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6467,6 +7015,28 @@ class CuaDriver(CuaDriverProtocol):
         _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
         return await _uniffi_rust_call_async(
             _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_press_key(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
+    async def restore_window(self, input: cua_driver._native_contract.WindowRestoreInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeWindowRestoreInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeWindowRestoreInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_restore_window(*_uniffi_lowered_args),
             _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
             _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
             _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
@@ -6486,6 +7056,11 @@ class CuaDriver(CuaDriverProtocol):
         )
         return _uniffi_lift_return(_uniffi_ffi_result)
     async def scroll(self, input: cua_driver._native_contract.ScrollInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeScrollInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6502,7 +7077,56 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def scroll_at(self, input: cua_driver._native_contract.PointerScrollInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypePointerScrollInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypePointerScrollInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_scroll_at(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
+    async def semantic_action(self, input: cua_driver._native_contract.SemanticActionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeSemanticActionInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeSemanticActionInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriver_semantic_action(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def set_agent_cursor_enabled(self, input: cua_driver._native_contract.SetAgentCursorEnabledInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeSetAgentCursorEnabledInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6520,6 +7144,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def set_agent_cursor_motion(self, input: cua_driver._native_contract.SetAgentCursorMotionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeSetAgentCursorMotionInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6537,6 +7166,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def set_agent_cursor_theme(self, input: cua_driver._native_contract.SetAgentCursorThemeInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeSetAgentCursorThemeInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6554,6 +7188,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def set_window_frame(self, input: cua_driver._native_contract.SetWindowFrameInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeSetWindowFrameInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6622,6 +7261,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def type_text(self, input: cua_driver._native_contract.TypeTextInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeTypeTextInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6639,6 +7283,11 @@ class CuaDriver(CuaDriverProtocol):
             _uniffi_error_converter,
         )
     async def verify_state(self, input: cua_driver._native_contract.VerifyStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool with validated input.
+        Native platform limitations, refusals and observations remain
+        in the result; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeVerifyStateInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6693,8 +7342,18 @@ class CuaDriverSessionProtocol(typing.Protocol):
     async def click(self, input: cua_driver._native_contract.ClickInput) -> cua_driver._native_contract.ActionResult:
         raise NotImplementedError
     async def clipboard_read(self, input: cua_driver._native_contract.ClipboardReadInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def clipboard_write(self, input: cua_driver._native_contract.ClipboardWriteInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     def close(self, ) -> None:
         """
@@ -6705,56 +7364,204 @@ class CuaDriverSessionProtocol(typing.Protocol):
 """
         raise NotImplementedError
     async def drag(self, input: cua_driver._native_contract.DragInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def end_session(self, input: cua_driver._native_contract.EndSessionInput) -> cua_driver._native_contract.EndSessionOutput:
         raise NotImplementedError
     async def escalate_session(self, input: cua_driver._native_contract.EscalateSessionInput) -> cua_driver._native_contract.SessionStateOutput:
         raise NotImplementedError
     async def get_agent_cursor_state(self, input: cua_driver._native_contract.GetAgentCursorStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def get_cursor_position(self, input: cua_driver._native_contract.GetCursorPositionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def get_desktop_state(self, input: cua_driver._native_contract.GetDesktopStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+        raise NotImplementedError
+    async def get_display_state(self, input: cua_driver._native_contract.GetDisplayStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def get_screen_size(self, input: cua_driver._native_contract.GetScreenSizeInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def get_session(self, input: cua_driver._native_contract.GetSessionInput) -> cua_driver._native_contract.SessionOutput:
         raise NotImplementedError
     async def get_session_state(self, input: cua_driver._native_contract.GetSessionStateInput) -> cua_driver._native_contract.SessionStateOutput:
         raise NotImplementedError
+    async def get_window_control_state(self, input: cua_driver._native_contract.WindowControlStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+        raise NotImplementedError
     async def get_window_state(self, input: cua_driver._native_contract.GetWindowStateInput) -> cua_driver._native_contract.WindowStateOutput:
         raise NotImplementedError
+    async def get_window_status(self, input: cua_driver._native_contract.WindowStatusInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+        raise NotImplementedError
     async def hotkey(self, input: cua_driver._native_contract.HotkeyInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def invoke_menu(self, input: cua_driver._native_contract.InvokeMenuInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def list_apps(self, input: cua_driver._native_contract.ListAppsInput) -> cua_driver._native_contract.ListAppsOutput:
+        raise NotImplementedError
+    async def list_displays(self, input: cua_driver._native_contract.ListDisplaysInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def list_sessions(self, input: cua_driver._native_contract.ListSessionsInput) -> cua_driver._native_contract.ListSessionsOutput:
         raise NotImplementedError
     async def list_windows(self, input: cua_driver._native_contract.ListWindowsInput) -> cua_driver._native_contract.ListWindowsOutput:
         raise NotImplementedError
+    async def manage_window(self, input: cua_driver._native_contract.WindowManagementInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+        raise NotImplementedError
     async def move_cursor(self, input: cua_driver._native_contract.MoveCursorInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+        raise NotImplementedError
+    async def move_pointer(self, input: cua_driver._native_contract.PointerMoveInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def parse_visual_regions(self, input: cua_driver._native_contract.ParseVisualRegionsInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def press_key(self, input: cua_driver._native_contract.PressKeyInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+        raise NotImplementedError
+    async def restore_window(self, input: cua_driver._native_contract.WindowRestoreInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def scroll(self, input: cua_driver._native_contract.ScrollInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+        raise NotImplementedError
+    async def scroll_at(self, input: cua_driver._native_contract.PointerScrollInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+        raise NotImplementedError
+    async def semantic_action(self, input: cua_driver._native_contract.SemanticActionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def set_agent_cursor_enabled(self, input: cua_driver._native_contract.SetAgentCursorEnabledInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def set_agent_cursor_motion(self, input: cua_driver._native_contract.SetAgentCursorMotionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def set_agent_cursor_theme(self, input: cua_driver._native_contract.SetAgentCursorThemeInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def set_window_frame(self, input: cua_driver._native_contract.SetWindowFrameInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def start_session(self, input: cua_driver._native_contract.StartSessionInput) -> cua_driver._native_contract.StartSessionOutput:
         raise NotImplementedError
     async def type_text(self, input: cua_driver._native_contract.TypeTextInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
     async def verify_state(self, input: cua_driver._native_contract.VerifyStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
         raise NotImplementedError
 
 class CuaDriverSession(CuaDriverSessionProtocol):
@@ -6819,6 +7626,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def clipboard_read(self, input: cua_driver._native_contract.ClipboardReadInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeClipboardReadInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6836,6 +7648,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def clipboard_write(self, input: cua_driver._native_contract.ClipboardWriteInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeClipboardWriteInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6871,6 +7688,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
         )
         return _uniffi_lift_return(_uniffi_ffi_result)
     async def drag(self, input: cua_driver._native_contract.DragInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeDragInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6922,6 +7744,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def get_agent_cursor_state(self, input: cua_driver._native_contract.GetAgentCursorStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetAgentCursorStateInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6939,6 +7766,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def get_cursor_position(self, input: cua_driver._native_contract.GetCursorPositionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetCursorPositionInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6956,6 +7788,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def get_desktop_state(self, input: cua_driver._native_contract.GetDesktopStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetDesktopStateInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -6972,7 +7809,34 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def get_display_state(self, input: cua_driver._native_contract.GetDisplayStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeGetDisplayStateInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeGetDisplayStateInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_display_state(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def get_screen_size(self, input: cua_driver._native_contract.GetScreenSizeInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetScreenSizeInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7023,6 +7887,28 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def get_window_control_state(self, input: cua_driver._native_contract.WindowControlStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeWindowControlStateInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeWindowControlStateInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_control_state(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def get_window_state(self, input: cua_driver._native_contract.GetWindowStateInput) -> cua_driver._native_contract.WindowStateOutput:
 
         cua_driver._native_contract._UniffiFfiConverterTypeGetWindowStateInput.check_lower(input)
@@ -7040,7 +7926,34 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def get_window_status(self, input: cua_driver._native_contract.WindowStatusInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeWindowStatusInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeWindowStatusInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_get_window_status(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def hotkey(self, input: cua_driver._native_contract.HotkeyInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeHotkeyInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7058,6 +7971,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def invoke_menu(self, input: cua_driver._native_contract.InvokeMenuInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeInvokeMenuInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7085,6 +8003,28 @@ class CuaDriverSession(CuaDriverSessionProtocol):
         _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
         return await _uniffi_rust_call_async(
             _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_list_apps(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
+    async def list_displays(self, input: cua_driver._native_contract.ListDisplaysInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeListDisplaysInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeListDisplaysInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_list_displays(*_uniffi_lowered_args),
             _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
             _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
             _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
@@ -7125,7 +8065,34 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def manage_window(self, input: cua_driver._native_contract.WindowManagementInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeWindowManagementInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeWindowManagementInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_manage_window(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def move_cursor(self, input: cua_driver._native_contract.MoveCursorInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeMoveCursorInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7142,7 +8109,34 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def move_pointer(self, input: cua_driver._native_contract.PointerMoveInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypePointerMoveInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypePointerMoveInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_move_pointer(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def parse_visual_regions(self, input: cua_driver._native_contract.ParseVisualRegionsInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeParseVisualRegionsInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7160,6 +8154,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def press_key(self, input: cua_driver._native_contract.PressKeyInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypePressKeyInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7176,7 +8175,34 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def restore_window(self, input: cua_driver._native_contract.WindowRestoreInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeWindowRestoreInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeWindowRestoreInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_restore_window(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def scroll(self, input: cua_driver._native_contract.ScrollInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeScrollInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7193,7 +8219,56 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_lift_return,
             _uniffi_error_converter,
         )
+    async def scroll_at(self, input: cua_driver._native_contract.PointerScrollInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypePointerScrollInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypePointerScrollInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_scroll_at(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
+    async def semantic_action(self, input: cua_driver._native_contract.SemanticActionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
+
+        cua_driver._native_contract._UniffiFfiConverterTypeSemanticActionInput.check_lower(input)
+        _uniffi_lowered_args = (
+            self._uniffi_clone_handle(),
+            cua_driver._native_contract._UniffiFfiConverterTypeSemanticActionInput.lower(input),
+        )
+        _uniffi_lift_return = _UniffiFfiConverterTypeToolResult.lift
+        _uniffi_error_converter = _UniffiFfiConverterTypeDriverError
+        return await _uniffi_rust_call_async(
+            _UniffiLib.uniffi_cua_driver_sdk_fn_method_cuadriversession_semantic_action(*_uniffi_lowered_args),
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_poll_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_complete_rust_buffer,
+            _UniffiLib.ffi_cua_driver_sdk_rust_future_free_rust_buffer,
+            _uniffi_lift_return,
+            _uniffi_error_converter,
+        )
     async def set_agent_cursor_enabled(self, input: cua_driver._native_contract.SetAgentCursorEnabledInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeSetAgentCursorEnabledInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7211,6 +8286,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def set_agent_cursor_motion(self, input: cua_driver._native_contract.SetAgentCursorMotionInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeSetAgentCursorMotionInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7228,6 +8308,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def set_agent_cursor_theme(self, input: cua_driver._native_contract.SetAgentCursorThemeInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeSetAgentCursorThemeInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7245,6 +8330,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def set_window_frame(self, input: cua_driver._native_contract.SetWindowFrameInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeSetWindowFrameInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7279,6 +8369,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def type_text(self, input: cua_driver._native_contract.TypeTextInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeTypeTextInput.check_lower(input)
         _uniffi_lowered_args = (
@@ -7296,6 +8391,11 @@ class CuaDriverSession(CuaDriverSessionProtocol):
             _uniffi_error_converter,
         )
     async def verify_state(self, input: cua_driver._native_contract.VerifyStateInput) -> ToolResult:
+        """
+        Dispatch this canonical tool within the bound session.
+        Input validation, native limitations and refusal/observation
+        metadata are preserved; no fallback is added.
+"""
 
         cua_driver._native_contract._UniffiFfiConverterTypeVerifyStateInput.check_lower(input)
         _uniffi_lowered_args = (
