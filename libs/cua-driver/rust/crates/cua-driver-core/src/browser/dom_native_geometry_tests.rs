@@ -36,6 +36,20 @@ async fn native_projection_brackets_css_and_native_source_without_authority() {
     assert_eq!(result["source"]["context_unique_id"], "unique-main-77");
     assert_eq!(result["native"]["source"], "uia_root_web_area");
     assert_eq!(
+        result["native"]["window"],
+        json!({"x":0.0,"y":0.0,"width":1200.0,"height":900.0})
+    );
+    assert_eq!(
+        result["native"]["viewport"],
+        json!({"x":10.0,"y":100.0,"width":750.0,"height":450.0})
+    );
+    assert_eq!(result["css_sample"]["layout_viewport"]["dpr"], 1.5);
+    assert_eq!(
+        f.engine.platform.native_window(1, 7).await.unwrap().bounds,
+        Rect::new(0., 0., 800., 600.),
+        "CDP-correlation geometry stays in DIP instead of being fitted to physical pixels"
+    );
+    assert_eq!(
         result["browser_version"],
         json!({"product":"Chrome/145.0.fixture","revision":"@fixture-revision"})
     );
@@ -79,6 +93,7 @@ async fn native_projection_refuses_source_changes_and_never_falls_back_to_css() 
         ("one_pixel", "browser_route_unavailable"),
         ("identity", "browser_ref_stale"),
         ("window", "browser_ref_stale"),
+        ("physical_window", "browser_ref_stale"),
         ("css", "browser_ref_stale"),
         ("navigation", "browser_ref_stale"),
         ("unavailable", "browser_route_unavailable"),
@@ -94,6 +109,12 @@ async fn native_projection_refuses_source_changes_and_never_falls_back_to_css() 
         assert_eq!(result["refusal"]["code"], code, "{fault}: {result}");
         assert!(result.get("physical_enclosing_rect").is_none(), "{fault}");
         let state = f.state.lock().unwrap();
+        if matches!(fault, "window" | "physical_window") {
+            assert_eq!(
+                state.native_geometry_calls, 2,
+                "{fault}: compare both physical samples and retain independent DIP continuity"
+            );
+        }
         assert!(state
             .calls
             .iter()
