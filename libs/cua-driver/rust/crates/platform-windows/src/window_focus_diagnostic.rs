@@ -136,3 +136,146 @@ impl FocusApi for NativeApi {
 pub(crate) fn focus(target: windows::Win32::Foundation::HWND) -> (bool, FocusDiagnostic) {
     attempt(&mut NativeApi(target))
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Api {
+        source: FocusSource,
+        attach: AttachmentReturn,
+        detach: AttachmentReturn,
+        activation: bool,
+        foregrounds: std::collections::VecDeque<u64>,
+        calls: Vec<&'static str>,
+    }
+    impl FocusApi for Api {
+        fn source(&mut self) -> FocusSource {
+            self.calls.push("source");
+            self.source
+        }
+        fn attach(&mut self, current: u32, foreground: u32, attach: bool) -> AttachmentReturn {
+            assert_eq!((current, foreground), (7, 8));
+            self.calls.push(if attach { "attach" } else { "detach" });
+            if attach {
+                self.attach
+            } else {
+                self.detach
+            }
+        }
+        fn activate(&mut self, target: u64) -> bool {
+            assert_eq!(target, 91);
+            self.calls.push("activate");
+            self.activation
+        }
+        fn foreground(&mut self) -> u64 {
+            self.calls.push("foreground");
+            self.foregrounds.pop_front().expect("no extra native read")
+        }
+    }
+    fn fake() -> Api {
+        Api {
+            source: FocusSource {
+                current_thread_id: 7,
+                foreground_thread_id: 8,
+                target_thread_id: 9,
+                foreground_window: 90,
+                target_window: 91,
+            },
+            attach: AttachmentReturn {
+                succeeded: true,
+                error: None,
+            },
+            detach: AttachmentReturn {
+                succeeded: true,
+                error: None,
+            },
+            activation: true,
+            foregrounds: [91, 91].into(),
+            calls: vec![],
+        }
+    }
+    #[test]
+    fn one_attempt_retains_each_api_return_without_inventing_a_cause() {
+        let mut api = fake();
+        api.attach = AttachmentReturn {
+            succeeded: false,
+            error: Some(5),
+        };
+        api.activation = false;
+        api.detach = AttachmentReturn {
+            succeeded: false,
+            error: Some(87),
+        };
+        api.foregrounds = [90, 90].into();
+        let (confirmed, diagnostic) = attempt(&mut api);
+        assert!(!confirmed);
+        assert_eq!(
+            api.calls,
+            [
+                "source",
+                "attach",
+                "activate",
+                "foreground",
+                "detach",
+                "foreground"
+            ]
+        );
+        let value = serde_json::to_value(diagnostic).unwrap();
+        assert_eq!(
+            value["attachment_return"],
+            serde_json::json!({"succeeded":false,"error":5})
+        );
+        assert_eq!(value["attachment_owned"], false);
+        assert_eq!(value["detachment_requested"], true);
+        assert_eq!(
+            value["detachment_return"],
+            serde_json::json!({"succeeded":false,"error":87})
+        );
+        assert_eq!(value["activation_return"], false);
+        assert_eq!(value["cause"], "not_determined");
+        assert_eq!(value.as_object().unwrap().len(), 11);
+    }
+    #[test]
+    fn final_hwnd_not_activation_bool_owns_the_existing_success_criterion() {
+        let mut api = fake();
+        api.activation = false;
+        let (confirmed, diagnostic) = attempt(&mut api);
+        assert!(confirmed);
+        assert!(diagnostic.attachment_owned);
+        assert_eq!(diagnostic.activation_return, Some(false));
+        let mut api = fake();
+        api.foregrounds = [91, 90].into();
+        assert!(
+            !attempt(&mut api).0,
+            "foreground loss during detach must not confirm"
+        );
+    }
+    #[test]
+    fn already_foreground_has_no_activation_or_attachment_outcome() {
+        let mut api = fake();
+        api.source.foreground_window = 91;
+        let (confirmed, diagnostic) = attempt(&mut api);
+        assert!(confirmed);
+        assert_eq!(api.calls, ["source"]);
+        assert!(!diagnostic.attachment_requested);
+        assert!(!diagnostic.attachment_owned);
+        assert!(diagnostic.attachment_return.is_none());
+        assert!(diagnostic.activation_return.is_none());
+        assert!(diagnostic.detachment_return.is_none());
+    }
+    #[test]
+    fn unknown_or_same_foreground_thread_does_not_invent_an_attachment() {
+        for thread in [0, 7] {
+            let mut api = fake();
+            api.source.foreground_thread_id = thread;
+            let (_, diagnostic) = attempt(&mut api);
+            assert_eq!(
+                api.calls,
+                ["source", "activate", "foreground", "foreground"]
+            );
+            assert!(!diagnostic.attachment_requested);
+            assert!(!diagnostic.detachment_requested);
+            assert!(diagnostic.attachment_return.is_none());
+        }
+    }
+}
