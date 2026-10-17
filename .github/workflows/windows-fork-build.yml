@@ -121,6 +121,23 @@ jobs:
           cargo test --locked -p cua-driver-core --example dom_pixel_proof 2>&1 |
             Tee-Object build-evidence/dom-pixel-proof-tests.log
           if ($LASTEXITCODE -ne 0) { throw "DOM pixel proof tests failed: $LASTEXITCODE" }
+      - name: Build readonly native viewport diagnostic when present
+        if: hashFiles('libs/cua-driver/rust/crates/platform-windows/examples/browser_viewport_diagnostic.rs') != ''
+        run: |
+          cargo test --locked -p platform-windows --example browser_viewport_diagnostic 2>&1 |
+            Tee-Object build-evidence/viewport-diagnostic-tests.log
+          if ($LASTEXITCODE -ne 0) { throw "viewport diagnostic tests failed: $LASTEXITCODE" }
+          cargo build --locked -p platform-windows --example browser_viewport_diagnostic --release --target x86_64-pc-windows-msvc 2>&1 |
+            Tee-Object build-evidence/viewport-diagnostic-build.log
+          if ($LASTEXITCODE -ne 0) { throw "viewport diagnostic build failed: $LASTEXITCODE" }
+          $diagnostic = 'build-evidence/viewport-diagnostic'
+          New-Item -ItemType Directory -Force -Path $diagnostic | Out-Null
+          Copy-Item 'target/x86_64-pc-windows-msvc/release/examples/browser_viewport_diagnostic.exe' "$diagnostic/browser_viewport_diagnostic.exe"
+          Get-FileHash "$diagnostic/browser_viewport_diagnostic.exe" -Algorithm SHA256 |
+            Select-Object @{Name='name';Expression={Split-Path $_.Path -Leaf}}, Hash |
+            ConvertTo-Json | Set-Content build-evidence/viewport-diagnostic-hash.json
+          'Readonly PID/HWND diagnostic only. No capture, input or native mapping qualification.' |
+            Set-Content "$diagnostic/BUILD-NOTICE.txt"
       - name: Build isolated persistent WGC probe when present
         if: hashFiles('libs/cua-driver/rust/crates/platform-windows/examples/persistent-wgc-probe.rs') != ''
         run: |
