@@ -311,6 +311,10 @@ impl GetBrowserStateTool {
                         "type":"string", "minLength":1, "maxLength":256,
                         "description":"Use with dom_inspect_v1 and a current readonly DOM ref to sample main-document/open-shadow viewport CSS geometry. Omit locator, scope and collection options. Treat the result as a readonly sample, not native pixels, visibility or crop authority."
                     },
+                    "native_geometry_ref": {
+                        "type":"string", "minLength":1, "maxLength":256,
+                        "description":"Use with dom_inspect_v1 and a current main-document readonly DOM ref to request the opt-in Windows Chromium RootWebArea geometry candidate. Omit geometry_ref, locator, scope, collection and screenshot options. Check qualification, clipping and source continuity; do not treat this non-atomic projection as raster proof or input/crop authority."
+                    },
                     "query": {
                         "type": "string",
                         "description": "Read-only semantic match over role, accessible name, and visible text."
@@ -399,6 +403,21 @@ impl Tool for GetBrowserStateTool {
                 "geometry_ref requires dom_inspect_v1 and an existing target_id/tab_id",
             );
         }
+        if args.get("native_geometry_ref").is_some() {
+            if args.get("geometry_ref").is_some() {
+                return ToolResult::error(
+                    "native_geometry_ref and geometry_ref are mutually exclusive",
+                );
+            }
+            if args.opt_str("snapshot_format").as_deref() != Some("dom_inspect_v1")
+                || args.opt_str("target_id").is_none()
+                || args.opt_str("tab_id").is_none()
+            {
+                return ToolResult::error(
+                    "native_geometry_ref requires dom_inspect_v1 and an existing target_id/tab_id",
+                );
+            }
+        }
         let screenshot_mode = match args.get("screenshot_mode") {
             None => BrowserScreenshotMode::Viewport,
             Some(Value::String(mode)) if mode == "viewport" => BrowserScreenshotMode::Viewport,
@@ -472,15 +491,20 @@ impl Tool for GetBrowserStateTool {
                 {
                     return ToolResult::error("dom_inspect_v1 returns readonly DOM metadata only; query, continuation and CDP screenshot are not supported");
                 }
-                if let Some(value) = args.get("geometry_ref") {
+                let geometry_parameter = if args.get("native_geometry_ref").is_some() {
+                    "native_geometry_ref"
+                } else {
+                    "geometry_ref"
+                };
+                if let Some(value) = args.get(geometry_parameter) {
                     let Some(reference) = value.as_str().filter(|reference| {
                         !reference.trim().is_empty()
                             && reference.len() <= 256
                             && !reference.contains('\0')
                     }) else {
-                        return ToolResult::error(
-                            "geometry_ref must be a bounded current readonly DOM ref",
-                        );
+                        return ToolResult::error(format!(
+                            "{geometry_parameter} must be a bounded current readonly DOM ref"
+                        ));
                     };
                     if [
                         "locator",
@@ -493,7 +517,13 @@ impl Tool for GetBrowserStateTool {
                     .iter()
                     .any(|field| args.get(*field).is_some())
                     {
-                        return ToolResult::error("geometry_ref cannot combine with locator, scope, collection or screenshot options");
+                        return ToolResult::error(format!("{geometry_parameter} cannot combine with locator, scope, collection or screenshot options"));
+                    }
+                    if geometry_parameter == "native_geometry_ref" {
+                        return match self.engine.inspect_dom_native_geometry(&session, &target_id, &tab_id, reference).await {
+                            Ok(sample) => ToolResult::text("Readonly Windows Chromium RootWebArea geometry candidate. Not raster-qualified or paint-atomic; no input or crop authority.").with_structured(sample),
+                            Err(refusal) => refusal.to_tool_result(),
+                        };
                     }
                     return match self.engine.inspect_dom_geometry(&session, &target_id, &tab_id, reference).await {
                         Ok(sample) => ToolResult::text("Readonly frame-viewport CSS geometry sample. Native-pixel mapping is unavailable; this is not visibility, atomic paint or input/crop authority.").with_structured(sample),
