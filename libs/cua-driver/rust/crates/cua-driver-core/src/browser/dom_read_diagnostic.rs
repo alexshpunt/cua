@@ -70,3 +70,42 @@ pub(super) fn known_reason(message: &str) -> Option<&'static str> {
         .copied()
         .find(|known| *known == message)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    #[test]
+    fn method_exception_and_malformed_classifications_do_not_retain_private_prose() {
+        for (index, method) in METHODS.iter().enumerate() {
+            assert_eq!(check(method, &json!({})), Ok(()));
+            assert_eq!(check(method, &json!([])), Err(CODES[index][0]));
+            assert_eq!(
+                check(method, &json!({"wasThrown":"yes"})),
+                Err(CODES[index][0])
+            );
+            assert_eq!(
+                check(
+                    method,
+                    &json!({"exceptionDetails":{"text":"PRIVATE","exception":{"className":"EvalError","description":"PRIVATE URL/node"}}})
+                ),
+                Err(CODES[index][2])
+            );
+            assert_eq!(
+                check(
+                    method,
+                    &json!({"exceptionDetails":{"exception":{"className":"PRIVATE"}}})
+                ),
+                Err(CODES[index][1])
+            );
+            for code in CODES[index] {
+                assert_eq!(known_reason(code), Some(code));
+            }
+        }
+        assert_eq!(
+            known_reason("dom_read_call_function_eval_error: PRIVATE"),
+            None
+        );
+        assert_eq!(check("PRIVATE", &json!({})), Err("dom_read_unknown_method"));
+    }
+}

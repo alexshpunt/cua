@@ -29,6 +29,14 @@ mod tests {
             "dom_action_timeout",
             "dom_action_ref_stale",
             "dom_action_source_changed",
+            "dom_action_state_unavailable",
+            "dom_action_hit_unavailable",
+            "dom_action_hit_frame_unavailable",
+            "dom_action_hit_changed",
+            "dom_action_sample_changed",
+            "dom_read_call_function_eval_error",
+            "dom_read_hit_test_exception",
+            "dom_read_create_world_malformed",
         ] {
             assert_eq!(progress_reason(reason), reason);
         }

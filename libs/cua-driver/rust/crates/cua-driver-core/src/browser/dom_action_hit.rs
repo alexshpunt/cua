@@ -134,3 +134,53 @@ pub(super) fn relation(reply: &Value) -> Result<Option<bool>, &'static str> {
         _ => Err("dom_action_hit_unavailable"),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    fn sample() -> Value {
+        json!({"result":{"value":{"bounds":[10.5,20.25,80.0,30.0],"hit_test":{"x":50,"y":155,"scroll_x":0.0,"scroll_y":120.0,"width":800.0,"height":600.0}}}})
+    }
+    #[test]
+    fn point_is_document_css_and_never_a_viewport_or_native_pixel_substitution() {
+        assert_eq!(probe(&sample()), Ok(HitProbe::Point { x: 50, y: 155 }));
+        let mut wrong = sample();
+        wrong["result"]["value"]["hit_test"]["y"] = json!(35);
+        assert_eq!(probe(&wrong), Err("dom_action_hit_unavailable"));
+        let mut moved = sample();
+        moved["result"]["value"]["hit_test"]["x"] = json!(51);
+        assert_eq!(probe(&moved), Err("dom_action_hit_unavailable"));
+        for bad in [
+            json!(true),
+            json!({}),
+            json!({"x":50.1,"y":155,"scroll_x":0,"scroll_y":120,"width":800,"height":600}),
+        ] {
+            let mut value = sample();
+            value["result"]["value"]["hit_test"] = bad;
+            assert_eq!(probe(&value), Err("dom_action_hit_unavailable"));
+        }
+    }
+    #[test]
+    fn outside_unknown_wrong_frame_and_stale_hits_cannot_become_ready() {
+        let mut value = sample();
+        value["result"]["value"]["hit_test"] = Value::Null;
+        assert_eq!(probe(&value), Ok(HitProbe::Unknown));
+        value["result"]["value"]["hit_test"] = json!(false);
+        assert_eq!(probe(&value), Ok(HitProbe::Outside));
+        assert_eq!(
+            hit_identity(&json!({"frameId":"child","backendNodeId":1}), "main"),
+            Err("dom_action_hit_frame_unavailable")
+        );
+        assert_eq!(
+            hit_identity(&json!({"frameId":"main","backendNodeId":0}), "main"),
+            Err("dom_action_hit_unavailable")
+        );
+        assert_eq!(
+            relation(
+                &json!({"result":{"type":"object","value":{"connected":false,"same_document":true,"relation":true}}})
+            ),
+            Err("dom_action_ref_stale")
+        );
+    }
+}

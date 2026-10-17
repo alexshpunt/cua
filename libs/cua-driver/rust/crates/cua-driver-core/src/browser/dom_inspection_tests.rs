@@ -35,6 +35,19 @@ struct State {
     geometry_context_fault: String,
     geometry_exception: bool,
     actionability_reply: Option<Value>,
+    actionability_eval_error: bool,
+    actionability_sample_changes: bool,
+    actionability_reads: usize,
+    sampled_backend: i64,
+    hit_backend: Option<i64>,
+    hit_frame: Option<String>,
+    hit_relation: Option<Value>,
+    hit_exception: bool,
+    hit_changes: bool,
+    hit_navigates: bool,
+    hit_description_fault: String,
+    hit_reads: usize,
+    hit_resolving: bool,
     fractional_geometry: bool,
     geometry_detaches: bool,
     geometry_navigates: bool,
@@ -131,6 +144,8 @@ impl BrowserPlatform for Platform {
 }
 #[path = "dom_action_dispatch_tests.rs"]
 mod action_dispatch_tests;
+#[path = "dom_action_hit_tests.rs"]
+mod action_hit_tests;
 #[path = "dom_action_prepare_tests.rs"]
 mod action_prepare_tests;
 #[path = "dom_action_tool_tests.rs"]
@@ -252,7 +267,19 @@ async fn bound() -> (Fixture, String, String) {
                 assert_eq!(call.params["executionContextId"],77);
                 assert!(call.params["objectGroup"].as_str().is_some());
                 if let Some(signal) = &state.geometry_resolved { signal.notify_one(); }
-                json!({"object":{"type":"object","subtype":"node","objectId":"geometry-node"}})
+                let object = if state.hit_resolving { state.hit_resolving=false; "hit-node" } else {
+                    state.sampled_backend=call.params["backendNodeId"].as_i64().unwrap(); "geometry-node"
+                };
+                json!({"object":{"type":"object","subtype":"node","objectId":object}})
+            },
+            "DOM.getNodeForLocation"=> {
+                assert_eq!(call.params["x"],50); assert_eq!(call.params["y"],155);
+                assert_eq!(call.params["includeUserAgentShadowDOM"],false);
+                assert_eq!(call.params["ignorePointerEventsNone"],false);
+                state.hit_reads+=1; state.hit_resolving=true;
+                if state.hit_navigates {state.navigated=true;}
+                let backend=state.hit_backend.unwrap_or(state.sampled_backend) + if state.hit_changes && state.hit_reads%2==0 {1} else {0};
+                json!({"backendNodeId":backend,"frameId":state.hit_frame.as_deref().unwrap_or("F_MAIN")})
             },
             "Runtime.callFunctionOn"=> {
                 assert_eq!(call.params["uniqueContextId"],"unique-main-77");
@@ -283,6 +310,16 @@ async fn bound() -> (Fixture, String, String) {
                     }
                     return MockReply::ok(json!({"result":{"value":{"ok":true,"observed":{"focused":true,"foreign":"discard"}}}}));
                 }
+                if function == crate::browser::dom_action_hit::HIT_FUNCTION {
+                    assert_eq!(call.params["arguments"],json!([{"objectId":"geometry-node"},{"objectId":"hit-node"}]));
+                    assert_eq!(call.params["throwOnSideEffect"],true); assert_eq!(call.params["returnByValue"],true);
+                    assert_eq!(call.params["awaitPromise"],false);assert_eq!(call.params["userGesture"],false);
+                    if state.hit_exception {return MockReply::ok(json!({"exceptionDetails":{"exception":{"className":"EvalError","description":"PRIVATE PROSE"}}}));}
+                    return MockReply::ok(json!({"result":{"type":"object","value":{
+                        "connected":state.hit_description_fault!="detached_hit", "same_document":state.hit_description_fault!="foreign_document",
+                        "relation":state.hit_relation.clone().unwrap_or(json!(true))
+                    }}}));
+                }
                 assert_eq!(call.params["arguments"],json!([{"objectId":"geometry-node"}]));
                 assert_eq!(call.params["throwOnSideEffect"],true);
                 assert_eq!(call.params["returnByValue"],true);
@@ -290,10 +327,15 @@ async fn bound() -> (Fixture, String, String) {
                 assert_eq!(call.params["userGesture"],false);
                 if state.geometry_navigates {state.navigated=true;}
                 if state.geometry_exception {json!({"exceptionDetails":{"text":"side effect check refused"}})} else if call.params["functionDeclaration"] == crate::browser::dom_action_sample::READ_FUNCTION {
-                    state.actionability_reply.clone().unwrap_or_else(|| json!({"result":{"type":"object","value":{
+                    if state.actionability_eval_error {return MockReply::ok(json!({"exceptionDetails":{"exception":{"className":"EvalError","description":"PRIVATE SCRIPT/URL"}}}));}
+                    state.actionability_reads+=1;
+                    let mut reply=state.actionability_reply.clone().unwrap_or_else(|| json!({"result":{"type":"object","value":{
                         "connected":!state.geometry_detaches,"same_document":true,
-                        "bounds":[10.5,20.25,80.0,30.0], "visible":true,"enabled":true,"editable":false,"receives_pointer":true
-                    }}}))
+                        "bounds":[10.5,20.25,80.0,30.0], "visible":true,"enabled":true,"editable":false,"receives_pointer":null,
+                        "hit_test":{"x":50,"y":155,"scroll_x":0.0,"scroll_y":120.0,"width":800.0,"height":600.0}
+                    }}}));
+                    if state.actionability_sample_changes && state.actionability_reads>=2 {reply["result"]["value"]["bounds"][0]=json!(11.5);}
+                    reply
                 } else {
                     assert_eq!(call.params["functionDeclaration"], crate::browser::dom_cssom_sample::READ_FUNCTION);
                     json!({"result":{"type":"object","value":{
@@ -358,7 +400,18 @@ async fn bound() -> (Fixture, String, String) {
                         "children":[element(30,10,"BUTTON",json!(["id","cross-btn","aria-label","Cross"]),vec![])]}})
                 } else {document(state.detached)}
             },
-            "DOM.describeNode"=>if state.detached || state.node_detached {return MockReply::err(-32000,"detached node")} else {json!({"node":{"backendNodeId":call.params["backendNodeId"],"nodeId":30}})},
+            "DOM.describeNode"=>if state.detached || state.node_detached || (state.hit_resolving && state.hit_description_fault=="stale") {return MockReply::err(-32000,"No node with given id")} else {
+                let mut node=json!({"backendNodeId":call.params["backendNodeId"],"nodeId":30,"nodeType":1,"nodeName":"BUTTON"});
+                if state.hit_resolving {
+                    match state.hit_description_fault.as_str() {
+                        "ua"=>node["shadowRootType"]=json!("user-agent"),
+                        "pseudo"=>node["pseudoType"]=json!("before"),
+                        "frame"=>node["nodeName"]=json!("IFRAME"),
+                        _=>{}
+                    }
+                }
+                json!({"node":node})
+            },
             "DOM.querySelectorAll"=> {
                 assert_eq!(call.params["selector"],"button[data-testid='save']:not([disabled])");
                 json!({"nodeIds":if call.params["nodeId"]==100 {if state.unmatched_css_node {vec![999]} else {vec![10]}} else {vec![]}})
