@@ -299,6 +299,60 @@ mod tests {
             "invalid_capture_backend"
         );
     }
+    struct CropFixture {
+        stale: bool,
+    }
+    impl Backend for CropFixture {
+        fn read(&mut self, dimension: u32, control: &Control) -> Result<Frame> {
+            control.check()?;
+            ensure!(dimension == 0, "crop_was_resized");
+            let image = image::RgbaImage::from_pixel(8, 6, image::Rgba([20, 40, 60, 255]));
+            let mut png = std::io::Cursor::new(Vec::new());
+            image::DynamicImage::ImageRgba8(image).write_to(&mut png, image::ImageFormat::Png)?;
+            Ok(Frame {
+                png: png.into_inner(),
+                width: 8,
+                height: 6,
+                metadata: serde_json::json!({
+                    "backend":"wgc","paint_freshness":"unverified",
+                    "frame_bounds":{"x":70,"y":61,"width":8,"height":6}
+                }),
+            })
+        }
+        fn validate(&mut self) -> Result<()> {
+            ensure!(!self.stale, "target_lifetime_changed");
+            Ok(())
+        }
+    }
+    fn crop_fixture(target: &Target) -> Result<Box<dyn Backend>> {
+        Ok(Box::new(CropFixture {
+            stale: target.window == 8,
+        }))
+    }
+
+    #[tokio::test]
+    async fn readonly_crop_stays_inside_worker_checks_until_pixels_are_ready() {
+        let manager = Manager::with_factory(crop_fixture);
+        let region = crate::wgc_crop::Region {
+            x: 71,
+            y: 63,
+            width: 4,
+            height: 3,
+        };
+        let cropped = manager.crop(target("crop"), region).await.unwrap();
+        assert_eq!((cropped.width, cropped.height), (4, 3));
+        assert_eq!(cropped.metadata["input_authority"], false);
+        assert_eq!(
+            cropped.metadata["crop_offset"],
+            serde_json::json!({"x":1,"y":2})
+        );
+        let mut stale = target("stale");
+        stale.window = 8;
+        assert_eq!(
+            manager.crop(stale, region).await.unwrap_err().to_string(),
+            "target_lifetime_changed"
+        );
+    }
     struct IdleFixture;
     impl Backend for IdleFixture {
         fn read(&mut self, dimension: u32, control: &Control) -> Result<Frame> {
