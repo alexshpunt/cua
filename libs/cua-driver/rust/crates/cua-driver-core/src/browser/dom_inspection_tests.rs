@@ -100,6 +100,7 @@ impl BrowserPlatform for Platform {
                 "Other tab"
             }
             .into(),
+            // CDP-correlation DIP bounds, deliberately distinct from the physical sample.
             bounds: Rect::new(
                 if state.native_geometry_fault == "window" && state.native_geometry_calls > 0 {
                     1.
@@ -135,7 +136,19 @@ impl BrowserPlatform for Platform {
             state.navigated = true;
         }
         Ok(crate::browser::dom_geometry::NativeBrowserViewport {
-            window: Rect::new(0., 0., 800., 600.),
+            // Physical pixels at DPR 1.5, not NativeWindowInfo's 800x600 DIP.
+            window: Rect::new(
+                if state.native_geometry_fault == "physical_window"
+                    && state.native_geometry_calls > 1
+                {
+                    1.
+                } else {
+                    0.
+                },
+                0.,
+                1200.,
+                900.,
+            ),
             viewport: Rect::new(
                 10.,
                 100.,
