@@ -451,3 +451,478 @@ pub(crate) fn project(
         .collect();
     Ok(rows)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn element(id: i64, tag: &str, attrs: Value, children: Vec<Value>) -> Value {
+        json!({"nodeType":1,"nodeId":id,"backendNodeId":id,"nodeName":tag,
+            "attributes":attrs,"childNodeCount":children.len(),"children":children})
+    }
+    fn text(id: i64, value: &str) -> Value {
+        json!({"nodeType":3,"nodeId":id,"backendNodeId":id,"nodeValue":value})
+    }
+    fn document(children: Vec<Value>) -> Value {
+        json!({"root":{"nodeType":9,"nodeId":100,"backendNodeId":100,
+            "childNodeCount":children.len(),"children":children}})
+    }
+    fn records() -> Vec<DomRecord> {
+        collect(
+            &document(vec![element(
+                1,
+                "DIV",
+                json!([]),
+                vec![
+                    element(
+                        2,
+                        "BUTTON",
+                        json!([
+                            "role",
+                            "button",
+                            "aria-label",
+                            "Save",
+                            "data-testid",
+                            "save"
+                        ]),
+                        vec![text(20, "Save draft")],
+                    ),
+                    element(
+                        3,
+                        "BUTTON",
+                        json!(["role", "button", "aria-label", "Save"]),
+                        vec![],
+                    ),
+                    element(
+                        4,
+                        "BUTTON",
+                        json!(["role", "buttonish", "aria-label", "Save as"]),
+                        vec![],
+                    ),
+                ],
+            )]),
+            "frame-main",
+            100,
+            20,
+        )
+        .0
+    }
+
+    #[test]
+    fn wide_omitted_branches_stop_at_the_visit_and_depth_budgets() {
+        let children: Vec<Value> = (1..=5_000)
+            .map(|id| element(id, "DIV", json!([]), vec![]))
+            .collect();
+        let (rows, coverage) = collect(&document(children), "main", 2, 4);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(coverage.visited, 2);
+        assert_eq!(coverage.node_omitted, 4_999);
+        assert!(!coverage.complete);
+
+        let roots = vec![json!({"nodeType":11,"shadowRootType":"closed"}); 5_000];
+        let mut host = element(1, "DIV", json!([]), vec![]);
+        host["shadowRoots"] = json!(roots);
+        let (_, coverage) = collect(&document(vec![host.clone()]), "main", 3, 4);
+        assert_eq!(coverage.visited, 3);
+        assert_eq!(coverage.node_omitted, 5_000);
+        let (_, coverage) = collect(&document(vec![host]), "main", 3, 1);
+        assert_eq!(coverage.visited, 2);
+        assert_eq!(coverage.depth_omitted, 5_000);
+    }
+
+    #[test]
+    fn includes_hidden_and_noninteractive_elements_without_inventing_live_states_or_pixels() {
+        let (rows, coverage) = collect(
+            &document(vec![
+                element(
+                    1,
+                    "DIV",
+                    json!(["hidden", "", "data-testid", "secret"]),
+                    vec![text(10, "Hidden detail")],
+                ),
+                element(
+                    2,
+                    "INPUT",
+                    json!(["value", "markup", "checked", "", "disabled", ""]),
+                    vec![],
+                ),
+            ]),
+            "opaque-main",
+            100,
+            20,
+        );
+        assert_eq!(rows.len(), 2);
+        assert!(rows[0].attributes.contains_key("hidden"));
+        assert_eq!(rows[0].text, "Hidden detail");
+        assert_eq!(
+            rows[1].attributes.get("value").map(String::as_str),
+            Some("markup")
+        );
+        assert!(rows[1].value.is_none());
+        assert!(rows[1].states.is_empty());
+        assert_eq!(rows[1].visibility, "unknown");
+        assert!(coverage.complete);
+    }
+
+    #[test]
+    fn open_shadow_roots_preserve_host_ancestry_but_nested_documents_get_distinct_sources() {
+        let mut host = element(1, "DIV", json!([]), vec![]);
+        host["shadowRoots"] = json!([{"nodeType":11,"nodeId":50,"backendNodeId":50,"shadowRootType":"open",
+            "childNodeCount":1,"children":[element(2,"BUTTON",json!(["aria-label","Inside shadow"]),vec![])]}]);
+        let mut iframe = element(3, "IFRAME", json!([]), vec![]);
+        iframe["contentDocument"] = json!({"nodeType":9,"nodeId":101,"backendNodeId":101,"childNodeCount":1,
+            "children":[element(2,"BUTTON",json!(["aria-label","Inside frame"]),vec![])]});
+        let (rows, coverage) = collect(&document(vec![host, iframe]), "opaque-main", 100, 20);
+        let shadow = rows
+            .iter()
+            .find(|row| row.name.as_deref() == Some("Inside shadow"))
+            .unwrap();
+        let child = rows
+            .iter()
+            .find(|row| row.name.as_deref() == Some("Inside frame"))
+            .unwrap();
+        assert_eq!(shadow.frame_key, "opaque-main");
+        assert_eq!(shadow.parent_backend_node_id, Some(1));
+        assert_ne!(shadow.frame_key, child.frame_key);
+        assert_eq!(child.parent_backend_node_id, None);
+        let selected = project(
+            &rows,
+            &DomLocator::default(),
+            Some(("opaque-main", 1)),
+            None,
+            20,
+        )
+        .unwrap();
+        assert_eq!(selected.len(), 2);
+        assert!(selected.iter().all(|row| row.frame_key == "opaque-main"));
+        assert!(coverage.complete);
+    }
+
+    #[test]
+    fn missing_children_depth_and_node_budgets_do_not_claim_complete_absence() {
+        let mut incomplete = element(1, "DIV", json!([]), vec![]);
+        incomplete["childNodeCount"] = json!(3);
+        let (rows, partial) = collect(&document(vec![incomplete]), "main", 100, 20);
+        assert_eq!(rows.len(), 1);
+        assert!(!partial.complete);
+        assert_eq!(partial.node_omitted, 3);
+        let deep = document(vec![element(
+            1,
+            "DIV",
+            json!([]),
+            vec![element(2, "SPAN", json!([]), vec![])],
+        )]);
+        let (_, depth) = collect(&deep, "main", 100, 1);
+        assert!(!depth.complete);
+        assert_eq!(depth.depth_omitted, 1);
+        let (bounded, nodes) = collect(&deep, "main", 2, 20);
+        assert_eq!(bounded.len(), 1);
+        assert_eq!(nodes.visited, 2);
+        assert!(!nodes.complete);
+        assert_eq!(nodes.node_omitted, 1);
+        for (max_nodes, max_depth) in [(0, 20), (2001, 20), (10, 0), (10, 65)] {
+            let (rows, coverage) = collect(&deep, "main", max_nodes, max_depth);
+            assert!(rows.is_empty());
+            assert!(!coverage.complete);
+            assert!(coverage.node_omitted > 0);
+        }
+    }
+
+    #[test]
+    fn exact_semantic_locators_keep_duplicate_labels_and_do_not_rank_partial_words() {
+        let rows = records();
+        let locator = DomLocator {
+            role: Some("button".into()),
+            name: Some("Save".into()),
+            ..Default::default()
+        };
+        let matched = project(&rows, &locator, None, None, 20).unwrap();
+        assert_eq!(
+            matched
+                .iter()
+                .map(|row| row.backend_node_id)
+                .collect::<Vec<_>>(),
+            vec![2, 3]
+        );
+        assert!(project(
+            &rows,
+            &DomLocator {
+                role: Some("but".into()),
+                ..Default::default()
+            },
+            None,
+            None,
+            20
+        )
+        .unwrap()
+        .is_empty());
+        assert_eq!(
+            project(
+                &rows,
+                &DomLocator {
+                    label: Some("Save".into()),
+                    test_id: Some("save".into()),
+                    ..Default::default()
+                },
+                None,
+                None,
+                20
+            )
+            .unwrap()
+            .len(),
+            1
+        );
+        assert_eq!(
+            project(
+                &rows,
+                &DomLocator {
+                    text: Some("draft".into()),
+                    ..Default::default()
+                },
+                None,
+                None,
+                20
+            )
+            .unwrap()
+            .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn css_requires_native_matches_and_never_accepts_a_foreign_frame_backend_id() {
+        let rows = records();
+        let locator = DomLocator {
+            css: Some("button".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            project(&rows, &locator, None, None, 20).unwrap_err(),
+            "dom_css_resolution_required"
+        );
+        let matches = HashSet::from([("foreign-frame".into(), 2)]);
+        assert!(project(&rows, &locator, None, Some(&matches), 20)
+            .unwrap()
+            .is_empty());
+        let matches = HashSet::from([("frame-main".into(), 2)]);
+        assert_eq!(
+            project(&rows, &locator, None, Some(&matches), 20)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn unknown_ambiguous_scopes_and_invalid_queries_refuse_exactly() {
+        let mut rows = records();
+        assert_eq!(
+            project(
+                &rows,
+                &DomLocator::default(),
+                Some(("foreign", 1)),
+                None,
+                20
+            )
+            .unwrap_err(),
+            "dom_scope_not_found"
+        );
+        rows.push(rows[0].clone());
+        assert_eq!(
+            project(
+                &rows,
+                &DomLocator::default(),
+                Some(("frame-main", 1)),
+                None,
+                20
+            )
+            .unwrap_err(),
+            "dom_scope_ambiguous"
+        );
+        for locator in [
+            DomLocator {
+                text: Some("x".repeat(257)),
+                ..Default::default()
+            },
+            DomLocator {
+                css: Some("  ".into()),
+                ..Default::default()
+            },
+        ] {
+            assert_eq!(
+                project(&[], &locator, None, None, 20).unwrap_err(),
+                "dom_locator_invalid"
+            );
+        }
+        assert_eq!(
+            project(&[], &DomLocator::default(), None, None, 0).unwrap_err(),
+            "dom_projection_limit_invalid"
+        );
+        assert!(serde_json::from_value::<DomLocator>(json!({"javascript":"anything"})).is_err());
+    }
+
+    #[test]
+    fn strings_and_attribute_retention_are_bounded_without_splitting_unicode() {
+        let mut attrs = vec![
+            Value::String("aria-label".into()),
+            Value::String("Ж".repeat(1100)),
+        ];
+        for i in 0..100 {
+            attrs.extend([json!(format!("attribute-{i}")), json!("value")]);
+        }
+        let (rows, coverage) = collect(
+            &document(vec![element(
+                1,
+                "DIV",
+                json!(attrs),
+                vec![text(10, &"🦀".repeat(1100))],
+            )]),
+            "main",
+            100,
+            20,
+        );
+        assert!(rows[0].text.chars().count() <= 1024);
+        assert!(rows[0].name.as_ref().unwrap().chars().count() <= 1024);
+        assert!(rows[0].attributes.len() <= 64);
+        assert!(rows[0].text_truncated);
+        assert_eq!(coverage.text_truncated, 1);
+        assert!(!coverage.complete);
+    }
+
+    fn user_agent_root(id: i64, children: Vec<Value>) -> Value {
+        json!({"nodeType":11,"nodeId":id,"backendNodeId":id,"shadowRootType":"user-agent",
+            "childNodeCount":children.len(),"children":children})
+    }
+
+    fn form_with_user_agent_roots() -> Value {
+        let mut input = element(1, "INPUT", json!(["data-testid", "value"]), vec![]);
+        input["shadowRoots"] = json!([user_agent_root(101, vec![])]);
+        let options = (3..=5)
+            .map(|id| {
+                let mut option = element(id, "OPTION", json!(["value", id.to_string()]), vec![]);
+                option["shadowRoots"] = json!([user_agent_root(100 + id, vec![])]);
+                option
+            })
+            .collect();
+        let mut select = element(2, "SELECT", json!([]), options);
+        select["shadowRoots"] = json!([user_agent_root(102, vec![])]);
+        document(vec![input, select])
+    }
+
+    #[test]
+    fn browser_owned_form_internals_do_not_make_author_dom_incomplete() {
+        let (rows, coverage) = collect(&form_with_user_agent_roots(), "main", 32, 8);
+        assert!(coverage.complete, "{coverage:?}");
+        assert_eq!(coverage.node_omitted, 0);
+        assert_eq!(
+            serde_json::to_value(&coverage.excluded).unwrap(),
+            json!({
+                "user_agent_shadow_roots":5,
+                "user_agent_shadow_hosts":{"input":1,"select":1,"option":3,"textarea":0,"button":0,"other":0}
+            })
+        );
+        assert_eq!(
+            rows.iter().map(|row| row.tag.as_str()).collect::<Vec<_>>(),
+            vec!["input", "select", "option", "option", "option"]
+        );
+    }
+
+    #[test]
+    fn user_agent_descendants_never_spend_the_author_node_or_depth_budget() {
+        let mut host = element(1, "INPUT", json!([]), vec![]);
+        host["shadowRoots"] = json!([user_agent_root(
+            100,
+            (200..3200)
+                .map(|id| element(id, "DIV", json!([]), vec![]))
+                .collect()
+        )]);
+        let (rows, coverage) = collect(&document(vec![host]), "main", 3, 1);
+        assert!(coverage.complete, "{coverage:?}");
+        assert_eq!(coverage.visited, 3);
+        assert_eq!(rows.len(), 1);
+    }
+
+    #[test]
+    fn explicit_ua_exclusions_do_not_hide_closed_unknown_or_missing_author_children() {
+        for fault in ["closed", "unknown", "missing_children", "wrong_node_kind"] {
+            let mut tree = form_with_user_agent_roots();
+            let input = &mut tree["root"]["children"][0];
+            match fault {
+                "missing_children" => {
+                    input.as_object_mut().unwrap().remove("childNodeCount");
+                }
+                "wrong_node_kind" => {
+                    input["shadowRoots"][0]["nodeType"] = json!(1);
+                }
+                kind => {
+                    input["shadowRoots"][0]["shadowRootType"] = json!(kind);
+                }
+            }
+            let (_, coverage) = collect(&tree, "main", 32, 8);
+            assert!(!coverage.complete, "{fault}: {coverage:?}");
+            assert_eq!(coverage.node_omitted, 1, "{fault}");
+            assert_eq!(
+                coverage.excluded.user_agent_shadow_roots,
+                if fault == "missing_children" { 5 } else { 4 },
+                "{fault}"
+            );
+        }
+    }
+
+    #[test]
+    fn excluded_root_counts_are_bounded_and_host_buckets_remain_text_free() {
+        let hosts = [
+            "INPUT",
+            "SELECT",
+            "OPTION",
+            "TEXTAREA",
+            "BUTTON",
+            "private-custom-name",
+        ];
+        let rows = hosts
+            .into_iter()
+            .enumerate()
+            .map(|(index, tag)| {
+                let mut host = element(index as i64 + 1, tag, json!([]), vec![]);
+                host["shadowRoots"] = json!([user_agent_root(index as i64 + 101, vec![])]);
+                host
+            })
+            .collect::<Vec<_>>();
+        let (_, coverage) = collect(&document(rows.clone()), "main", 32, 8);
+        let excluded = serde_json::to_value(&coverage.excluded).unwrap();
+        assert_eq!(excluded["user_agent_shadow_roots"], 6);
+        assert_eq!(
+            excluded["user_agent_shadow_hosts"],
+            json!({
+                "input":1,"select":1,"option":1,"textarea":1,"button":1,"other":1
+            })
+        );
+        assert!(!excluded.to_string().contains("private-custom-name"));
+        let mut combined = coverage.excluded.clone();
+        combined.merge(&coverage.excluded);
+        assert_eq!(
+            serde_json::to_value(combined).unwrap(),
+            json!({
+                "user_agent_shadow_roots":12,
+                "user_agent_shadow_hosts":{"input":2,"select":2,"option":2,"textarea":2,"button":2,"other":2}
+            })
+        );
+        let (_, limited) = collect(&document(rows), "main", 4, 8);
+        assert!(!limited.complete);
+        assert_eq!(limited.visited, 4);
+        assert_eq!(limited.excluded.user_agent_shadow_roots, 1);
+        assert!(limited.excluded.user_agent_shadow_roots <= limited.visited);
+    }
+
+    #[test]
+    fn unsupported_shadow_or_unavailable_embedded_documents_are_truthfully_partial() {
+        let mut host = element(1, "DIV", json!([]), vec![]);
+        host["shadowRoots"] = json!([{"nodeType":11,"shadowRootType":"closed","childNodeCount":1,"children":[element(2,"BUTTON",json!([]),vec![])]}]);
+        let frame = element(3, "IFRAME", json!([]), vec![]);
+        let (rows, coverage) = collect(&document(vec![host, frame]), "main", 100, 20);
+        assert_eq!(rows.len(), 2);
+        assert!(!coverage.complete);
+        assert!(coverage.node_omitted >= 2);
+    }
+}

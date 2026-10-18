@@ -75,3 +75,51 @@ pub(crate) fn parse_sample(reply: &Value) -> Result<NativeSample, &'static str> 
     value["layout_viewport"] = json!({"width":width,"height":height,"dpr":dpr});
     Ok(NativeSample(value))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn reply() -> Value {
+        json!({"result":{"type":"object","value":{
+            "connected":true,"same_document":true,
+            "bounds":{"x":10.5,"y":20.25,"width":12.0,"height":10.0},
+            "scroll":{"x":0.0,"y":300.5},
+            "layout_viewport":{"width":886,"height":546,"dpr":1.5},
+            "visual_viewport":{"offset_x":0.0,"offset_y":0.0,"page_x":0.0,"page_y":300.5,
+                "width":886.0,"height":546.0,"scale":1.0}
+        }}})
+    }
+    #[test]
+    fn controlled_scroll_keeps_layout_relative_border_box() {
+        let sample = parse_sample(&reply()).unwrap();
+        assert_eq!(sample.bounds().y, 20.25);
+        assert_eq!(sample.0["scroll"]["y"], 300.5);
+        assert_eq!(sample.viewport().dpr, 1.5);
+    }
+    #[test]
+    fn zoom_offsets_and_inconsistent_scroll_refuse() {
+        for (key, value) in [
+            ("scale", 1.25),
+            ("offset_x", 0.1),
+            ("offset_y", 1.0),
+            ("page_y", 300.0),
+        ] {
+            let mut reply = reply();
+            reply["result"]["value"]["visual_viewport"][key] = json!(value);
+            assert_eq!(parse_sample(&reply), Err("dom_visual_viewport_unqualified"));
+        }
+    }
+    #[test]
+    fn missing_or_nonfinite_layout_evidence_never_derives_a_scale() {
+        for (key, value) in [
+            ("width", json!(885.5)),
+            ("height", json!(0)),
+            ("dpr", Value::Null),
+            ("dpr", json!(f64::INFINITY)),
+        ] {
+            let mut reply = reply();
+            reply["result"]["value"]["layout_viewport"][key] = value;
+            assert_eq!(parse_sample(&reply), Err("dom_native_geometry_unavailable"));
+        }
+    }
+}

@@ -363,6 +363,51 @@ impl ToolOperation {
     }
 }
 
+#[cfg(test)]
+#[test]
+fn dom_action_admission_observes_only_closed_routes_not_request_content() {
+    for (route, expected) in [
+        ("dom_event", "browser_dom_action_dom_event"),
+        ("trusted", "browser_dom_action_trusted"),
+    ] {
+        let args = serde_json::json!({"input_route":route,"request":{"action":"fill","text":"private input","locator":{"css":"#private"}}});
+        let operation = tool_operation("browser_dom_action", Some(&args));
+        assert_eq!(operation.as_str(), expected);
+        assert!(is_computer_action("browser_dom_action", operation));
+    }
+    assert_eq!(
+        tool_operation("browser_dom_action", Some(&serde_json::json!({}))),
+        ToolOperation::Other
+    );
+    assert_eq!(
+        tool_operation(
+            "browser_dom_action",
+            Some(&serde_json::json!({"input_route":"private"}))
+        ),
+        ToolOperation::Other
+    );
+    let response = Response::ok(
+        serde_json::json!(1),
+        serde_json::json!({
+            "structuredContent":{"status":"refused","refusal":{"code":"browser_input_trust_unavailable",
+            "message":"private refusal","detail":{"text":"private typed value"}}}
+        }),
+    );
+    let observed = ToolObservationTimer::start_with_operation(
+        "browser_dom_action".into(),
+        ToolOperation::BrowserDomActionTrusted,
+        true,
+        true,
+        StdioExecutionPath::DirectDaemon,
+    )
+    .finish(&response);
+    assert_eq!(
+        observed.refusal_code,
+        ToolRefusalCode::BrowserInputTrustUnavailable
+    );
+    assert!(observed.computer_action);
+    assert!(!format!("{observed:?}").contains("private"));
+}
 pub fn tool_operation(tool_name: &str, args: Option<&serde_json::Value>) -> ToolOperation {
     let string_arg = |key: &str| {
         args.and_then(|value| value.get(key))

@@ -1024,6 +1024,111 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn bounded_events_precede_reply_and_preserve_socket_order() {
+        let server = MockCdpServer::start(StdArc::new(|_| {
+            MockReply::ok(json!({})).with_events(
+                (1..=2)
+                    .map(|n| MockEvent {
+                        method: "Thing.happened".into(),
+                        session_id: Some("child".into()),
+                        params: json!({"n":n}),
+                    })
+                    .collect(),
+            )
+        }))
+        .await;
+        let conn = CdpConnection::connect(&server.ws_url()).await.unwrap();
+        let mut events = conn.subscribe_bounded(2, 512);
+        conn.call(None, "Emitter.go", json!({})).await.unwrap();
+        let first = events.try_recv().expect("first bounded event queued");
+        assert_eq!(first.params["n"], 1);
+        assert_eq!(first.session_id.as_deref(), Some("child"));
+        assert_eq!(events.try_recv().unwrap().params["n"], 2);
+        assert_eq!(events.try_recv().unwrap_err(), BoundedEventError::Empty);
+    }
+
+    #[tokio::test]
+    async fn bounded_event_overflow_invalidates_even_previously_queued_evidence() {
+        let server = MockCdpServer::start(StdArc::new(|_| {
+            MockReply::ok(json!({})).with_events(
+                (1..=3)
+                    .map(|n| MockEvent {
+                        method: "Thing.happened".into(),
+                        session_id: None,
+                        params: json!({"n":n}),
+                    })
+                    .collect(),
+            )
+        }))
+        .await;
+        let conn = CdpConnection::connect(&server.ws_url()).await.unwrap();
+        let mut events = conn.subscribe_bounded(2, 512);
+        let mut legacy = conn.subscribe();
+        conn.call(None, "Emitter.go", json!({})).await.unwrap();
+        for _ in 0..3 {
+            assert_eq!(events.try_recv().unwrap_err(), BoundedEventError::Overflow);
+        }
+        assert_eq!(legacy.try_recv().unwrap().params["n"], 1);
+        assert_eq!(legacy.try_recv().unwrap().params["n"], 2);
+        assert_eq!(legacy.try_recv().unwrap().params["n"], 3);
+        conn.call(None, "Emitter.go", json!({})).await.unwrap();
+        assert_eq!(events.try_recv().unwrap_err(), BoundedEventError::Overflow);
+    }
+
+    #[tokio::test]
+    async fn oversized_event_invalidates_bounded_evidence_without_poisoning_legacy_reads() {
+        let server = MockCdpServer::start(StdArc::new(|_| {
+            MockReply::ok(json!({})).with_events(vec![MockEvent {
+                method: "Thing.happened".into(),
+                session_id: None,
+                params: json!({"private":"x".repeat(1024)}),
+            }])
+        }))
+        .await;
+        let conn = CdpConnection::connect(&server.ws_url()).await.unwrap();
+        let mut events = conn.subscribe_bounded(2, 128);
+        let mut legacy = conn.subscribe();
+        conn.call(None, "Emitter.go", json!({})).await.unwrap();
+        assert_eq!(events.try_recv().unwrap_err(), BoundedEventError::Overflow);
+        assert_eq!(events.try_recv().unwrap_err(), BoundedEventError::Overflow);
+        assert_eq!(
+            legacy.try_recv().unwrap().params["private"]
+                .as_str()
+                .unwrap()
+                .len(),
+            1024
+        );
+    }
+
+    #[tokio::test]
+    async fn bounded_events_report_socket_close_after_queued_events() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(stream).await.unwrap();
+            let _ = ws.next().await;
+            ws.send(Message::Text(
+                json!({"method":"Thing.final","params":{"n":1}}).to_string(),
+            ))
+            .await
+            .unwrap();
+            ws.close(None).await.unwrap();
+        });
+        let conn = CdpConnection::connect(&format!("ws://127.0.0.1:{port}/devtools/browser/x"))
+            .await
+            .unwrap();
+        let mut events = conn.subscribe_bounded(2, 512);
+        assert!(conn.call(None, "Never.replies", json!({})).await.is_err());
+        assert_eq!(events.try_recv().unwrap().method, "Thing.final");
+        assert_eq!(events.try_recv().unwrap_err(), BoundedEventError::Closed);
+        assert_eq!(
+            conn.subscribe_bounded(2, 512).try_recv().unwrap_err(),
+            BoundedEventError::Closed
+        );
+    }
+
+    #[tokio::test]
     async fn javascript_dialog_journal_is_bounded_and_generation_checked() {
         let server = MockCdpServer::start(StdArc::new(|call| match call.method.as_str() {
             "Dialog.open" => MockReply::ok(json!({})).with_events(vec![MockEvent {

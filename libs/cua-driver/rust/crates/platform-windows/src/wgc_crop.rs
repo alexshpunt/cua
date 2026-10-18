@@ -161,3 +161,7 @@ pub(crate) fn crop(frame: Frame, region: Region, target: &Target) -> Result<Fram
         metadata,
     })
 }
+
+#[cfg(test)]
+#[path = "wgc_crop_tests.rs"]
+mod tests;

@@ -3093,6 +3093,65 @@ fn publish_dom_action_result(result: &mut ToolResult) -> Result<(), String> {
     }
     Ok(())
 }
+#[cfg(test)]
+pub(crate) fn dom_action_receipt_fixture() -> (Value, crate::action_record::ActionExecutionRecord) {
+    use crate::action_record::{
+        ActionEffect, ActionExecutionRecord, ActionTransport, ActualDelivery, RequestedDelivery,
+    };
+    let mut record = ActionExecutionRecord::new(
+        ActionEffect::Unverifiable,
+        ActionTransport::BrowserCdpRuntimeFunction,
+        RequestedDelivery::NotApplicable,
+    );
+    record.actual_delivery = Some(ActualDelivery::Unknown);
+    let value = serde_json::json!({"format":"dom_action_v1","status":"refused","input_route":"dom_event",
+        "trusted":false,"atomic":false,"native_pixel_mapping":"unavailable",
+        "action_result":record.public_result().unwrap(),
+        "progress":{"status":"unknown","reason":"dom_action_dispatch_refused","attempted_steps":["click","dblclick"],
+            "acknowledged_steps":["click"],"in_flight":"dblclick","mutation_attempted":true,
+            "effects":"unverified","automatic_retry":false,"cleanup":"confirmed"},
+        "observed":[],"refusal":{"code":"browser_route_unavailable","message":"bounded native reply unavailable"},
+        "limitations":["programmatic_dom_semantics_only","no_css_hover_proof","no_trusted_key_defaults","no_application_success_proof"]});
+    (value, record)
+}
+
+#[cfg(test)]
+mod dom_action_publication_tests {
+    use super::*;
+    #[test]
+    fn dom_action_publication_preserves_extended_prefix_and_requires_its_explicit_record() {
+        let (value, record) = dom_action_receipt_fixture();
+        let mut result = ToolResult::text("An attempted step has no acknowledgement.")
+            .with_structured(value.clone());
+        assert!(publish_dom_action_result(&mut result).is_err());
+        result.action_record = Some(record);
+        publish_dom_action_result(&mut result).unwrap();
+        assert_eq!(result.structured_content, Some(value));
+        assert!(crate::action_record::is_action_tool("browser_dom_action"));
+        assert!(!cua_driver_contract::is_action_result_tool(
+            "browser_dom_action"
+        ));
+        assert!(crate::action_record::ActionExecutionRecord::from_legacy(
+            "browser_dom_action",
+            &Value::Null,
+            result.structured_content.as_ref().unwrap()
+        )
+        .is_none());
+    }
+    #[test]
+    fn dom_action_publication_rejects_a_different_internal_transport_or_effect() {
+        let (value, record) = dom_action_receipt_fixture();
+        let mut result = ToolResult::text("Unknown effect.").with_structured(value);
+        let mut wrong = record.clone();
+        wrong.transport = crate::action_record::ActionTransport::BrowserCdpInputMouse;
+        result.action_record = Some(wrong);
+        assert!(publish_dom_action_result(&mut result).is_err());
+        let mut wrong = record;
+        wrong.effect = crate::action_record::ActionEffect::Refused;
+        result.action_record = Some(wrong);
+        assert!(publish_dom_action_result(&mut result).is_err());
+    }
+}
 fn publish_action_result(result: &mut ToolResult) -> Result<(), String> {
     let action = result
         .action_record
@@ -3675,6 +3734,36 @@ mod runtime_isolation_tests {
 
         drop(registry_a);
         drop(registry_b);
+    }
+
+    #[tokio::test]
+    async fn dom_action_admission_denies_unattested_resources_before_dispatch() {
+        let hits = Arc::new(AtomicUsize::new(0));
+        let mut registry = super::ToolRegistry::new_with_protected_consent_provider(None);
+        registry.register(Box::new(ObservationProbe {
+            hits: hits.clone(),
+            def: super::ToolDef {
+                name: "browser_dom_action".into(),
+                description: "test DOM mutation".into(),
+                input_schema: serde_json::json!({"type":"object"}),
+                read_only: false,
+                destructive: false,
+                idempotent: false,
+                open_world: true,
+            },
+        }));
+        let result = registry
+            .invoke_with_context(
+                "browser_dom_action",
+                serde_json::json!({"session":"owner","input_route":"dom_event"}),
+                standard_context(),
+            )
+            .await;
+        assert_eq!(
+            result.structured_content.unwrap()["refusal"]["code"],
+            "protected_resource_scope_invalid"
+        );
+        assert_eq!(hits.load(Ordering::SeqCst), 0);
     }
 
     #[tokio::test]
@@ -5973,6 +6062,28 @@ mod capability_tests {
     use super::*;
 
     #[test]
+    fn dom_action_admission_has_a_distinct_capability_and_content_free_recording() {
+        assert_eq!(
+            default_capabilities_for("browser_dom_action"),
+            vec!["browser.input.dom_action"]
+        );
+        let args = serde_json::json!({"session":"owner","target_id":"target","tab_id":"tab","source_ref":"source",
+            "input_route":"dom_event","request":{"action":"fill","locator":{"label":"private label"},"text":"private input","values":["private option"]}});
+        let recorded = recording_args_for("browser_dom_action", &args);
+        assert_eq!(recorded["input_route"], "dom_event");
+        assert_eq!(recorded["request"]["action"], "fill");
+        for content in ["private label", "private input", "private option"] {
+            assert!(!recorded.to_string().contains(content));
+        }
+        assert_eq!(args["request"]["text"], "private input");
+        let invalid = recording_args_for(
+            "browser_dom_action",
+            &serde_json::json!({"input_route":"private route", "request":{"action":"private action"},"script":"private extra"}),
+        );
+        assert!(!invalid.to_string().contains("private"));
+    }
+
+    #[test]
     fn browser_prepare_recording_redacts_transport_identity() {
         let recorded = recording_args_for(
             "browser_prepare",
@@ -6152,6 +6263,7 @@ mod capability_tests {
         "browser_set_input_files",
         "browser_download",
         "browser_pointer",
+        "browser_dom_action",
         "history_status",
         "history_query",
         "parse_visual_regions",
@@ -6245,6 +6357,7 @@ mod capability_tests {
         "browser.dialog",
         "browser.download",
         "browser.input.pointer",
+        "browser.input.dom_action",
         // driver self
         "driver.update_check",
         "driver.probe",

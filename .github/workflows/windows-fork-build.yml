@@ -6,12 +6,18 @@ on:
       - feat/lpt-730-coordinate-scroll
       - feat/lpt-703-window-restore
       - feat/lpt-731-window-management
+      - feat/lpt-733-window-dom-inspection
   workflow_dispatch:
     inputs:
       source_ref:
         description: Exact source commit to build
         required: true
         type: string
+      generate_bindings:
+        description: Generate owned SDK bindings after Windows checks; no Linux GUI qualification
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -71,7 +77,7 @@ jobs:
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
         run: |
-          cargo test --locked -p cua-driver-contract -p cua-driver-core -p platform-windows --lib 2>&1 |
+          cargo test --locked -p cua-driver-contract -p cua-driver-core -p cua-driver-sdk -p platform-windows --lib 2>&1 |
             Tee-Object build-evidence/tests.log
           if ($LASTEXITCODE -ne 0) { throw "cargo test failed: $LASTEXITCODE" }
       - name: Run native pointer contract and execution tests
@@ -114,6 +120,12 @@ jobs:
           cargo test --locked -p cua-driver-core --test window_management_execution 2>&1 |
             Tee-Object build-evidence/window-management-execution-tests.log
           if ($LASTEXITCODE -ne 0) { throw "window management execution tests failed: $LASTEXITCODE" }
+      - name: Check native DOM pixel proof consumer when present
+        if: hashFiles('libs/cua-driver/rust/crates/cua-driver-core/examples/dom_pixel_proof.rs') != ''
+        run: |
+          cargo test --locked -p cua-driver-core --example dom_pixel_proof 2>&1 |
+            Tee-Object build-evidence/dom-pixel-proof-tests.log
+          if ($LASTEXITCODE -ne 0) { throw "DOM pixel proof tests failed: $LASTEXITCODE" }
       - name: Build isolated persistent WGC probe when present
         if: hashFiles('libs/cua-driver/rust/crates/platform-windows/examples/persistent-wgc-probe.rs') != ''
         run: |
@@ -173,5 +185,102 @@ jobs:
         with:
           name: windows-fork-build-${{ env.SOURCE_REF }}
           path: libs/cua-driver/rust/build-evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  generate-bindings:
+    name: Generate owned SDK bindings (no Linux GUI qualification)
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.generate_bindings
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+      - uses: ./.github/actions/linux-rust-prep
+        with:
+          install-deps: "false"
+      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2
+        with:
+          workspaces: "libs/cua-driver/rust -> target"
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 install -y --no-install-recommends \
+            clang pkg-config libdbus-1-dev libpipewire-0.3-dev libspa-0.2-dev \
+            libei-dev libxkbcommon-dev libx11-dev libxi-dev libxtst-dev libxext-dev
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.19.0"
+          cache: npm
+          cache-dependency-path: libs/cua-driver/typescript/package-lock.json
+      - name: Install locked TypeScript SDK dependencies
+        working-directory: libs/cua-driver/typescript
+        run: npm ci
+      - name: Generate and check owned UniFFI bindings
+        id: generate
+        run: |
+          set -euo pipefail
+          bundle='.tmp/sdk-bindings-generation'
+          mkdir -p "$bundle"
+          source=$(git rev-parse HEAD)
+          test "$source" = "$SOURCE_REF"
+          printf '%s\n' "$source" > "$bundle/source-sha.txt"
+          node libs/cua-driver/scripts/generate-uniffi-bindings.mjs 2>&1 | tee "$bundle/generation.log"
+          node libs/cua-driver/scripts/generate-uniffi-bindings.mjs --check 2>&1 | tee -a "$bundle/generation.log"
+      - name: Check generated TypeScript and Python syntax
+        run: |
+          set -euo pipefail
+          log='.tmp/sdk-bindings-generation/generation.log'
+          npm --prefix libs/cua-driver/typescript run typecheck 2>&1 | tee -a "$log"
+          python -m py_compile \
+            libs/cua-driver/python/src/cua_driver/_native.py \
+            libs/cua-driver/python/src/cua_driver/_native_contract.py \
+            libs/cua-driver/python/src/cua_driver/__init__.py 2>&1 | tee -a "$log"
+      - name: Stage only owned generated files
+        id: stage
+        if: always() && steps.generate.outcome == 'success'
+        run: |
+          set -euo pipefail
+          bundle='.tmp/sdk-bindings-generation'
+          files=(
+            libs/cua-driver/python/src/cua_driver/_native.py
+            libs/cua-driver/python/src/cua_driver/_native_contract.py
+            libs/cua-driver/python/.cua-driver-uniffi-generated-files
+            libs/cua-driver/typescript/src/native/cua_driver_contract-ffi.ts
+            libs/cua-driver/typescript/src/native/cua_driver_contract.ts
+            libs/cua-driver/typescript/src/native/cua_driver_sdk-ffi.ts
+            libs/cua-driver/typescript/src/native/cua_driver_sdk.ts
+            libs/cua-driver/typescript/src/native/index.ts
+            libs/cua-driver/typescript/.cua-driver-uniffi-generated-files
+          )
+          total=0
+          for file in "${files[@]}"; do
+            test -f "$file" && test ! -L "$file"
+            size=$(stat -c '%s' "$file")
+            test "$size" -le 10485760
+            total=$((total + size))
+            install -D -m 0644 "$file" "$bundle/$file"
+          done
+          total=$((total + $(stat -c '%s' "$bundle/source-sha.txt") + $(stat -c '%s' "$bundle/generation.log")))
+          test "$total" -le 26214400
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.stage.outcome == 'success'
+        with:
+          name: owned-sdk-bindings-${{ env.SOURCE_REF }}
+          path: .tmp/sdk-bindings-generation/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

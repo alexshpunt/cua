@@ -413,3 +413,99 @@ fn bounded_encoding(value: &impl Serialize) -> Result<(), String> {
     }
     serde_json::to_writer(Budget(LIMIT), value).map_err(|_| "invalid_dom_action_result".to_owned())
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    pub(super) fn receipt() -> Value {
+        json!({"format":"dom_action_v1","status":"dispatched","input_route":"dom_event",
+            "trusted":false,"atomic":false,"native_pixel_mapping":"unavailable",
+            "action_result":{"effect":"unverifiable","route":"dom","delivery":{"mode":"unknown"}},
+            "progress":{"status":"dispatched","reason":null,"attempted_steps":["click"],
+                "acknowledged_steps":["click"],"in_flight":null,"mutation_attempted":true,
+                "effects":"unverified","automatic_retry":false,"cleanup":"confirmed"},
+            "observed":[{"step":"click","observed":{"activation_invoked":true}}],"refusal":null,
+            "limitations":["programmatic_dom_semantics_only","no_css_hover_proof","no_trusted_key_defaults","no_application_success_proof"]})
+    }
+    #[test]
+    fn dom_receipt_keeps_the_closed_action_and_acknowledged_prefix() {
+        let value = receipt();
+        assert_eq!(
+            serde_json::to_value(DomActionResult::from_value(value.clone()).unwrap()).unwrap(),
+            value
+        );
+    }
+    #[test]
+    fn dom_receipt_rejects_false_success_and_inconsistent_prefixes() {
+        for (pointer, value) in [
+            ("/action_result/effect", json!("confirmed")),
+            ("/trusted", json!(true)),
+            ("/atomic", json!(true)),
+            ("/progress/mutation_attempted", json!(false)),
+            ("/progress/in_flight", json!("click")),
+            ("/progress/acknowledged_steps", json!(["focus"])),
+            ("/progress/cleanup", json!("unconfirmed")),
+            ("/progress/automatic_retry", json!(true)),
+            ("/input_route", json!("trusted")),
+            ("/observed/0/step", json!("fill")),
+            ("/limitations", json!([])),
+        ] {
+            let mut input = receipt();
+            *input.pointer_mut(pointer).unwrap() = value;
+            assert!(
+                DomActionResult::from_value(input).is_err(),
+                "accepted {pointer}"
+            );
+        }
+    }
+    #[test]
+    fn dom_receipt_rejects_native_ids_unknown_fields_and_unbounded_evidence() {
+        for pointer in ["", "/progress", "/observed/0/observed"] {
+            let mut value = receipt();
+            value
+                .pointer_mut(pointer)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("backendNodeId".into(), json!(42));
+            assert!(DomActionResult::from_value(value).is_err());
+        }
+        let mut value = receipt();
+        value["progress"]["attempted_steps"] = json!(["x".repeat(65)]);
+        value["progress"]["acknowledged_steps"] = value["progress"]["attempted_steps"].clone();
+        assert!(DomActionResult::from_value(value).is_err());
+        let mut value = receipt();
+        value["progress"]["reason"] = json!("é".repeat(LIMIT));
+        assert!(DomActionResult::from_value(value).is_err());
+    }
+    #[test]
+    fn dom_receipt_present_observations_are_booleans_not_null_or_coerced_values() {
+        for value in [Value::Null, serde_json::json!("true"), serde_json::json!(1)] {
+            let mut input = receipt();
+            input["observed"][0]["observed"]["activation_invoked"] = value;
+            assert!(DomActionResult::from_value(input).is_err());
+        }
+    }
+    #[test]
+    fn dom_receipt_encoding_budget_counts_utf8_bytes_without_an_unbounded_buffer() {
+        assert!(bounded_encoding(&"x".repeat(LIMIT - 2)).is_ok());
+        assert!(bounded_encoding(&"x".repeat(LIMIT - 1)).is_err());
+        assert!(bounded_encoding(&"é".repeat((LIMIT - 2) / 2)).is_ok());
+        assert!(bounded_encoding(&"é".repeat(LIMIT / 2)).is_err());
+    }
+    #[test]
+    fn dom_receipt_unknown_effect_keeps_an_unacknowledged_last_step() {
+        let mut value = receipt();
+        value["status"] = json!("refused");
+        value["progress"]["status"] = json!("unknown");
+        value["progress"]["reason"] = json!("dom_action_dispatch_refused");
+        value["progress"]["attempted_steps"] = json!(["click", "dblclick"]);
+        value["progress"]["in_flight"] = json!("dblclick");
+        value["refusal"] =
+            json!({"code":"browser_route_unavailable","message":"native response unavailable"});
+        let output = DomActionResult::from_value(value).unwrap();
+        assert_eq!(output.action_result.effect, ActionEffect::Unverifiable);
+        assert_eq!(output.progress.in_flight.as_deref(), Some("dblclick"));
+    }
+}

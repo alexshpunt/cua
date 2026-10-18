@@ -182,3 +182,166 @@ pub(crate) fn parse_sample(
         bounds: Some(bounds),
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn target() -> ActionTarget {
+        ActionTarget {
+            frame_id: "main-frame".into(),
+            loader_id: "loader-1".into(),
+            backend_node_id: 42,
+        }
+    }
+    fn reply() -> Value {
+        json!({"result":{"type":"object","value":{
+            "connected":true,"same_document":true,"visible":true,"enabled":true,
+            "editable":false,"receives_pointer":true,"bounds":[-3.25,40.5,80.25,30.5]
+        }}})
+    }
+    fn refuses(value: &Value, code: &'static str) {
+        assert_eq!(parse_sample(value, target()).unwrap_err(), code);
+    }
+
+    #[test]
+    fn fractional_css_boxes_and_the_attested_identity_are_preserved_without_conversion() {
+        let parsed = parse_sample(&reply(), target()).unwrap();
+        assert_eq!(parsed.target, target());
+        assert!(parsed.connected);
+        assert_eq!(parsed.bounds, Some([-3.25, 40.5, 80.25, 30.5]));
+        assert_eq!(parsed.visible, Some(true));
+        assert_eq!(parsed.enabled, Some(true));
+        assert_eq!(parsed.editable, Some(false));
+        assert_eq!(parsed.receives_pointer, Some(true));
+    }
+
+    #[test]
+    fn explicit_unknown_facts_stay_unknown_instead_of_becoming_actionable() {
+        let mut value = reply();
+        for field in ["visible", "enabled", "editable", "receives_pointer"] {
+            value["result"]["value"][field] = Value::Null;
+        }
+        let sample = parse_sample(&value, target()).unwrap();
+        assert_eq!(sample.visible, None);
+        assert_eq!(sample.enabled, None);
+        assert_eq!(sample.editable, None);
+        assert_eq!(sample.receives_pointer, None);
+    }
+
+    #[test]
+    fn detached_or_foreign_nodes_refuse_even_without_remaining_state_fields() {
+        for (connected, same_document) in [(false, true), (true, false), (false, false)] {
+            refuses(
+                &json!({"result":{"type":"object","value":{
+                    "connected":connected,"same_document":same_document
+                }}}),
+                "dom_action_ref_stale",
+            );
+        }
+    }
+
+    #[test]
+    fn exceptions_and_non_object_or_remote_only_results_are_not_actionability() {
+        let mut exception = reply();
+        let mut protocol_error = reply();
+        protocol_error["error"] = json!({"code":-32000,"message":"context unavailable"});
+        refuses(&protocol_error, "dom_action_state_unavailable");
+        exception["exceptionDetails"] = json!({"text":"side effects unavailable"});
+        let mut thrown = reply();
+        thrown["wasThrown"] = json!(true);
+        let mut wrong_type = reply();
+        wrong_type["result"]["type"] = json!("string");
+        let mut error = reply();
+        error["result"]["subtype"] = json!("error");
+        let mut unserializable = reply();
+        unserializable["result"]["unserializableValue"] = json!("NaN");
+        for value in [
+            json!({}),
+            json!({"result":{"objectId":"opaque"}}),
+            exception,
+            thrown,
+            wrong_type,
+            error,
+            unserializable,
+            json!({"result":{"type":"object","value":[]}}),
+        ] {
+            refuses(&value, "dom_action_state_unavailable");
+        }
+    }
+
+    #[test]
+    fn missing_and_coerced_boolean_facts_are_unavailable_not_false_or_true() {
+        for field in [
+            "connected",
+            "same_document",
+            "visible",
+            "enabled",
+            "editable",
+            "receives_pointer",
+        ] {
+            let mut missing = reply();
+            missing["result"]["value"]
+                .as_object_mut()
+                .unwrap()
+                .remove(field);
+            refuses(&missing, "dom_action_state_unavailable");
+            for invalid in [json!("true"), json!(0), json!([]), json!({})] {
+                let mut value = reply();
+                value["result"]["value"][field] = invalid;
+                refuses(&value, "dom_action_state_unavailable");
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_bounds_or_extents_never_become_a_usable_box() {
+        for bounds in [
+            Value::Null,
+            json!([]),
+            json!([1, 2, 3]),
+            json!([1, 2, 3, 4, 5]),
+            json!([0, 0, -1, 2]),
+            json!([0, 0, 2, -1]),
+            json!([0, 0, "2", 3]),
+            json!([1_000_000_001.0, 0, 1, 1]),
+            json!([1_000_000_000.0, 0, 1, 1]),
+            json!([0, 0, f64::INFINITY, 1]),
+            json!([f64::NAN, 0, 1, 1]),
+        ] {
+            let mut value = reply();
+            value["result"]["value"]["bounds"] = bounds;
+            refuses(&value, "dom_action_state_unavailable");
+        }
+        let mut missing = reply();
+        missing["result"]["value"]
+            .as_object_mut()
+            .unwrap()
+            .remove("bounds");
+        refuses(&missing, "dom_action_state_unavailable");
+    }
+
+    #[test]
+    fn zero_area_is_valid_sample_data_not_invented_visibility_or_hit_test_success() {
+        let mut value = reply();
+        value["result"]["value"]["bounds"] = json!([1.5, 2.25, 0, 0]);
+        value["result"]["value"]["visible"] = json!(false);
+        value["result"]["value"]["receives_pointer"] = json!(false);
+        let sample = parse_sample(&value, target()).unwrap();
+        assert_eq!(sample.bounds, Some([1.5, 2.25, 0.0, 0.0]));
+        assert_eq!(sample.visible, Some(false));
+        assert_eq!(sample.receives_pointer, Some(false));
+    }
+
+    #[test]
+    fn unknown_page_metadata_cannot_replace_the_callers_attested_target() {
+        let mut value = reply();
+        value["result"]["value"]["target"] = json!({"frame_id":"foreign","backend_node_id":99});
+        value["result"]["value"]["native_pixel_mapping"] = json!("qualified");
+        value["result"]["value"]["input_authority"] = json!(true);
+        let sample = parse_sample(&value, target()).unwrap();
+        assert_eq!(sample.target, target());
+        assert_eq!(sample.bounds, Some([-3.25, 40.5, 80.25, 30.5]));
+    }
+}

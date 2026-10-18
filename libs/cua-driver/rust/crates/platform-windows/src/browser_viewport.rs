@@ -303,3 +303,45 @@ unsafe fn measure_inner(
         identity: sample.identity,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn root() -> RootSample {
+        RootSample {
+            bounds: RECT {
+                left: 71,
+                top: 191,
+                right: 1400,
+                bottom: 1010,
+            },
+            identity: vec![42, 1, 7],
+        }
+    }
+    #[test]
+    fn root_selection_requires_one_ready_native_document() {
+        assert_eq!(
+            RootSelection::default().finish().unwrap_err().code(),
+            E_POINTER
+        );
+        let mut selection = RootSelection::default();
+        let mut zero = root();
+        zero.bounds.bottom = zero.bounds.top;
+        assert_eq!(selection.add(zero).unwrap_err().code(), E_POINTER);
+        selection.add(root()).unwrap();
+        assert_eq!(selection.add(root()).unwrap_err().code(), E_POINTER);
+    }
+    #[test]
+    fn incomplete_raw_traversal_is_not_successful_candidate_selection() {
+        let mut selection = RootSelection::default();
+        selection.add(root()).unwrap();
+        for _ in 0..512 {
+            selection.visit(0).unwrap();
+        }
+        assert_eq!(selection.visit(0).unwrap_err().code(), E_POINTER);
+        assert_eq!(
+            RootSelection::default().visit(25).unwrap_err().code(),
+            E_POINTER
+        );
+    }
+}

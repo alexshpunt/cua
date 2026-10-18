@@ -304,6 +304,126 @@ pub fn tool_error_result(message: impl Into<String>, structured: Value) -> Value
 }
 
 #[cfg(test)]
+mod dom_action_mcp_tests {
+    #[test]
+    fn dom_action_nullable_route_is_provider_compatible_without_dropping_null_receipts() {
+        let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+        let route = &schema["anyOf"][0]["properties"]["input_route"];
+        assert!(
+            route.get("enum").is_none(),
+            "null must not enter a string enum: {route}"
+        );
+        assert_eq!(route["anyOf"][1]["type"], "null");
+        assert_eq!(route["anyOf"][0]["enum"], json!(["dom_event", "trusted"]));
+        let (mut receipt, _) = crate::tool::dom_action_receipt_fixture();
+        receipt["input_route"] = Value::Null;
+        receipt["action_result"] = json!({"route":"dom","effect":"refused","error":{"code":"browser_action_unavailable","hint":"invalid request"}});
+        receipt["refusal"] =
+            json!({"code":"browser_action_unavailable","message":"invalid request"});
+        receipt["progress"] = json!({"status":"refused","reason":"dom_action_invalid_request","attempted_steps":[],"acknowledged_steps":[],"in_flight":null,"mutation_attempted":false,"effects":"unverified","automatic_retry":false,"cleanup":"not_started"});
+        assert!(jsonschema::validator_for(&schema)
+            .unwrap()
+            .is_valid(&receipt));
+        let result = json!({"content":[],"structuredContent":receipt});
+        assert_eq!(
+            conforming_tool_result("browser_dom_action", result.clone()),
+            result
+        );
+    }
+    #[test]
+    fn dom_action_error_preserves_only_a_valid_bounded_prefix_as_unknown_diagnostic() {
+        let (receipt, _) = crate::tool::dom_action_receipt_fixture();
+        let prefix = receipt["progress"].clone();
+        let value = json!({"isError":true,"content":[],"structuredContent":receipt});
+        let result = conforming_tool_result("browser_dom_action", value);
+        assert_eq!(result["structuredContent"]["execution_state"], "unknown");
+        assert_eq!(result["structuredContent"]["progress"], prefix);
+        assert!(result["structuredContent"].get("format").is_none());
+        let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+        assert!(jsonschema::validator_for(&schema)
+            .unwrap()
+            .is_valid(&result["structuredContent"]));
+    }
+    #[test]
+    fn dom_action_error_flag_cannot_bypass_the_advertised_contract_or_byte_budget() {
+        let (mut receipt, _) = crate::tool::dom_action_receipt_fixture();
+        receipt["backendNodeId"] = json!(42);
+        let value = json!({"isError":true,"content":[{"type":"text","text":"é".repeat(20_000)}],"structuredContent":receipt});
+        let result = conforming_tool_result("browser_dom_action", value);
+        let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+        assert!(jsonschema::validator_for(&schema)
+            .unwrap()
+            .is_valid(&result["structuredContent"]));
+        assert!(result.to_string().len() < 16 * 1024);
+        assert!(result["structuredContent"].get("backendNodeId").is_none());
+    }
+    use super::*;
+    #[test]
+    fn dom_action_mcp_keeps_a_valid_unknown_prefix_and_its_exact_schema() {
+        let (receipt, _) = crate::tool::dom_action_receipt_fixture();
+        let value = json!({"content":[{"type":"text","text":"Native outcome is unknown."}],"structuredContent":receipt});
+        assert_eq!(
+            conforming_tool_result("browser_dom_action", value.clone()),
+            value
+        );
+        assert!(advertises_output_schema("browser_dom_action"));
+        let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+        assert!(jsonschema::validator_for(&schema)
+            .unwrap()
+            .is_valid(&value["structuredContent"]));
+        validate_proxy_output_schema("browser_dom_action", Some(&schema)).unwrap();
+    }
+    #[test]
+    fn dom_action_refusal_marker_cannot_hide_an_invalid_receipt_or_raw_native_fields() {
+        let (receipt, _) = crate::tool::dom_action_receipt_fixture();
+        for (field, bad) in [
+            ("trusted", json!(true)),
+            ("backendNodeId", json!(42)),
+            ("format", json!("unknown_version")),
+            ("progress", json!({"status":"refused","backendNodeId":42})),
+        ] {
+            let mut invalid = receipt.clone();
+            invalid[field] = bad;
+            let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+            assert!(
+                !jsonschema::validator_for(&schema)
+                    .unwrap()
+                    .is_valid(&invalid),
+                "schema accepted {field}"
+            );
+            let result = conforming_tool_result(
+                "browser_dom_action",
+                json!({"content":[],"structuredContent":invalid}),
+            );
+            assert_eq!(result["isError"], true, "accepted {field}");
+            assert_eq!(result["structuredContent"]["execution_state"], "unknown");
+            assert!(result["structuredContent"].get("invalid_output").is_none());
+        }
+    }
+    #[test]
+    fn dom_action_mcp_accepts_pre_dispatch_permission_refusals_but_drops_oversize_receipts() {
+        let refused = json!({"content":[],"structuredContent":{"status":"refused","refusal":{"code":"consent_required","message":"approve the exact browser scope"}}});
+        assert_eq!(
+            conforming_tool_result("browser_dom_action", refused.clone()),
+            refused
+        );
+        let (mut receipt, _) = crate::tool::dom_action_receipt_fixture();
+        receipt["refusal"]["message"] = json!("é".repeat(20_000));
+        let result = conforming_tool_result(
+            "browser_dom_action",
+            json!({"content":[{"type":"text","text":"x".repeat(20_000)}],"structuredContent":receipt}),
+        );
+        assert_eq!(result["isError"], true);
+        assert!(result.to_string().len() < 16 * 1024);
+        let schema = advertised_tool_output_schema("browser_dom_action").unwrap();
+        let schema = jsonschema::validator_for(&schema).unwrap();
+        assert!(schema.is_valid(&refused["structuredContent"]));
+        assert!(!schema
+            .is_valid(&json!({"status":"refused","format":"bad","refusal":{"code":"invalid"}})));
+    }
+}
+
+#[cfg(test)]
 mod tests {
     //! The boundary is asserted the way a strict MCP client sees it: every
     //! payload leaving it is validated against the schema the tool actually

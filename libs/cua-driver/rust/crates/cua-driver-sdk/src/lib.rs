@@ -2912,6 +2912,76 @@ mod tests {
         assert_eq!(server.join().unwrap()["name"], "parse_visual_regions");
     }
 
+    fn dom_receipt() -> Value {
+        serde_json::json!({"format":"dom_action_v1","status":"dispatched","input_route":"dom_event",
+            "trusted":false,"atomic":false,"native_pixel_mapping":"unavailable",
+            "action_result":{"effect":"unverifiable","route":"dom","delivery":{"mode":"unknown"}},
+            "progress":{"status":"dispatched","reason":null,"attempted_steps":["click"],
+                "acknowledged_steps":["click"],"in_flight":null,"mutation_attempted":true,
+                "effects":"unverified","automatic_retry":false,"cleanup":"confirmed"},
+            "observed":[{"step":"click","observed":{"activation_invoked":true}}],"refusal":null,
+            "limitations":["programmatic_dom_semantics_only","no_css_hover_proof","no_trusted_key_defaults","no_application_success_proof"]})
+    }
+
+    #[test]
+    fn result_normalization_preserves_dom_receipts_and_projects_only_the_action_accessor() {
+        let dispatched = dom_receipt();
+        let mut partial = dispatched.clone();
+        partial["status"] = serde_json::json!("refused");
+        partial["progress"]["status"] = serde_json::json!("unknown");
+        partial["progress"]["reason"] = serde_json::json!("dom_action_transport_unknown");
+        partial["progress"]["attempted_steps"] = serde_json::json!(["click", "dblclick"]);
+        partial["progress"]["in_flight"] = serde_json::json!("dblclick");
+        partial["progress"]["cleanup"] = serde_json::json!("unconfirmed");
+        partial["refusal"] =
+            serde_json::json!({"code":"browser_action_unavailable","message":"Unknown dispatch"});
+        let mut refused = dispatched.clone();
+        refused["status"] = serde_json::json!("refused");
+        refused["input_route"] = serde_json::json!("trusted");
+        refused["progress"] = serde_json::json!({"status":"refused","reason":"dom_action_trusted_unavailable",
+            "attempted_steps":[],"acknowledged_steps":[],"in_flight":null,"mutation_attempted":false,
+            "effects":"unverified","automatic_retry":false,"cleanup":"not_started"});
+        refused["observed"] = serde_json::json!([]);
+        refused["refusal"] = serde_json::json!({"code":"browser_input_trust_unavailable","message":"Trusted route unavailable"});
+        refused["action_result"] = serde_json::json!({"effect":"refused","route":"dom",
+            "error":{"code":"browser_input_trust_unavailable","hint":"Trusted route unavailable"}});
+        for receipt in [dispatched, partial, refused] {
+            let result = normalize_result("browser_dom_action", serde_json::json!({
+                "content":[{"type":"text","text":"DOM outcome"}],"structuredContent":receipt,"isError":false
+            })).unwrap();
+            assert_eq!(
+                serde_json::from_str::<Value>(result.structured_json.as_deref().unwrap()).unwrap(),
+                receipt
+            );
+            assert_eq!(
+                serde_json::to_value(result.action().unwrap()).unwrap(),
+                receipt["action_result"]
+            );
+            let forwarded = cua_driver_core::mcp_result::conforming_tool_result(
+                "browser_dom_action",
+                serde_json::from_str(&result.raw_json).unwrap(),
+            );
+            assert_eq!(forwarded["structuredContent"], receipt);
+            assert_ne!(forwarded["isError"], serde_json::json!(true));
+        }
+    }
+
+    #[test]
+    fn result_normalization_rejects_a_dom_receipt_even_when_its_nested_action_is_valid() {
+        let mut malformed = dom_receipt();
+        malformed["progress"]["acknowledged_steps"] = serde_json::json!(["focus"]);
+        let error = normalize_result(
+            "browser_dom_action",
+            serde_json::json!({
+                "content":[],"structuredContent":malformed,"isError":false
+            }),
+        )
+        .unwrap_err();
+        assert!(
+            matches!(error, DriverError::Protocol { reason } if reason.contains("invalid DomActionResult"))
+        );
+    }
+
     #[test]
     fn result_normalization_exposes_typed_action_and_verification_views() {
         let action = normalize_result(

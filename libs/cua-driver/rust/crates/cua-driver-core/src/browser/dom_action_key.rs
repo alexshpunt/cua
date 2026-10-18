@@ -97,3 +97,117 @@ pub(crate) fn parse_press_key(value: &str) -> Result<DomPressKey, &'static str> 
         text,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn enter_tab_and_space_have_explicit_key_code_and_text_semantics() {
+        let enter = parse_press_key("Enter").unwrap();
+        assert_eq!(
+            (
+                enter.key.as_str(),
+                enter.code.as_str(),
+                enter.windows_virtual_key_code,
+                enter.text.as_deref()
+            ),
+            ("Enter", "Enter", 13, Some("\r"))
+        );
+        let tab = parse_press_key("Tab").unwrap();
+        assert_eq!(
+            (tab.code.as_str(), tab.windows_virtual_key_code, tab.text),
+            ("Tab", 9, None)
+        );
+        let space = parse_press_key("Space").unwrap();
+        assert_eq!(
+            (
+                space.key.as_str(),
+                space.code.as_str(),
+                space.text.as_deref()
+            ),
+            (" ", "Space", Some(" "))
+        );
+    }
+    #[test]
+    fn shortcuts_keep_explicit_modifier_flags_without_inserting_shortcut_text() {
+        let key = parse_press_key("Control+Shift+A").unwrap();
+        assert_eq!(
+            (
+                key.key.as_str(),
+                key.code.as_str(),
+                key.windows_virtual_key_code,
+                key.modifiers,
+                key.text
+            ),
+            ("A", "KeyA", 65, 10, None)
+        );
+        assert_eq!(parse_press_key("Meta+ArrowLeft").unwrap().modifiers, 4);
+        assert_eq!(
+            parse_press_key("Alt+Control+Shift+Meta+Home")
+                .unwrap()
+                .modifiers,
+            15
+        );
+    }
+    #[test]
+    fn printable_ascii_and_shifted_letters_preserve_requested_text_without_dpr_or_layout_conversion(
+    ) {
+        assert_eq!(parse_press_key("a").unwrap().text.as_deref(), Some("a"));
+        assert_eq!(parse_press_key("A").unwrap().text.as_deref(), Some("A"));
+        assert_eq!(
+            parse_press_key("Shift+a").unwrap().text.as_deref(),
+            Some("A")
+        );
+        assert_eq!(parse_press_key("7").unwrap().code, "Digit7");
+        assert_eq!(parse_press_key("Control+a").unwrap().text, None);
+    }
+    #[test]
+    fn malformed_unknown_and_layout_dependent_keys_refuse_without_coercion_or_fallback() {
+        for key in [
+            "",
+            "Control",
+            "Control+",
+            "+Enter",
+            "Control+Control+A",
+            "Ctrl+A",
+            "Control+a+b",
+            "Enter ",
+            "\n",
+            "é",
+            "😀",
+            "Shift+1",
+            "!",
+            "F25",
+            "Control+é",
+        ] {
+            assert_eq!(
+                parse_press_key(key),
+                Err("dom_action_key_unavailable"),
+                "{key:?}"
+            );
+        }
+    }
+    #[test]
+    fn navigation_and_function_keys_have_bounded_explicit_virtual_key_codes() {
+        for (key, code) in [
+            ("Backspace", 8),
+            ("Delete", 46),
+            ("Escape", 27),
+            ("ArrowLeft", 37),
+            ("ArrowUp", 38),
+            ("ArrowRight", 39),
+            ("ArrowDown", 40),
+            ("Home", 36),
+            ("End", 35),
+            ("PageUp", 33),
+            ("PageDown", 34),
+            ("F1", 112),
+            ("F24", 135),
+        ] {
+            let mapped = parse_press_key(key).unwrap();
+            assert_eq!(mapped.windows_virtual_key_code, code);
+            assert_eq!(mapped.modifiers, 0);
+            assert_eq!(mapped.text, None);
+        }
+    }
+}

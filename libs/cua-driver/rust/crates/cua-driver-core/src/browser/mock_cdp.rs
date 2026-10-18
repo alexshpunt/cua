@@ -32,6 +32,7 @@ pub(crate) struct MockEvent {
 
 /// The scripted reaction to one command.
 pub(crate) struct MockReply {
+    pub suppress_response: bool,
     pub events: Vec<MockEvent>,
     pub result: Result<Value, (i64, String)>,
 }
@@ -39,6 +40,7 @@ pub(crate) struct MockReply {
 impl MockReply {
     pub fn ok(result: Value) -> Self {
         Self {
+            suppress_response: false,
             events: Vec::new(),
             result: Ok(result),
         }
@@ -46,11 +48,17 @@ impl MockReply {
 
     pub fn err(code: i64, message: &str) -> Self {
         Self {
+            suppress_response: false,
             events: Vec::new(),
             result: Err((code, message.to_owned())),
         }
     }
 
+    /// Keep the socket live while leaving this command's effect unacknowledged.
+    pub fn without_response(mut self) -> Self {
+        self.suppress_response = true;
+        self
+    }
     /// The exact shape Chromium uses for an unimplemented method.
     pub fn method_not_found(method: &str) -> Self {
         Self::err(-32601, &format!("'{method}' wasn't found"))
@@ -116,6 +124,9 @@ impl MockCdpServer {
                             if ws.send(Message::Text(frame.to_string())).await.is_err() {
                                 return;
                             }
+                        }
+                        if reply.suppress_response {
+                            continue;
                         }
                         let mut response = match reply.result {
                             Ok(result) => json!({ "id": id, "result": result }),
