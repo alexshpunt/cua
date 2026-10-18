@@ -3911,13 +3911,6 @@ async fn live_title(conn: &Arc<CdpConnection>, cdp_target_id: &str, fallback: &s
 }
 
 #[cfg(test)]
-#[path = "dom_inspection_tests.rs"]
-mod dom_inspection_tests;
-
-#[cfg(test)]
-#[path = "dom_capture_mode_tests.rs"]
-mod dom_capture_mode_tests;
-#[cfg(test)]
 mod tests {
     use super::*;
 

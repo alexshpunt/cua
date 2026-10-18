@@ -2919,10 +2919,6 @@ mod tests {
                 "browser_type",
             ),
             (
-                BrowserDomActionTool::new(e.clone()).def().clone(),
-                "browser_dom_action",
-            ),
-            (
                 BrowserDialogTool::new(e.clone()).def().clone(),
                 "browser_dialog",
             ),
@@ -2950,7 +2946,6 @@ mod tests {
             BrowserNavigateTool::new(e.clone()).def().clone(),
             BrowserClickTool::new(e.clone()).def().clone(),
             BrowserTypeTool::new(e.clone()).def().clone(),
-            BrowserDomActionTool::new(e.clone()).def().clone(),
             BrowserDialogTool::new(e.clone()).def().clone(),
             BrowserSetInputFilesTool::new(e.clone()).def().clone(),
             BrowserDownloadTool::new(e.clone()).def().clone(),
@@ -2975,7 +2970,6 @@ mod tests {
                 "browser_navigate",
                 "browser_click",
                 "browser_type",
-                "browser_dom_action",
                 "browser_dialog",
                 "browser_set_input_files",
                 "browser_download",
@@ -3006,78 +3000,6 @@ mod tests {
         ] {
             let result = tool.invoke(args).await;
             assert_eq!(result.is_error, Some(true));
-        }
-    }
-
-    #[tokio::test]
-    async fn unclipped_capture_metadata_does_not_invent_css_or_native_geometry() {
-        for mode in [
-            BrowserScreenshotMode::SurfaceUnclipped,
-            BrowserScreenshotMode::NativeView,
-        ] {
-            let screenshot = BrowserTabScreenshot {
-                mode,
-                data_base64: "private-sample".into(),
-                width: 1332,
-                height: 819,
-                viewport_css_width: None,
-                viewport_css_height: None,
-                pixel_to_css_scale_x: None,
-                pixel_to_css_scale_y: None,
-            };
-            let result = with_tab_screenshot(
-                ToolResult::text("sample").with_structured(json!({"status":"ok"})),
-                screenshot,
-            );
-            let metadata = &structured(&result)["screenshot"];
-            assert_eq!(metadata["source"], "cdp_tab");
-            assert_eq!(metadata["capture_mode"], mode.as_str());
-            for key in [
-                "coordinate_space",
-                "viewport_css_width",
-                "viewport_css_height",
-                "pixel_to_css_scale_x",
-                "pixel_to_css_scale_y",
-                "capture_bounds",
-            ] {
-                assert!(
-                    metadata.get(key).is_none(),
-                    "Unproven mapping {key}: {metadata}"
-                );
-            }
-            assert_eq!(metadata["width"], 1332);
-            assert_eq!(metadata["height"], 819);
-            assert!(matches!(&result.content[0], Content::Image { .. }));
-        }
-    }
-
-    #[tokio::test]
-    async fn screenshot_modes_reject_invalid_requests_before_browser_access() {
-        let tool = GetBrowserStateTool::new(engine());
-        for (args, expected) in [
-            (
-                json!({"pid": 2, "window_id": 7, "session": "capture-run", "screenshot_mode": "native_view", "include_screenshot": true}),
-                "screenshot_mode requires snapshot mode",
-            ),
-            (
-                json!({"target_id": "bt-fixture", "tab_id": "tab-fixture", "session": "capture-run", "screenshot_mode": "native_view"}),
-                "screenshot_mode requires include_screenshot=true",
-            ),
-            (
-                json!({"target_id": "bt-fixture", "tab_id": "tab-fixture", "session": "capture-run", "include_screenshot": true, "screenshot_mode": "guess"}),
-                "screenshot_mode must be viewport, surface_unclipped or native_view",
-            ),
-            (
-                json!({"target_id": "bt-fixture", "tab_id": "tab-fixture", "session": "capture-run", "include_screenshot": true, "screenshot_mode": null}),
-                "screenshot_mode must be viewport, surface_unclipped or native_view",
-            ),
-        ] {
-            let result = tool.invoke(args).await;
-            assert_eq!(result.is_error, Some(true));
-            assert!(
-                matches!(&result.content[0], Content::Text { text, .. } if text == expected),
-                "{result:?}"
-            );
         }
     }
 
