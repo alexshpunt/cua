@@ -433,6 +433,8 @@ pub fn default_capabilities_for(tool_name: &str) -> Vec<String> {
         "browser_set_input_files" => &["browser.input.files"],
         "browser_download" => &["browser.download"],
         "browser_pointer" => &["browser.input.pointer"],
+        // Closed locator intents use the existing exact-tab admission adapter, not OS input.
+        "browser_dom_action" => &["browser.input.dom_action"],
 
         // ── driver self-service ──────────────────────────────────────
         "check_for_update" => &["driver.update_check"],
@@ -1877,7 +1879,23 @@ impl ToolRegistry {
             }
         });
         if result.is_error != Some(true) && crate::action_record::is_action_tool(resolved_name) {
-            if let Err(error) = publish_action_result(&mut result) {
+            let publication = if resolved_name == "browser_dom_action" {
+                publish_dom_action_result(&mut result)
+            } else {
+                publish_action_result(&mut result)
+            };
+            if let Err(error) = publication {
+                let dom_progress = (resolved_name == "browser_dom_action")
+                    .then(|| {
+                        result
+                            .structured_content
+                            .clone()
+                            .and_then(|value| {
+                                cua_driver_contract::DomActionResult::from_value(value).ok()
+                            })
+                            .and_then(|receipt| serde_json::to_value(receipt.progress).ok())
+                    })
+                    .flatten();
                 result = ToolResult::error(format!(
                     "internal action outcome mismatch for {resolved_name}: {error}; the tool may have executed. Verify state before retrying."
                 ))
@@ -1887,6 +1905,12 @@ impl ToolRegistry {
                     "tool": resolved_name,
                     "detail": error,
                 }));
+                if let Some(progress) = dom_progress {
+                    result
+                        .structured_content
+                        .as_mut()
+                        .expect("constructed diagnostic")["progress"] = progress;
+                }
             }
         }
         if result.is_error != Some(true) {
@@ -3040,6 +3064,35 @@ fn session_selecting_tool(tool_name: &str) -> bool {
         )
 }
 
+/// Publish the extended DOM contract without narrowing away its attempted prefix.
+fn publish_dom_action_result(result: &mut ToolResult) -> Result<(), String> {
+    let wire = result
+        .structured_content
+        .clone()
+        .ok_or_else(|| "DOM action omitted its receipt".to_owned())?;
+    let receipt = cua_driver_contract::DomActionResult::from_value(wire)?;
+    let record = result
+        .action_record
+        .as_ref()
+        .ok_or_else(|| "DOM action omitted its internal record".to_owned())?;
+    let projected = record
+        .public_result()
+        .map_err(|_| "invalid DOM action internal record".to_owned())?;
+    if projected != receipt.action_result
+        || record.transport != crate::action_record::ActionTransport::BrowserCdpRuntimeFunction
+        || record.requested_delivery != crate::action_record::RequestedDelivery::NotApplicable
+        || !record.attempts.is_empty()
+        || !record.fallbacks.is_empty()
+        || !record.evidence.is_empty()
+        || record.escalation.is_some()
+        || record.delivered_count.is_some()
+        || record.detail.is_some()
+        || (receipt.progress.mutation_attempted && record.refusal.is_some())
+    {
+        return Err("DOM action receipt disagrees with its internal record".to_owned());
+    }
+    Ok(())
+}
 fn publish_action_result(result: &mut ToolResult) -> Result<(), String> {
     let action = result
         .action_record
@@ -5805,6 +5858,47 @@ fn recording_args_for(tool_name: &str, args: &Value) -> Value {
                         Value::String("[redacted]".to_owned()),
                     );
                 }
+            }
+            "browser_dom_action" => {
+                // Recording keeps only a closed operation/route and opaque source context.
+                // Requests may contain typed text, option values and private locators.
+                let action = arguments
+                    .get("request")
+                    .and_then(|request| request.get("action"))
+                    .and_then(Value::as_str)
+                    .filter(|action| {
+                        matches!(
+                            *action,
+                            "click"
+                                | "double_click"
+                                | "right_click"
+                                | "hover"
+                                | "fill"
+                                | "type"
+                                | "press"
+                                | "check"
+                                | "uncheck"
+                                | "select_option"
+                                | "focus"
+                                | "scroll_into_view"
+                        )
+                    })
+                    .unwrap_or("unrecognized")
+                    .to_owned();
+                let route = arguments
+                    .get("input_route")
+                    .and_then(Value::as_str)
+                    .filter(|route| matches!(*route, "dom_event" | "trusted"))
+                    .unwrap_or("unrecognized")
+                    .to_owned();
+                arguments.retain(|key, _| {
+                    matches!(
+                        key.as_str(),
+                        "session" | "target_id" | "tab_id" | "source_ref"
+                    )
+                });
+                arguments.insert("request".to_owned(), serde_json::json!({"action": action}));
+                arguments.insert("input_route".to_owned(), Value::String(route));
             }
             "browser_pointer" => {}
             _ => {}

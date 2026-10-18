@@ -8,13 +8,16 @@
 use cua_driver_contract::{
     ActionResult, ClickInput, ClipboardReadInput, ClipboardWriteInput, DragInput, EndSessionInput,
     EndSessionOutput, EscalateSessionInput, GetAgentCursorStateInput, GetCursorPositionInput,
-    GetDesktopStateInput, GetScreenSizeInput, GetSessionInput, GetSessionStateInput,
-    GetWindowStateInput, HotkeyInput, InvokeMenuInput, ListAppsInput, ListAppsOutput,
-    ListSessionsInput, ListSessionsOutput, ListWindowsInput, ListWindowsOutput, MoveCursorInput,
-    ParseVisualRegionsInput, PressKeyInput, ScrollInput, SessionOutput, SessionStateOutput,
-    SetAgentCursorEnabledInput, SetAgentCursorMotionInput, SetAgentCursorThemeInput,
-    SetWindowFrameInput, SnapshotImage, StartSessionInput, StartSessionOutput, ToolInput,
-    ToolOutput, TypeTextInput, VerifyStateInput, VerifyStateOutput, WindowStateOutput,
+    GetDesktopStateInput, GetDisplayStateInput, GetScreenSizeInput, GetSessionInput,
+    GetSessionStateInput, GetWindowStateInput, HotkeyInput, InvokeMenuInput, ListAppsInput,
+    ListAppsOutput, ListDisplaysInput, ListSessionsInput, ListSessionsOutput, ListWindowsInput,
+    ListWindowsOutput, MoveCursorInput, ParseVisualRegionsInput, PointerMoveInput,
+    PointerScrollInput, PressKeyInput, ScrollInput, SemanticActionInput, SessionOutput,
+    SessionStateOutput, SetAgentCursorEnabledInput, SetAgentCursorMotionInput,
+    SetAgentCursorThemeInput, SetWindowFrameInput, SnapshotImage, StartSessionInput,
+    StartSessionOutput, ToolInput, ToolOutput, TypeTextInput, VerifyStateInput, VerifyStateOutput,
+    WindowControlStateInput, WindowManagementInput, WindowRestoreInput, WindowStateOutput,
+    WindowStatusInput,
 };
 use cua_driver_core::daemon::{
     is_daemon_listening, request_daemon_metadata, send_request, socket_path_for_namespace,
@@ -662,6 +665,15 @@ macro_rules! desktop_tool_methods {
     ($callback:ident) => {
         $callback! {
             get_desktop_state: GetDesktopStateInput,
+            list_displays: ListDisplaysInput,
+            get_display_state: GetDisplayStateInput,
+            get_window_status: WindowStatusInput,
+            restore_window: WindowRestoreInput,
+            get_window_control_state: WindowControlStateInput,
+            manage_window: WindowManagementInput,
+            move_pointer: PointerMoveInput,
+            scroll_at: PointerScrollInput,
+            semantic_action: SemanticActionInput,
             get_screen_size: GetScreenSizeInput,
             get_cursor_position: GetCursorPositionInput,
             verify_state: VerifyStateInput,
@@ -689,6 +701,9 @@ macro_rules! define_desktop_tool_methods {
         #[uniffi::export(async_runtime = "tokio")]
         impl CuaDriver {
             $(
+                /// Dispatch this canonical tool with validated input.
+                /// Native platform limitations, refusals and observations remain
+                /// in the result; no fallback is added.
                 pub async fn $method(&self, input: $input) -> Result<ToolResult, DriverError> {
                     self.invoke_typed(<$input as ToolInput>::TOOL_NAME, input).await
                 }
@@ -702,6 +717,9 @@ macro_rules! define_session_desktop_tool_methods {
         #[uniffi::export(async_runtime = "tokio")]
         impl CuaDriverSession {
             $(
+                /// Dispatch this canonical tool within the bound session.
+                /// Input validation, native limitations and refusal/observation
+                /// metadata are preserved; no fallback is added.
                 pub async fn $method(&self, input: $input) -> Result<ToolResult, DriverError> {
                     self.invoke_typed(<$input as ToolInput>::TOOL_NAME, input).await
                 }
@@ -1947,7 +1965,18 @@ fn normalize_result(tool: &str, raw: Value) -> Result<ToolResult, DriverError> {
         .get("isError")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let action = if !is_error && cua_driver_core::action_record::is_action_tool(tool) {
+    let action = if !is_error && tool == "browser_dom_action" {
+        let structured = structured.ok_or_else(|| DriverError::Protocol {
+            reason: "browser_dom_action response omitted DomActionResult".into(),
+        })?;
+        // Keep the complete prefix receipt in structured_json. Only the legacy
+        // action accessor projects the nested result, after validating both.
+        let receipt = cua_driver_contract::DomActionResult::from_value(structured.clone())
+            .map_err(|error| DriverError::Protocol {
+                reason: format!("{tool} returned an invalid DomActionResult: {error}"),
+            })?;
+        Some(receipt.action_result)
+    } else if !is_error && cua_driver_core::action_record::is_action_tool(tool) {
         let structured = structured.ok_or_else(|| DriverError::Protocol {
             reason: format!("{tool} response omitted ActionResult"),
         })?;

@@ -386,6 +386,22 @@ pub trait BrowserPlatform: Send + Sync {
         window_id: u64,
     ) -> Result<NativeWindowInfo, BrowserRefusal>;
 
+    /// Measure a unique, ready native content viewport in physical screen pixels,
+    /// without input or activation. Return an opaque native identity for continuity
+    /// only. Callers must separately bracket this with exact selected-tab/document
+    /// proof. The current candidate uses Windows Chromium RootWebArea; other
+    /// platforms refuse explicitly. Never substitute a renderer HWND, container,
+    /// inferred chrome inset or first-match document for an attested viewport.
+    async fn native_browser_viewport(
+        &self,
+        _pid: i64,
+        _window_id: u64,
+    ) -> Result<super::dom_geometry::NativeBrowserViewport, BrowserRefusal> {
+        Err(BrowserRefusal::new(
+            super::refusal::BrowserRefusalCode::BrowserRouteUnavailable,
+            "native browser viewport measurement is unavailable on this platform",
+        ))
+    }
     /// Prove whether `window_id` is the only native top-level window owned by
     /// `pid`. `Some(true)` is an exact platform-attested cardinality proof;
     /// `Some(false)` means another window exists; `None` means this window

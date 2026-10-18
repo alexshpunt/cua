@@ -47,6 +47,7 @@ const EXISTING_PROFILE_METHODS: &[&str] = &[
     "DOM.focus",
     "DOM.getBoxModel",
     "DOM.getDocument",
+    "DOM.querySelectorAll",
     "DOM.resolveNode",
     "DOM.scrollIntoViewIfNeeded",
     "DOM.setFileInputFiles",
@@ -111,6 +112,68 @@ pub struct CdpEvent {
     pub params: Value,
 }
 
+/// The bounded event stream cannot be used as evidence after overflow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BoundedEventError {
+    Empty,
+    Closed,
+    Overflow,
+}
+
+/// Ordered events with a sticky loss marker and bounded retained event storage.
+pub(crate) struct BoundedCdpEvents {
+    events: mpsc::Receiver<CdpEvent>,
+    overflowed: Arc<AtomicBool>,
+}
+
+impl BoundedCdpEvents {
+    /// Drain only while the complete event history is still retained.
+    pub(crate) fn try_recv(&mut self) -> Result<CdpEvent, BoundedEventError> {
+        if self.overflowed.load(Ordering::SeqCst) {
+            return Err(BoundedEventError::Overflow);
+        }
+        let event = self.events.try_recv().map_err(|error| match error {
+            mpsc::error::TryRecvError::Empty => BoundedEventError::Empty,
+            mpsc::error::TryRecvError::Disconnected => BoundedEventError::Closed,
+        });
+        // The reader can discover overflow concurrently with the dequeue.
+        if self.overflowed.load(Ordering::SeqCst) {
+            Err(BoundedEventError::Overflow)
+        } else {
+            event
+        }
+    }
+}
+
+struct BoundedSubscriber {
+    events: mpsc::Sender<CdpEvent>,
+    overflowed: Arc<AtomicBool>,
+    max_event_bytes: usize,
+}
+
+impl BoundedSubscriber {
+    fn send(&self, event: &CdpEvent, encoded_bytes: usize) -> bool {
+        if encoded_bytes > self.max_event_bytes {
+            self.overflowed.store(true, Ordering::SeqCst);
+            return false;
+        }
+        // A receiver that has gone away does not need another event allocation.
+        if self.events.is_closed() {
+            return false;
+        }
+        match self.events.try_reserve() {
+            Ok(permit) => {
+                permit.send(event.clone());
+                true
+            }
+            Err(mpsc::error::TrySendError::Full(_)) => {
+                self.overflowed.store(true, Ordering::SeqCst);
+                false
+            }
+            Err(mpsc::error::TrySendError::Closed(_)) => false,
+        }
+    }
+}
 /// Bounded state for one page-owned JavaScript dialog. Message text and URLs
 /// are deliberately not retained.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,8 +191,9 @@ enum CallOutcome {
 
 /// State shared between the caller side and the reader task.
 struct Demux {
-    pending: StdMutex<HashMap<u64, oneshot::Sender<CallOutcome>>>,
+    pending: StdMutex<HashMap<u64, (oneshot::Sender<CallOutcome>, Option<usize>)>>,
     subscribers: StdMutex<Vec<mpsc::UnboundedSender<CdpEvent>>>,
+    bounded_subscribers: StdMutex<Vec<BoundedSubscriber>>,
     session_targets: StdMutex<HashMap<String, String>>,
     dialogs: StdMutex<HashMap<String, CdpDialogState>>,
     next_dialog_generation: AtomicU64,
@@ -143,6 +207,7 @@ impl Demux {
         // error, which `call` reports as a closed socket.
         self.pending.lock().unwrap().clear();
         self.subscribers.lock().unwrap().clear();
+        self.bounded_subscribers.lock().unwrap().clear();
         self.session_targets.lock().unwrap().clear();
         self.dialogs.lock().unwrap().clear();
     }
@@ -161,12 +226,41 @@ async fn read_loop(mut read: SplitStream<WsStream>, demux: Arc<Demux>) {
             Message::Close(_) => break,
             _ => continue,
         };
+        // Only bounded calls opt in. Decode the envelope id without retaining
+        // an oversized result tree; unrelated existing calls keep their policy.
+        let oversized = demux
+            .pending
+            .lock()
+            .unwrap()
+            .values()
+            .any(|(_, limit)| limit.is_some_and(|limit| text.len() > limit));
+        if oversized {
+            #[derive(serde::Deserialize)]
+            struct Envelope {
+                id: Option<u64>,
+            }
+            if let Ok(Envelope { id: Some(id) }) = serde_json::from_str::<Envelope>(&text) {
+                let mut pending = demux.pending.lock().unwrap();
+                if pending
+                    .get(&id)
+                    .is_some_and(|(_, limit)| limit.is_some_and(|limit| text.len() > limit))
+                {
+                    if let Some((tx, _)) = pending.remove(&id) {
+                        let _ = tx.send(CallOutcome::Error {
+                            code: None,
+                            message: "bounded CDP response exceeded its byte budget".into(),
+                        });
+                    }
+                    continue;
+                }
+            }
+        }
         let v: Value = match serde_json::from_str(&text) {
             Ok(v) => v,
             Err(_) => continue,
         };
         if let Some(id) = v.get("id").and_then(Value::as_u64) {
-            let Some(tx) = demux.pending.lock().unwrap().remove(&id) else {
+            let Some((tx, _)) = demux.pending.lock().unwrap().remove(&id) else {
                 continue; // reply to a timed-out or unknown call
             };
             let outcome = match v.get("error") {
@@ -232,6 +326,11 @@ async fn read_loop(mut read: SplitStream<WsStream>, demux: Arc<Demux>) {
                 .lock()
                 .unwrap()
                 .retain(|s| s.send(event.clone()).is_ok());
+            demux
+                .bounded_subscribers
+                .lock()
+                .unwrap()
+                .retain(|subscriber| subscriber.send(&event, text.len()));
         }
     }
     demux.close();
@@ -264,6 +363,7 @@ impl CdpConnection {
         let demux = Arc::new(Demux {
             pending: StdMutex::new(HashMap::new()),
             subscribers: StdMutex::new(Vec::new()),
+            bounded_subscribers: StdMutex::new(Vec::new()),
             session_targets: StdMutex::new(HashMap::new()),
             dialogs: StdMutex::new(HashMap::new()),
             next_dialog_generation: AtomicU64::new(1),
@@ -310,6 +410,36 @@ impl CdpConnection {
         rx
     }
 
+    /// Subscribe without blocking the reader or retaining more than `capacity`
+    /// events, each bounded by its complete encoded frame size. Overflow is
+    /// sticky and invalidates even events queued before the loss. Internal
+    /// callers must provide positive bounds, not untrusted request values.
+    pub(crate) fn subscribe_bounded(
+        &self,
+        capacity: usize,
+        max_event_bytes: usize,
+    ) -> BoundedCdpEvents {
+        assert!(
+            capacity > 0 && max_event_bytes > 0,
+            "positive event bounds required"
+        );
+        let (tx, rx) = mpsc::channel(capacity);
+        let overflowed = Arc::new(AtomicBool::new(false));
+        let mut subscribers = self.demux.bounded_subscribers.lock().unwrap();
+        // Holding this lock across the check closes the subscribe/close race:
+        // close sets its flag before clearing the same subscriber list.
+        if !self.is_closed() {
+            subscribers.push(BoundedSubscriber {
+                events: tx,
+                overflowed: overflowed.clone(),
+                max_event_bytes,
+            });
+        }
+        BoundedCdpEvents {
+            events: rx,
+            overflowed,
+        }
+    }
     /// Associate the one Page-enabled dialog session with its exact target.
     /// Later calls may use fresh attachment sessions, but dialog events keep
     /// arriving on this bounded, persistent event session.
@@ -356,6 +486,30 @@ impl CdpConnection {
         method: &str,
         params: Value,
     ) -> anyhow::Result<Value> {
+        self.call_with_response_limit(session_id, method, params, None)
+            .await
+    }
+
+    /// Issue one command with a reply byte budget before allocating its JSON
+    /// result tree. Cancellation removes its pending receipt; no retry occurs.
+    pub(crate) async fn call_bounded(
+        &self,
+        session_id: Option<&str>,
+        method: &str,
+        params: Value,
+        max_bytes: usize,
+    ) -> anyhow::Result<Value> {
+        self.call_with_response_limit(session_id, method, params, Some(max_bytes))
+            .await
+    }
+
+    async fn call_with_response_limit(
+        &self,
+        session_id: Option<&str>,
+        method: &str,
+        params: Value,
+        response_limit: Option<usize>,
+    ) -> anyhow::Result<Value> {
         let policy = self.method_policy();
         if !policy.allows(method) {
             anyhow::bail!(
@@ -367,7 +521,18 @@ impl CdpConnection {
         }
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
-        self.demux.pending.lock().unwrap().insert(id, tx);
+        self.demux
+            .pending
+            .lock()
+            .unwrap()
+            .insert(id, (tx, response_limit));
+        struct Pending<'a>(&'a Demux, u64);
+        impl Drop for Pending<'_> {
+            fn drop(&mut self) {
+                self.0.pending.lock().unwrap().remove(&self.1);
+            }
+        }
+        let _pending = Pending(&self.demux, id);
         // Close can race the initial check. If the reader cleared the
         // pending map just before this insertion, remove the orphaned
         // sender now instead of waiting for the call timeout.

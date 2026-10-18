@@ -90,6 +90,8 @@ pub mod history;
 
 #[cfg(target_os = "windows")]
 pub mod browser_platform;
+#[cfg(target_os = "windows")]
+mod browser_viewport;
 
 // Pure isolated-browser selection decision; cfg-independent so its unit
 // tests run on any host.
@@ -135,6 +137,10 @@ mod capture_admission;
 mod clipboard;
 #[cfg(any(target_os = "windows", test))]
 mod persistent_wgc;
+#[cfg(any(target_os = "windows", test))]
+mod wgc_crop;
+#[cfg(any(target_os = "windows", test))]
+mod window_focus_diagnostic;
 #[cfg(any(target_os = "windows", test))]
 mod window_restore_state;
 

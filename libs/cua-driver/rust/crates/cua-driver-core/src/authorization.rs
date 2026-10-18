@@ -361,6 +361,7 @@ const BROWSER_BOUND_INPUT_OPERATIONS: &[&str] = &[
     "browser_click",
     "browser_type",
     "browser_pointer",
+    "browser_dom_action",
 ];
 const BROWSER_BOUND_INPUT_SCOPE_KEYS: &[&str] = &[
     "daemon_generation",
@@ -944,6 +945,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         | "browser_click"
         | "browser_type"
         | "browser_pointer"
+        | "browser_dom_action"
         | "history_status"
         | "history_query"
         | "parse_visual_regions" => RiskClass::R2,

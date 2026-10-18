@@ -2213,6 +2213,20 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         })
     }
 
+    async fn native_browser_viewport(
+        &self,
+        pid: i64,
+        window_id: u64,
+    ) -> Result<cua_driver_core::browser::dom_geometry::NativeBrowserViewport, BrowserRefusal> {
+        tokio::task::spawn_blocking(move || crate::browser_viewport::measure(pid, window_id))
+            .await
+            .map_err(|_| {
+                BrowserRefusal::new(
+                    cua_driver_core::browser::refusal::BrowserRefusalCode::BrowserRouteUnavailable,
+                    "native viewport worker unavailable",
+                )
+            })?
+    }
     async fn native_window(
         &self,
         pid: i64,

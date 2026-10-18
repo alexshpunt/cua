@@ -297,6 +297,8 @@ pub enum ToolOperation {
     BrowserSnapshotSemanticV2,
     BrowserClickTrusted,
     BrowserClickDomEvent,
+    BrowserDomActionTrusted,
+    BrowserDomActionDomEvent,
     BrowserTypeInsertText,
     BrowserTypeKeystrokes,
     BrowserPrepareIsolated,
@@ -335,6 +337,8 @@ impl ToolOperation {
             Self::BrowserSnapshotSemanticV2 => "browser_snapshot_semantic_v2",
             Self::BrowserClickTrusted => "browser_click_trusted",
             Self::BrowserClickDomEvent => "browser_click_dom_event",
+            Self::BrowserDomActionTrusted => "browser_dom_action_trusted",
+            Self::BrowserDomActionDomEvent => "browser_dom_action_dom_event",
             Self::BrowserTypeInsertText => "browser_type_insert_text",
             Self::BrowserTypeKeystrokes => "browser_type_keystrokes",
             Self::BrowserPrepareIsolated => "browser_prepare_isolated",
@@ -394,6 +398,12 @@ pub fn tool_operation(tool_name: &str, args: Option<&serde_json::Value>) -> Tool
             None | Some("trusted") => ToolOperation::BrowserClickTrusted,
             Some("dom_event") => ToolOperation::BrowserClickDomEvent,
             Some(_) => ToolOperation::Other,
+        },
+        // The public route is explicit; observation never retains nested locator/text data.
+        "browser_dom_action" => match string_arg("input_route") {
+            Some("trusted") => ToolOperation::BrowserDomActionTrusted,
+            Some("dom_event") => ToolOperation::BrowserDomActionDomEvent,
+            _ => ToolOperation::Other,
         },
         "browser_type" => match string_arg("mode") {
             None | Some("insert_text") => ToolOperation::BrowserTypeInsertText,
@@ -471,7 +481,7 @@ pub fn is_computer_action(tool_name: &str, operation: ToolOperation) -> bool {
     }
     if matches!(
         tool_name,
-        "browser_set_input_files" | "browser_download" | "browser_pointer"
+        "browser_set_input_files" | "browser_download" | "browser_pointer" | "browser_dom_action"
     ) {
         return true;
     }
@@ -725,6 +735,7 @@ fn structured_refusal_code(tool_name: &str, result: Option<&serde_json::Value>) 
             | "browser_set_input_files"
             | "browser_download"
             | "browser_pointer"
+            | "browser_dom_action"
     ) {
         return ToolRefusalCode::None;
     }

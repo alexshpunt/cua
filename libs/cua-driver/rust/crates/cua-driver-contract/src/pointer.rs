@@ -30,7 +30,7 @@ fn dwell_schema(_: &mut SchemaGenerator) -> Schema {
 }
 
 /// One capture-bound point or snapshot token belonging to an exact Windows window.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, uniffi::Record)]
 #[serde(deny_unknown_fields)]
 pub struct PointerMoveInput {
     /// Process that owns the exact target window.
