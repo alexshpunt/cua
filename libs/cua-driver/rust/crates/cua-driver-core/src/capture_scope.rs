@@ -196,7 +196,9 @@ fn tool_scope(tool_name: &str, args: &Value) -> ToolScope {
         tool_name,
         "get_window_state"
             | "get_window_status"
+            | "get_window_control_state"
             | "restore_window"
+            | "manage_window"
             | "verify_state"
             | "get_accessibility_tree"
             | "get_app_state"
@@ -344,7 +346,9 @@ mod tests {
             "move_pointer",
             "scroll_at",
             "get_window_status",
+            "get_window_control_state",
             "restore_window",
+            "manage_window",
         ] {
             assert_eq!(
                 enforce_tool(tool, &json!({"session":session,"pid":42,"window_id":7}))

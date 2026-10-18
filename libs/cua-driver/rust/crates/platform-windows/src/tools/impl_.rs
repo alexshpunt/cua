@@ -5,6 +5,7 @@ use cua_driver_core::action_record::ActionTransport;
 
 mod pointer;
 mod scroll;
+mod window_management;
 mod window_restore;
 
 /// Pin the agent-cursor overlay above `hwnd` in the z-order, normalising to
@@ -529,7 +530,12 @@ impl Tool for ExactPidWindowTargetGuard {
                         .ok()
                         .flatten();
                 if let Err(result) = exact_window_ownership_result(pid, window_id, owner_pid) {
-                    return result;
+                    // Management refusals must retain their one-use source and false mutation prefix.
+                    return if self.inner.def().name == "manage_window" {
+                        window_management::bind_refusal(result, &args)
+                    } else {
+                        result
+                    };
                 }
             }
         }
@@ -10468,6 +10474,18 @@ pub fn build_registry_with_provider(
     ));
     r.register(pid_window_guarded(
         window_restore::RestoreWindowTool {
+            state: state.clone(),
+        },
+        &pid_window_candidates,
+    ));
+    r.register(pid_window_guarded(
+        window_management::GetWindowControlStateTool {
+            state: state.clone(),
+        },
+        &pid_window_candidates,
+    ));
+    r.register(pid_window_guarded(
+        window_management::ManageWindowTool {
             state: state.clone(),
         },
         &pid_window_candidates,

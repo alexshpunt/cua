@@ -23,7 +23,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     RemovePropW, SetPropW, ShowWindowAsync, GUITHREADINFO, SW_RESTORE,
 };
 
-fn failure(code: &'static str, detail: impl Into<String>) -> Failure {
+pub(super) fn failure(code: &'static str, detail: impl Into<String>) -> Failure {
     Failure {
         code,
         detail: detail.into(),
@@ -81,7 +81,7 @@ fn owner(pid: u32, window_id: u64) -> bool {
     crate::win32::window_owner_pid(window_id) == Some(pid)
 }
 
-fn cancelled(flag: &AtomicBool) -> Result<(), Failure> {
+pub(super) fn cancelled(flag: &AtomicBool) -> Result<(), Failure> {
     if flag.load(Ordering::Acquire) {
         Err(failure(
             "cancelled",
@@ -93,14 +93,14 @@ fn cancelled(flag: &AtomicBool) -> Result<(), Failure> {
 }
 
 /// Each property belongs to one exact original window lifetime, not its reusable HWND.
-struct Marker {
-    pid: u32,
-    window_id: u64,
+pub(super) struct Marker {
+    pub(super) pid: u32,
+    pub(super) window_id: u64,
     property: Vec<u16>,
 }
 
 impl Marker {
-    fn create(pid: u32, window_id: u64) -> Result<(String, Self), Failure> {
+    pub(super) fn create(pid: u32, window_id: u64) -> Result<(String, Self), Failure> {
         if !owner(pid, window_id) {
             return Err(failure(
                 "window_state_expired",
@@ -143,7 +143,7 @@ impl Marker {
         Ok((state_id, marker))
     }
 
-    fn hwnd(&self) -> HWND {
+    pub(super) fn hwnd(&self) -> HWND {
         HWND(self.window_id as *mut _)
     }
     fn key(&self) -> PCWSTR {
@@ -168,15 +168,15 @@ impl Drop for Marker {
 }
 
 #[derive(Clone, Copy)]
-struct Sample {
-    minimized: bool,
-    visible: bool,
-    foreground_window: u64,
-    foreground_at_target: bool,
-    keyboard_focus_at_target: Option<bool>,
+pub(super) struct Sample {
+    pub(super) minimized: bool,
+    pub(super) visible: bool,
+    pub(super) foreground_window: u64,
+    pub(super) foreground_at_target: bool,
+    pub(super) keyboard_focus_at_target: Option<bool>,
 }
 
-fn sample(marker: &Marker) -> Result<Sample, Failure> {
+pub(super) fn sample(marker: &Marker) -> Result<Sample, Failure> {
     if !marker.is_current() {
         return Err(failure(
             "window_state_expired",
@@ -248,12 +248,63 @@ impl Manager {
                 Admission {
                     target,
                     minimized: current.minimized,
+                    allow_management: false,
                     lifetime: marker,
                 },
             );
         Ok(output)
     }
 
+    /// Fresh metadata shares restore's original-window lease and bounded admission cache.
+    pub(super) fn observe_control(
+        &self,
+        target: Target,
+        flag: &AtomicBool,
+    ) -> Result<cua_driver_contract::WindowControlStateOutput, Failure> {
+        cancelled(flag)?;
+        let (state_id, marker) = Marker::create(target.pid, target.window_id)?;
+        cancelled(flag)?;
+        let current = super::window_management::sample_control(&marker)?;
+        cancelled(flag)?;
+        let output = cua_driver_contract::WindowControlStateOutput {
+            pid: target.pid,
+            window_id: target.window_id,
+            state_id: state_id.clone(),
+            state: current,
+        };
+        output
+            .validate()
+            .map_err(|detail| failure("window_control_state_unavailable", detail))?;
+        self.states
+            .lock()
+            .map_err(|_| {
+                failure(
+                    "window_state_unavailable",
+                    "Window state cache is unavailable",
+                )
+            })?
+            .issue(
+                state_id,
+                Admission {
+                    target,
+                    minimized: output.state.minimized,
+                    allow_management: true,
+                    lifetime: marker,
+                },
+            );
+        Ok(output)
+    }
+
+    /// Consume a control-purpose reference once; ordinary restore can consume the same lease.
+    pub(super) fn admit_control(
+        &self,
+        target: &Target,
+        state_id: &str,
+    ) -> Result<Admission<Marker>, Failure> {
+        self.states.lock().map_err(|_| failure("window_state_unavailable", "Window state cache is unavailable"))?
+            .consume_control(state_id, target)
+            .map_err(|error| failure(error.code(), "Read fresh control state for this exact window; references are one-use and cannot borrow restore-only authority"))
+    }
     fn admit(&self, target: &Target, state_id: &str) -> Result<Admission<Marker>, Failure> {
         self.states
             .lock()
@@ -273,7 +324,7 @@ impl Manager {
     }
 }
 
-fn target(args: &Value, pid: u32, window_id: u64) -> Result<Target, ToolResult> {
+pub(super) fn target(args: &Value, pid: u32, window_id: u64) -> Result<Target, ToolResult> {
     // Public labels cannot substitute for another transport's private state owner.
     let session = args
         .get("_session_id")

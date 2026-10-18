@@ -235,7 +235,7 @@ fn portable_desktop_contracts_are_accepted_by_active_backend() {
 }
 
 #[test]
-fn canonical_cursor_contracts_match_active_backend() {
+fn canonical_cursor_and_window_control_contracts_match_active_backend() {
     let Some(mut driver) = RawDriver::spawn() else {
         return;
     };
@@ -257,10 +257,15 @@ fn canonical_cursor_contracts_match_active_backend() {
 
     for contract in manifest().tools.into_iter().filter(|contract| {
         contract.schema_mode == SchemaMode::CanonicalRuntime
-            && contract
+            && (contract
                 .capabilities
                 .iter()
                 .any(|capability| capability.starts_with("agent_cursor."))
+                || (cfg!(target_os = "windows")
+                    && matches!(
+                        contract.name.as_str(),
+                        "get_window_status" | "restore_window" | "get_window_control_state" | "manage_window"
+                    )))
     }) {
         let live = live_tools
             .iter()
