@@ -36,7 +36,6 @@ struct NativePath {
     map: MapPoint,
     pressed_at: Instant,
     held: bool,
-    previous_foreground: u64,
     previous_cursor: POINT,
     last_cursor: Option<(i32, i32)>,
     cursor_key: String,
@@ -197,14 +196,9 @@ impl Drop for NativePath {
             {
                 let _ = SetCursorPos(self.previous_cursor.x, self.previous_cursor.y);
             }
-            if GetForegroundWindow().0 as usize as u64 == self.hwnd
-                && self.previous_foreground != self.hwnd
-                && crate::win32::window_owner_pid(self.previous_foreground).is_some()
-            {
-                let _ = crate::input::force_foreground_attached(HWND(
-                    self.previous_foreground as *mut _,
-                ));
-            }
+            // The target stays foreground, as after every explicit foreground action.
+            // Re-activating the previous foreground window brought an unrelated
+            // window of the user above the target after each stroke.
         }
     }
 }
@@ -288,7 +282,6 @@ fn prepare(
         map,
         pressed_at: Instant::now(),
         held: false,
-        previous_foreground: unsafe { GetForegroundWindow() }.0 as usize as u64,
         previous_cursor,
         last_cursor: None,
         cursor_key,

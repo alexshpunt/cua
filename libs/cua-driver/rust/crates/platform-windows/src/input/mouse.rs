@@ -635,9 +635,20 @@ fn send_click_synthesized_mods_impl(
             // Only the move record carries absolute coordinates. Button-only
             // records act at the current pointer position; adding ABSOLUTE to
             // them can prevent retained-mode controls from seeing the press.
-            let events = [move_input, down_input, up_input];
-            let sent = SendInput(&events, std::mem::size_of::<INPUT>() as i32);
-            if sent as usize != events.len() {
+            // XAML popups (WinUI flyouts and menus) ignore a press that arrives in
+            // the same batch as the pointer entering them: let the move and the
+            // press each be processed before the next event.
+            let mut sent = 0;
+            for (index, event) in [move_input, down_input, up_input].iter().enumerate() {
+                if index > 0 {
+                    sleep(Duration::from_millis(30));
+                }
+                sent += SendInput(
+                    std::slice::from_ref(event),
+                    std::mem::size_of::<INPUT>() as i32,
+                );
+            }
+            if sent != 3 {
                 sent_ok = false;
                 break;
             }
