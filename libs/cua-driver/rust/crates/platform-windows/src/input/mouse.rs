@@ -639,9 +639,11 @@ fn send_click_synthesized_mods_impl(
             // the same batch as the pointer entering them: let the move and the
             // press each be processed before the next event.
             let mut sent = 0;
+            // A press needs 30 ms after the pointer arrives; the release only needs to be
+            // a separate, later event.
             for (index, event) in [move_input, down_input, up_input].iter().enumerate() {
                 if index > 0 {
-                    sleep(Duration::from_millis(30));
+                    sleep(Duration::from_millis(if index == 1 { 30 } else { 15 }));
                 }
                 sent += SendInput(
                     std::slice::from_ref(event),
@@ -672,7 +674,9 @@ fn send_click_synthesized_mods_impl(
         // Retained-mode frameworks establish capture/focus on mouse-down and can
         // lose the click if the real cursor is warped away while those queued
         // messages are still being dispatched.
-        sleep(Duration::from_millis(if activate { 120 } else { 40 }));
+        // Foreground restores nothing afterwards; 40 ms lets the target take the
+        // release before the foreground check below.
+        sleep(Duration::from_millis(40));
         if !was_topmost && !activate {
             let _ = SetWindowPos(
                 target,
