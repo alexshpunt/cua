@@ -7568,9 +7568,9 @@ impl Tool for InputTimelineTool {
             description: "Windows only: run one timed input program against an exact foreground window: key down/up, left/right/middle/x1/x2 button down/up, absolute moves in window-local screenshot pixels, raw relative moves for pointer-locked apps, wheel detents, and pen contacts with pressure, tilt, eraser and barrel. Events run at their at_ms offsets (non-decreasing, up to 120000 ms, up to 5000 events). Everything still held is released at the end, on error, on target or foreground loss and on cancellation. Explicit foreground and a prior screenshot of the window are required. Never replay an uncertain prefix.".into(),
             input_schema: json!({"type":"object","required":["pid","window_id","events"],"properties":{
                 "session":cua_driver_core::tool_schema::session_schema(),
-                "pid":{"type":"integer","minimum":1},
-                "window_id":{"type":"integer","minimum":1},
-                "events":{"type":"array","minItems":1,"maxItems":crate::timeline::MAX_EVENTS,"items":{"type":"object","required":["at_ms","type"],"properties":{
+                "pid":{"type":"integer","minimum":1,"description":"Process id of the target window."},
+                "window_id":{"type":"integer","minimum":1,"description":"Native window id from list_windows; must stay the foreground window."},
+                "events":{"type":"array","minItems":1,"maxItems":crate::timeline::MAX_EVENTS,"description":"Timed input events, ordered by non-decreasing at_ms.","items":{"type":"object","required":["at_ms","type"],"properties":{
                     "at_ms":{"type":"integer","minimum":0,"maximum":crate::timeline::MAX_DURATION_MS},
                     "type":{"type":"string","enum":["key_down","key_up","button_down","button_up","move","move_relative","wheel","pen_down","pen_move","pen_up"]},
                     "key":{"type":"string"},
