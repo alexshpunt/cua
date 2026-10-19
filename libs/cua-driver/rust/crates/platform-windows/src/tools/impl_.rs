@@ -3714,7 +3714,10 @@ impl Tool for ClickTool {
                     }
                 })
                 .await;
-                tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
+                // Background clicks hand the foreground back; explicit foreground keeps the target active.
+                if !activate {
+                    tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
+                }
                 let half = if want_expand { "dropdown" } else { "press" };
                 return match send_result {
                     Ok(Ok(())) => ToolResult::text(format!(
@@ -3864,9 +3867,6 @@ impl Tool for ClickTool {
                 }
                 let btn_fg = btn.clone();
                 let mods_owned = modifiers.clone();
-                let prev_fg_addr = unsafe {
-                    windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize
-                };
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
@@ -3878,7 +3878,6 @@ impl Tool for ClickTool {
                     }
                 })
                 .await;
-                tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
                 return match send_result {
                     Ok(Ok(())) => ToolResult::text(format!(
                         "✅ Performed SendInput click on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
@@ -4215,9 +4214,6 @@ impl Tool for ClickTool {
             // background-safe and would deliver the click without the
             // foreground swap the caller asked for).
             if delivery == DeliveryMode::Foreground {
-                let prev_fg_addr = unsafe {
-                    windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize
-                };
                 let mods_owned = modifiers.clone();
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
@@ -4230,7 +4226,6 @@ impl Tool for ClickTool {
                     }
                 })
                 .await;
-                tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
                 return match send_result {
                     Ok(Ok(())) => {
                         let click_word = match count {
@@ -6920,9 +6915,6 @@ impl Tool for DoubleClickTool {
             }
             // delivery_mode:"foreground" — route through SendInput at the cached coords.
             if delivery == DeliveryMode::Foreground {
-                let prev_fg_addr = unsafe {
-                    windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize
-                };
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
@@ -6938,7 +6930,6 @@ impl Tool for DoubleClickTool {
                     }
                 })
                 .await;
-                tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
                 return match send_result {
                     Ok(Ok(())) => ToolResult::text(format!(
                         "✅ Sent double-click via SendInput on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
@@ -7041,9 +7032,6 @@ impl Tool for DoubleClickTool {
             }
             // delivery_mode:"foreground" — SendInput at screen coords with FG swap.
             if delivery == DeliveryMode::Foreground {
-                let prev_fg_addr = unsafe {
-                    windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize
-                };
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
@@ -7059,7 +7047,6 @@ impl Tool for DoubleClickTool {
                     }
                 })
                 .await;
-                tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
                 return match send_result {
                     Ok(Ok(())) => ToolResult::text(format!(
                         "✅ Sent double-click via SendInput to pid {pid} at screen ({sx_i},{sy_i}) (delivery_mode:foreground)."
@@ -7281,9 +7268,6 @@ impl Tool for RightClickTool {
                 };
             }
             if delivery == DeliveryMode::Foreground {
-                let prev_fg_addr = unsafe {
-                    windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize
-                };
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
@@ -7299,7 +7283,6 @@ impl Tool for RightClickTool {
                     }
                 })
                 .await;
-                tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
                 return match send_result {
                     Ok(Ok(())) => ToolResult::text(format!(
                         "✅ Sent right-click via SendInput on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
@@ -7399,9 +7382,6 @@ impl Tool for RightClickTool {
                 };
             }
             if delivery == DeliveryMode::Foreground {
-                let prev_fg_addr = unsafe {
-                    windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize
-                };
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
@@ -7417,7 +7397,6 @@ impl Tool for RightClickTool {
                     }
                 })
                 .await;
-                tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
                 return match send_result {
                     Ok(Ok(())) => ToolResult::text(format!(
                         "✅ Sent right-click via SendInput to pid {pid} at screen ({sx_i},{sy_i}) (delivery_mode:foreground)."
@@ -7591,8 +7570,13 @@ impl Tool for InputTimelineTool {
             Ok(request) => request,
             Err(code) => return path_refusal(code, "Invalid input timeline; no input was sent."),
         };
-        if crate::input::delivery::DeliveryMode::from_args(&args) != crate::input::delivery::DeliveryMode::Foreground {
-            return path_refusal("background_unavailable", "Input timelines need delivery_mode:foreground. No input was sent.");
+        if crate::input::delivery::DeliveryMode::from_args(&args)
+            != crate::input::delivery::DeliveryMode::Foreground
+        {
+            return path_refusal(
+                "background_unavailable",
+                "Input timelines need delivery_mode:foreground. No input was sent.",
+            );
         }
         let (pid, hwnd) = (request.pid, request.window_id);
         let ratio = match screenshot_scale(&self.state, &args, pid, Some(hwnd)) {
@@ -7612,28 +7596,59 @@ impl Tool for InputTimelineTool {
             crate::input::timeline::send_timeline(hwnd, pid, &program, cancelled, bitmap_to_screen)
         })
         .await;
-        use cua_driver_core::action_record::{ActionEffect, ActionExecutionRecord, ActionTransport, ActualDelivery, RequestedDelivery};
+        use cua_driver_core::action_record::{
+            ActionEffect, ActionExecutionRecord, ActionTransport, ActualDelivery, RequestedDelivery,
+        };
         match result {
             Ok(Ok(report)) => {
-                let summary = format!("Input timeline: {}/{} events sent in {} ms; everything held released: {}. {}",
-                    report.sent, report.total, report.elapsed_ms, report.released,
-                    report.error.as_deref().unwrap_or("Delivery is not proof of the app's result."));
+                let summary = format!(
+                    "Input timeline: {}/{} events sent in {} ms; everything held released: {}. {}",
+                    report.sent,
+                    report.total,
+                    report.elapsed_ms,
+                    report.released,
+                    report
+                        .error
+                        .as_deref()
+                        .unwrap_or("Delivery is not proof of the app's result.")
+                );
                 if report.sent == 0 && report.error.is_some() {
-                    let code = report.error.as_deref().unwrap().split(':').next().unwrap_or("input_failed").to_owned();
-                    return ToolResult::error(summary).with_structured(json!({"code": code, "effect": "refused", "timeline": report.to_json()}));
+                    let code = report
+                        .error
+                        .as_deref()
+                        .unwrap()
+                        .split(':')
+                        .next()
+                        .unwrap_or("input_failed")
+                        .to_owned();
+                    return ToolResult::error(summary).with_structured(
+                        json!({"code": code, "effect": "refused", "timeline": report.to_json()}),
+                    );
                 }
                 let mut record = ActionExecutionRecord::new(
-                    if report.error.is_none() && report.released { ActionEffect::Unverifiable } else { ActionEffect::Partial },
+                    if report.error.is_none() && report.released {
+                        ActionEffect::Unverifiable
+                    } else {
+                        ActionEffect::Partial
+                    },
                     ActionTransport::WindowsSendInput,
                     RequestedDelivery::Foreground,
                 );
                 record.actual_delivery = Some(ActualDelivery::Foreground);
                 record.delivered_count = Some(report.sent as u32);
-                ToolResult::text(summary).with_structured(json!({"timeline": report.to_json()})).with_action_record(record)
+                ToolResult::text(summary)
+                    .with_structured(json!({"timeline": report.to_json()}))
+                    .with_action_record(record)
             }
-            Ok(Err(error)) => path_refusal(error.split(':').next().unwrap_or("input_failed"), &error),
+            Ok(Err(error)) => {
+                path_refusal(error.split(':').next().unwrap_or("input_failed"), &error)
+            }
             Err(error) => {
-                let mut record = ActionExecutionRecord::new(ActionEffect::Unverifiable, ActionTransport::WindowsSendInput, RequestedDelivery::Foreground);
+                let mut record = ActionExecutionRecord::new(
+                    ActionEffect::Unverifiable,
+                    ActionTransport::WindowsSendInput,
+                    RequestedDelivery::Foreground,
+                );
                 record.actual_delivery = Some(ActualDelivery::Unknown);
                 ToolResult::error(format!("Input timeline worker failed; prefix and release unconfirmed. Do not replay: {error}")).with_action_record(record)
             }
@@ -8025,9 +8040,6 @@ impl Tool for DragTool {
         if delivery == DeliveryMode::Foreground {
             let btn_fg = button.clone();
             pin_overlay_above(&cursor_key, hwnd);
-            let prev_fg_addr = unsafe {
-                windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize
-            };
             let send_result = tokio::task::spawn_blocking(move || {
                 crate::input::mouse::send_drag_synthesized(
                     hwnd,
@@ -8048,7 +8060,6 @@ impl Tool for DragTool {
                 steps,
             );
             let (send_result, ()) = tokio::join!(send_result, visual_drag);
-            tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
             let button_suffix = if button == "left" {
                 String::new()
             } else {
