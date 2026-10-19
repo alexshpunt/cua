@@ -46,6 +46,8 @@ struct Native {
     map: MapPoint,
     started: Instant,
     pen: Option<HSYNTHETICPOINTERDEVICE>,
+    /// The target and its owner chain; the target's own popups and flyouts may hold the foreground.
+    foreground: crate::win32::ForegroundTarget,
 }
 
 fn mouse(flags: MOUSE_EVENT_FLAGS, dx: i32, dy: i32, data: u32) -> INPUT {
@@ -185,7 +187,8 @@ impl Backend for Native {
         {
             return Err("target_lost: exact window is gone, hidden or minimized".into());
         }
-        if unsafe { GetForegroundWindow() }.0 as usize as u64 != self.hwnd {
+        let actual = unsafe { GetForegroundWindow() }.0 as usize as u64;
+        if !crate::win32::foreground_matches_target_or_owned_window(self.foreground, actual) {
             return Err("foreground_lost: stopped before another timeline event".into());
         }
         Ok(())
@@ -333,6 +336,8 @@ pub(crate) fn send_timeline(
         map,
         started: Instant::now(),
         pen: None,
+        foreground: crate::win32::capture_foreground_target(hwnd)
+            .ok_or("target_lost: exact window disappeared before input")?,
     };
     for timed in program {
         match &timed.event {

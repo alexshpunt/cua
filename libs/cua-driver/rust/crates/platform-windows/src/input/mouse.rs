@@ -613,7 +613,11 @@ fn send_click_synthesized_mods_impl(
         // Move the cursor so the OS hover state matches before the click; the
         // MOUSEEVENTF_MOVE input ensures Chromium's input filter sees a
         // coordinated move event.
-        let _ = SetCursorPos(sx, sy);
+        // Foreground lets the SendInput move below carry the pointer there: a warped
+        // cursor makes that move empty, and WinUI drop-down buttons then ignore the press.
+        if !activate {
+            let _ = SetCursorPos(sx, sy);
+        }
 
         // Hold modifier keys (ctrl/shift/alt/win) across the click — the macOS
         // `modifier` surface. Pressed via the system input queue so apps that
