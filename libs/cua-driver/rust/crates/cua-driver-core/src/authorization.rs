@@ -280,6 +280,7 @@ const DESKTOP_INPUT_OPERATIONS: &[&str] = &[
     "mouse_button_down",
     "mouse_button_up",
     "hold_keys",
+    "input_timeline",
     "mouse_drag",
     "parallel_mouse_drag",
     "replay_trajectory",
@@ -902,6 +903,7 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         | "mouse_drag"
         | "parallel_mouse_drag"
         | "hold_keys"
+        | "input_timeline"
         | "type_text"
         | "type_text_chars"
         | "press_key"
@@ -1212,6 +1214,7 @@ fn enforce_hard_invariants(
             | "press_key"
             | "hotkey"
             | "hold_keys"
+            | "input_timeline"
             | "move_pointer"
             | "scroll_at"
             | "set_value"

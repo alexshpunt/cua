@@ -132,6 +132,7 @@ pub const ACTION_RESULT_TOOLS: &[&str] = &[
     "mouse_button_down",
     "mouse_button_up",
     "hold_keys",
+    "input_timeline",
     "type_text",
     "type_text_chars",
     "press_key",

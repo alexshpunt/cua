@@ -219,6 +219,8 @@ fn tools_list_schema_shape() {
         #[cfg(target_os = "windows")]
         "hold_keys",
         #[cfg(target_os = "windows")]
+        "input_timeline",
+        #[cfg(target_os = "windows")]
         "move_pointer",
         #[cfg(target_os = "windows")]
         "scroll_at",
