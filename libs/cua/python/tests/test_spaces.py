@@ -110,7 +110,6 @@ async def exercise(c, fx, tmp_path: Path, teleport: bool = False):
 def test_spaces_embedded(fixtures, tmp_path):
     c = cua.embedded(
         state_dir=str(tmp_path / "sbx"),
-        fleet_from_env=False,
         spaces_home=str(tmp_path / "cua"),
         teleport_home=fixtures["teleport_host_home"],
     )
@@ -134,6 +133,7 @@ def daemon_exercise(fixtures, cua_binary, tmp_path, teleport: bool):
         os.environ,
         CUA_HOME=str(home),
         HOME=str(home),
+        CUA_DAEMON_NO_RELAY="1",
         CUA_SPACES_TELEPORT_HOME=fixtures["teleport_host_home"],
         CUA_SPACES_AGENT_CREDENTIALS_HOME="none",
     )

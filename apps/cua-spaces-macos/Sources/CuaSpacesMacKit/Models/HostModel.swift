@@ -61,7 +61,7 @@ public final class FixtureHost: HostRunning, @unchecked Sendable {
         current = HostStatus(
             configured: true, mode: request.mode, relayUrl: relay ? (request.relayUrl ?? "https://relay.cua.ai") : nil,
             directUrl: relay ? nil : "http://\(request.direct ?? "")", envTokenPath: nil, machineId: "0123abcd4567",
-            name: request.name ?? "This machine", sharing: true, serviceInstalled: true, serviceRunning: true,
+            name: request.name ?? "This computer", sharing: true, serviceInstalled: true, serviceRunning: true,
             serviceKind: "launchd", online: true, clients: [], allow: request.allow ?? [],
             permissions: [
                 HostPermission(id: "screen-recording", title: "Screen Recording",
@@ -125,7 +125,7 @@ public final class FixtureHost: HostRunning, @unchecked Sendable {
         calls.append("resume:\(account)")
         guard current.pausedSignedOut else { return current }
         guard account == owner || account.caseInsensitiveCompare(ownerEmail) == .orderedSame else {
-            throw CuaError.InvalidArgument(message: "this machine is shared with another Cua account")
+            throw CuaError.InvalidArgument(message: "this computer is shared with another Cua account")
         }
         current.pausedSignedOut = false
         current.sharing = true
@@ -155,6 +155,10 @@ public final class HostModel {
     public private(set) var machineId: String?
     /// The host setup form, while it shows.
     public private(set) var form: AppHostFormState?
+    /// What the system calls this computer (Sharing's Computer Name), which
+    /// the setup form's Name starts with: `cua host setup` uses the same
+    /// name when none is given. Tests pin it.
+    public var computerName: () -> String? = { Foundation.Host.current().localizedName }
     public private(set) var busy = false
     public private(set) var error: String?
     /// The last page button that failed (a setting, Stop sharing, ...), in
@@ -198,10 +202,6 @@ public final class HostModel {
         "Sign in to Cua in your browser to continue. Setup finishes on its own after that."
     /// Called whenever the state changes (the roster's entry follows it).
     public var onChange: (() -> Void)?
-    /// Asks macOS for Local Network access once this Mac provides Spaces
-    /// (see `LocalNetworkPermissionRequesting`); nil in fixtures and tests.
-    public var localNetwork: LocalNetworkPermissionRequesting?
-    private var askedLocalNetwork = false
 
     public init(host: HostRunning?) {
         self.host = host
@@ -217,13 +217,6 @@ public final class HostModel {
         next.account = account
         state = next
         machineId = status.machineId
-        // Setup that provides Spaces, launch on a Mac that already does, or
-        // Spaces turned on: ask now, while someone is at this Mac, not when
-        // the first Space boots (see `LocalNetworkPermissionRequesting`).
-        if let state, state.configured, state.provideSpaces, !askedLocalNetwork, let localNetwork {
-            askedLocalNetwork = true
-            localNetwork.request()
-        }
         onChange?()
     }
 
@@ -240,6 +233,9 @@ public final class HostModel {
 
     public func openForm() {
         form = appHostFormInitial()
+        if let name = computerName()?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            send(.setName(name: name))
+        }
         error = nil
         setupFailure = nil
     }
@@ -259,14 +255,9 @@ public final class HostModel {
     public func submit() async {
         guard let host, let view = formView, view.canSubmit, let request = view.request else { return }
         send(.submit)
-        defer { progress = nil }
         do {
-            let status = request.mode == "relay"
-                ? try await setUpRelay(host, request)
-                : try await host.setupRequest(request: request, accountToken: nil)
+            try await setUp(request, on: host)
             form = nil
-            setupFailure = nil
-            apply(status)
         } catch {
             let raw = LiveSpacesBackend.words(error)
             setupFailure = Self.isUnauthenticated(error)
@@ -274,6 +265,17 @@ public final class HostModel {
                 : HostSetupFailure.presenting(raw)
             send(.failed(error: raw))
         }
+    }
+
+    /// Host setup with a request the core's form built and validated (the
+    /// form's submit, and the web UI's): relay setup with the account token.
+    func setUp(_ request: AppHostSetupRequest, on host: HostRunning) async throws {
+        defer { progress = nil }
+        let status = request.mode == "relay"
+            ? try await setUpRelay(host, request)
+            : try await host.setupRequest(request: request, accountToken: nil)
+        setupFailure = nil
+        apply(status)
     }
 
     /// Relay setup always runs with a valid account token: signed out (or a

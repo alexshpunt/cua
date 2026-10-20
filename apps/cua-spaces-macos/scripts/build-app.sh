@@ -6,7 +6,7 @@
 # Cua Spaces app export dylib (libcua_spaces_ffi, which carries the cua SDK;
 # staged as libs/cua/swift/lib/libcua_sdk.dylib by
 # libs/spaces-app-swift/scripts/stage-library.sh), the app icon
-# (Support/AppIcon.icns, the blue Cua Spaces key; scripts/dmg-art draws it)
+# (Support/AppIcon.icns, the blue Cua key on slate; scripts/dmg-art draws it)
 # and the menu bar template the Tauri app ships (apps/cua-spaces/src-tauri/
 # icons), plus the `cua` CLI next to the executable when one is built
 # (the app installs it onto PATH on first launch, like the Tauri app's
@@ -77,6 +77,15 @@ cp "$here/Support/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 cp "$icons/tray-template.png" "$app/Contents/Resources/tray-template.png"
 cp "$icons/tray-template@2x.png" "$app/Contents/Resources/tray-template@2x.png"
 cp "$here/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
+# New UI (preview): the shared web UI's build (apps/cua-spaces-web, `dist`),
+# served from Contents/Resources/WebUI at cua-spaces://app/. CUA_WEBUI_DIST
+# points at another build; without one the window says how to add it.
+webui="${CUA_WEBUI_DIST:-$here/../cua-spaces-web/dist}"
+if [ -f "$webui/index.html" ]; then
+  cp -R "$webui" "$app/Contents/Resources/WebUI"
+else
+  echo "note: no web UI build at $webui; New UI (preview) shows a placeholder" >&2
+fi
 
 # Sparkle, the updater: the framework SwiftPM linked (@rpath), with its
 # symlinks (ditto), its XPC services, Autoupdate and Updater.app.

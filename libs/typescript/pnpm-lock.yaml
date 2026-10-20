@@ -102,21 +102,23 @@ importers:
         specifier: 4.1.0
         version: 4.1.0(@types/node@22.19.8)(happy-dom@20.8.9)(vite@7.3.5(@types/node@22.19.8)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
-  fleet:
-    dependencies:
-      '@ubjs/core':
-        specifier: 0.31.0-3
-        version: 0.31.0-3
+  cursor-motion:
     devDependencies:
       '@types/node':
         specifier: ^22.15.17
         version: 22.19.8
-      esbuild:
-        specifier: ^0.27.0
-        version: 0.27.2
+      tsdown:
+        specifier: ^0.11.9
+        version: 0.11.13(typescript@5.9.3)
       typescript:
-        specifier: ^5.9.0
+        specifier: ^5.8.3
         version: 5.9.3
+      vite:
+        specifier: 7.3.5
+        version: 7.3.5(@types/node@22.19.8)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3)
+      vitest:
+        specifier: 4.1.0
+        version: 4.1.0(@types/node@22.19.8)(happy-dom@20.8.9)(vite@7.3.5(@types/node@22.19.8)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
   playground:
     dependencies:
@@ -1110,9 +1112,6 @@ packages:
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
-
-  '@ubjs/core@0.31.0-3':
-    resolution: {integrity: sha512-39XrJgUZ2VVb561sSnkXPhczNoeBsNiSRArecsV0JE7CJq69ajFkcn9/tBAUS2NpgHkLIDU+z6Ks2+1wXnboxg==}
 
   '@ungap/structured-clone@1.3.0':
     resolution: {integrity: sha512-WmoN8qaIAo7WTYWbAZuG8PYEhn5fkz7dZrqTBZ7dtt//lL2Gwms1IcnQ5yHqjDfX8Ft5j4YzDM23f87zBfDe9g==}
@@ -2887,8 +2886,6 @@ snapshots:
   '@types/ws@8.18.1':
     dependencies:
       '@types/node': 22.19.8
-
-  '@ubjs/core@0.31.0-3': {}
 
   '@ungap/structured-clone@1.3.0': {}
 

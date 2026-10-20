@@ -55,24 +55,21 @@ type Stream<T> = Pin<Box<dyn futures_util::Stream<Item = Result<T, Status>> + Se
 pub struct MockAuth {
     /// Required env token (direct mode: `authorization`).
     pub token: Option<String>,
-    /// Fleet gateway emulation: required path prefix, gateway bearer and
-    /// claim header. In this mode the env token is read from
-    /// `x-cua-env-authorization`.
+    /// Gateway emulation: required path prefix and gateway bearer. In this
+    /// mode the env token is read from `x-cua-env-authorization`.
     pub gateway: Option<MockGateway>,
     /// Path prefix to strip without gateway checks (relay emulation, e.g.
     /// `/m/<machine-id>`).
     pub prefix: Option<String>,
 }
 
-/// Fleet gateway emulation settings.
+/// Gateway emulation settings.
 #[derive(Clone, Debug)]
 pub struct MockGateway {
-    /// Path prefix, e.g. `/api/svc/ns/sbx-env`.
+    /// Path prefix, e.g. `/m/<machine-id>`.
     pub prefix: String,
     /// Expected gateway bearer.
     pub bearer: String,
-    /// Expected `X-Cua-Fleet-Claim`.
-    pub claim: String,
 }
 
 /// Observations the tests assert on.
@@ -152,6 +149,8 @@ pub struct MockState {
     /// Features reported unsupported, with their limitation (a host that
     /// does not share its desktop).
     withheld_features: Mutex<Vec<(String, String)>>,
+    /// Override the reported OS, including absence for an older host.
+    pub os: Mutex<Option<Option<pb::OperatingSystem>>>,
     /// `GetCapabilities.version` (default `0.0.0-mock`).
     version: Mutex<Option<String>>,
     /// `GetCapabilitiesResponse::machine_seal_public_key` (S1); empty (an
@@ -195,8 +194,6 @@ pub struct TunnelAttach {
     pub path: String,
     /// `authorization` header.
     pub authorization: Option<String>,
-    /// `x-cua-fleet-claim` header.
-    pub claim: Option<String>,
     /// `x-cua-env-authorization` header.
     pub env_authorization: Option<String>,
     /// Whether the attach was accepted.
@@ -235,6 +232,11 @@ impl MockState {
     /// `TeleportService.WipeImport` requests received, in order.
     pub fn teleport_wipes(&self) -> Vec<pb::WipeImportRequest> {
         self.teleport_wipes.lock().unwrap().clone()
+    }
+
+    /// Forgets every import, as the target's own expiry would.
+    pub fn expire_teleport_imports(&self) {
+        self.teleport_imports.lock().unwrap().clear();
     }
 
     /// Stored file content.
@@ -539,9 +541,6 @@ where
             if header("authorization").as_deref() != Some(&format!("Bearer {}", gw.bearer)) {
                 denied = Some(Status::unauthenticated("gateway bearer"));
             }
-            if header("x-cua-fleet-claim").as_deref() != Some(gw.claim.as_str()) {
-                denied = Some(Status::permission_denied("claim header"));
-            }
             env_auth = header(crate::transport::ENV_TOKEN_HEADER);
         }
         if let Some(t) = &state.auth.token
@@ -612,13 +611,19 @@ impl SystemService for Svc {
                 .unwrap_or_else(|| "0.0.0-mock".into()),
             protocol_version: cua_proto::ENV_PROTOCOL_VERSION,
             protocol_revision: cua_proto::ENV_PROTOCOL_REVISION,
-            os: Some(pb::OperatingSystem {
-                family: pb::OsFamily::Linux as i32,
-                name: "MockOS".into(),
-                version: "1".into(),
-                kernel: "mock".into(),
-                pretty_name: "MockOS 1.0.3 LTS".into(),
-            }),
+            os: self
+                .0
+                .os
+                .lock()
+                .unwrap()
+                .clone()
+                .unwrap_or(Some(pb::OperatingSystem {
+                    family: pb::OsFamily::Linux as i32,
+                    name: "MockOS".into(),
+                    version: "1".into(),
+                    kernel: "mock".into(),
+                    pretty_name: "MockOS 1.0.3 LTS".into(),
+                })),
             runtime: pb::Runtime::Container as i32,
             features: vec![
                 pb::Feature {
@@ -707,8 +712,12 @@ impl SystemService for Svc {
         &self,
         _: tonic::Request<pb::MetricsRequest>,
     ) -> Result<tonic::Response<pb::MetricsResponse>, Status> {
-        // A 4 GiB guest with a 32 GiB disk, both its own.
+        // A 4-core guest at 12.5% with a 4 GiB memory and a 32 GiB disk, both
+        // its own.
         Ok(tonic::Response::new(pb::MetricsResponse {
+            cpu_count: 4,
+            cpu_percent: 12.5,
+            load_average_1m: 0.75,
             memory_total_bytes: 4 << 30,
             memory_used_bytes: 1_610_612_736,
             memory_limited: true,
@@ -824,6 +833,9 @@ impl Svc {
 
 enum Script {
     Echo(String),
+    /// `printf %s WORD`: the word without its quotes and no newline;
+    /// `$HOME` is the mock guest user's home (`/home/cua`).
+    Printf(String),
     Fail(i32),
     Ticker(u32, u64),
     Cat,
@@ -858,6 +870,11 @@ fn parse_script(cfg: &pb::ProcessConfig) -> Script {
     let num = |i: usize, d: u64| words.get(i).and_then(|w| w.parse().ok()).unwrap_or(d);
     match prog.rsplit('/').next().unwrap_or_default() {
         "echo" => Script::Echo(words.join(" ")),
+        "printf" if words.len() == 2 && words[0] == "%s" => Script::Printf(
+            words[1]
+                .trim_matches(|c| c == '"' || c == '\'')
+                .replace("$HOME", "/home/cua"),
+        ),
         "fail" => Script::Fail(num(0, 1) as i32),
         "ticker" => Script::Ticker(num(0, 3) as u32, num(1, 10)),
         "cat" => Script::Cat,
@@ -1072,6 +1089,10 @@ impl ProcessService for Svc {
                 match script {
                     Script::Echo(s) => {
                         svc.emit(pid, out_kind, format!("{s}\n").into_bytes());
+                        (Some(0), String::new())
+                    }
+                    Script::Printf(s) => {
+                        svc.emit(pid, out_kind, s.into_bytes());
                         (Some(0), String::new())
                     }
                     Script::Fail(code) => {
@@ -2654,7 +2675,6 @@ async fn serve_tunnel(stream: TcpStream, state: Arc<MockState>) {
         let mut attach = TunnelAttach {
             path: full.clone(),
             authorization: header("authorization"),
-            claim: header(crate::transport::FLEET_CLAIM_HEADER),
             env_authorization: header(crate::transport::ENV_TOKEN_HEADER),
             accepted: false,
         };
@@ -2675,13 +2695,10 @@ async fn serve_tunnel(stream: TcpStream, state: Arc<MockState>) {
             if path != format!("{prefix}{}", cua_proto::metadata::TUNNEL_WS_PATH) {
                 return Err(refuse(404, "no route"));
             }
-            if let Some(gw) = &cb_state.auth.gateway {
-                if attach.authorization.as_deref() != Some(&format!("Bearer {}", gw.bearer)) {
-                    return Err(refuse(401, "gateway bearer"));
-                }
-                if attach.claim.as_deref() != Some(gw.claim.as_str()) {
-                    return Err(refuse(403, "claim header"));
-                }
+            if let Some(gw) = &cb_state.auth.gateway
+                && attach.authorization.as_deref() != Some(&format!("Bearer {}", gw.bearer))
+            {
+                return Err(refuse(401, "gateway bearer"));
             }
             let ticket = req
                 .uri()

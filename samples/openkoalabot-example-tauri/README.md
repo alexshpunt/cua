@@ -20,7 +20,7 @@ This example depends on the cua SDK by path, as a local workspace override:
 
 | Dependency | Where it comes from today |
 |---|---|
-| `cua-spaces`, `cua-fleet`, `cua-sandbox-core`, `cua-daemon` | `../../../libs/cua/crates/*` (path dependencies in `src-tauri/Cargo.toml`) |
+| `cua-spaces`, `cua-sandbox-core`, `cua-daemon` | `../../../libs/cua/crates/*` (path dependencies in `src-tauri/Cargo.toml`) |
 | The sandbox image list | `../../libs/images/sandbox-images.json`, imported by the UI (`ui/src/images.ts`) and compiled into the core (`src-tauri/core/src/plan.rs`) |
 
 None of these are on crates.io or npm yet. Once they are, the path
@@ -55,7 +55,7 @@ SDK call, `Spaces::create(SpaceCreate { on, image, kind, runtime, name, .. })`:
 | Where | `on` | `kind` / `runtime` |
 |---|---|---|
 | This machine | `local` | container / `auto` (gVisor when available), vm / `qemu`, vm / `lume`; plus `cpus`, `memory_mb` |
-| Cua Cloud | `cloud` | container / `gvisor`, vm / `kubevirt`. Needs `cua auth login` (or `CUA_CLIENT_ID`/`CUA_CLIENT_SECRET`); metered until deleted. |
+| Cua Cloud | `cloud` | Ended: a cloud plan fails with "Cua Cloud has ended; use a local sandbox or your own machine". Create the Space on This machine instead. |
 
 **Add by address** (in the wizard footer or the empty state) registers a
 machine that already runs cua-spacesd, for example a local container:
