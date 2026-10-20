@@ -809,118 +809,59 @@ pub fn send_drag_synthesized(
         0
     };
 
+    // Button records carry no coordinates: they act where the pointer is, like a real mouse.
+    let button_input = |flags| INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT {
+                dx: 0,
+                dy: 0,
+                mouseData: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    let send =
+        |input: INPUT| unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) == 1 };
+
     unsafe {
-        let prev_fg = GetForegroundWindow();
-        let mut prev_cursor = POINT::default();
-        let _ = GetCursorPos(&mut prev_cursor);
-
-        // Lock-free z-order raise (no focus steal) so the coordinate-routed drag
-        // lands on the target — same technique as send_click_synthesized.
-        // SetForegroundWindow is lock-denied without UIAccess and isn't needed
-        // for pointer input; NoActivateGuard keeps the press from activating it.
-        let _noact = crate::input::NoActivateGuard::arm(target);
-        // Capture whether the target was ALREADY always-on-top so we only demote
-        // below if WE promoted it (else we'd strip a legitimate topmost window).
-        let was_topmost = (GetWindowLongPtrW(target, GWL_EXSTYLE) as u32) & WS_EX_TOPMOST.0 != 0;
-        let _ = SetWindowPos(
-            target,
-            HWND_TOPMOST,
-            0,
-            0,
-            0,
-            0,
-            SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-        );
-
-        // 1. Move + press at the start of the drag.
-        let (nfx, nfy) = norm(sx_from, sy_from);
-        let _ = SetCursorPos(sx_from, sy_from);
-        let prelude = [
-            make_input(nfx, nfy, MOUSEEVENTF_MOVE),
-            make_input(nfx, nfy, down_flag),
-        ];
-        let sent = SendInput(&prelude, std::mem::size_of::<INPUT>() as i32);
-        if sent as usize != prelude.len() {
-            if !was_topmost {
-                let _ = SetWindowPos(
-                    target,
-                    HWND_NOTOPMOST,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-                );
-            }
-            if !prev_fg.0.is_null() && prev_fg != target {
-                let _ = SetWindowPos(
-                    prev_fg,
-                    HWND_TOP,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-                );
-            }
-            let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
+        // Explicit foreground: activate the exact target and leave it active. The pointer moves
+        // through SendInput only, so every move carries real motion; a warped cursor makes moves
+        // empty and canvases such as Paint then draw nothing.
+        if !crate::input::force_foreground_assisted(target).0 {
             bail!(
-                "SendInput drag-prelude inserted {sent}/{} events",
-                prelude.len()
+                "foreground_unavailable: Windows did not activate exact target HWND {:?}; no drag input was sent",
+                target.0
             );
         }
-
-        // 2. Interpolate the path. SetCursorPos + MOUSEEVENTF_MOVE in lockstep
-        //    so both the visible cursor and the system input queue track the
-        //    same path — WPF's drag-handler watches GetKeyState during each
-        //    move event.
-        for i in 1..=steps {
-            let t = i as f64 / steps as f64;
-            let x = sx_from + ((sx_to - sx_from) as f64 * t).round() as i32;
-            let y = sy_from + ((sy_to - sy_from) as f64 * t).round() as i32;
-            let (nx, ny) = norm(x, y);
-            let _ = SetCursorPos(x, y);
-            let mv = [make_input(nx, ny, MOUSEEVENTF_MOVE)];
-            let _ = SendInput(&mv, std::mem::size_of::<INPUT>() as i32);
-            if step_delay_ms > 0 {
-                sleep(Duration::from_millis(step_delay_ms));
-            }
-        }
-
-        // 3. Release at the end.
-        let (ntx, nty) = norm(sx_to, sy_to);
-        let release = [make_input(ntx, nty, up_flag)];
-        let _ = SendInput(&release, std::mem::size_of::<INPUT>() as i32);
-
-        // Brief settle, then restore z-order (demote target, restack user's
-        // window — no activation) and the cursor.
-        sleep(Duration::from_millis(40));
-        if !was_topmost {
-            let _ = SetWindowPos(
-                target,
-                HWND_NOTOPMOST,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-            );
-        }
-        if !prev_fg.0.is_null() && prev_fg != target {
-            let _ = SetWindowPos(
-                prev_fg,
-                HWND_TOP,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-            );
-        }
-        let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
-        drop(_noact);
     }
-
+    let (nfx, nfy) = norm(sx_from, sy_from);
+    if !send(make_input(nfx, nfy, MOUSEEVENTF_MOVE)) {
+        bail!("SendInput did not insert the drag's first move; no button was pressed");
+    }
+    sleep(Duration::from_millis(30));
+    if !send(button_input(down_flag)) {
+        bail!("SendInput did not insert the drag's button press");
+    }
+    sleep(Duration::from_millis(30));
+    for i in 1..=steps {
+        let t = i as f64 / steps as f64;
+        let x = sx_from + ((sx_to - sx_from) as f64 * t).round() as i32;
+        let y = sy_from + ((sy_to - sy_from) as f64 * t).round() as i32;
+        let (nx, ny) = norm(x, y);
+        let _ = send(make_input(nx, ny, MOUSEEVENTF_MOVE));
+        if step_delay_ms > 0 {
+            sleep(Duration::from_millis(step_delay_ms));
+        }
+    }
+    // Always release, even after a failed move, so no button stays held.
+    let released = send(button_input(up_flag)) || send(button_input(up_flag));
+    sleep(Duration::from_millis(40));
+    if !released {
+        bail!("SendInput did not insert the drag's button release");
+    }
     Ok(())
 }
 
