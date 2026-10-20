@@ -56,13 +56,14 @@ fn state_schema(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"type":"string","minLength":1})
 }
 fn position_schema(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type":["integer","null"],"minimum":-100000,"maximum":100000})
+    // Optional fields are omitted when unused; Vertex AI tool schemas take a single type, not a null union.
+    json_schema!({"type":"integer","minimum":-100000,"maximum":100000})
 }
 fn unit_schema(_: &mut SchemaGenerator) -> Schema {
     json_schema!({"type":"string","enum":["windows_desktop_pixels"]})
 }
 fn size_schema(_: &mut SchemaGenerator) -> Schema {
-    json_schema!({"type":["integer","null"],"minimum":1,"maximum":32767})
+    json_schema!({"type":"integer","minimum":1,"maximum":32767})
 }
 
 /// Explicit native desktop pixels, unrelated to overview or CSS coordinates.

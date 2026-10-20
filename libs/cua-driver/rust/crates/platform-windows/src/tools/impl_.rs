@@ -7681,7 +7681,7 @@ impl Tool for HoldKeysTool {
                 "session":cua_driver_core::tool_schema::session_schema(),
                 "pid":{"type":"integer","minimum":1,"description":"Process ID owning the observed target window."},
                 "window_id":{"type":"integer","minimum":1,"description":"Exact native window ID from the current observation."},
-                "keys":{"type":"array","minItems":1,"maxItems":8,"uniqueItems":true,"items":{"type":"string"},"description":"Unique complete key names or ctrl/shift/alt/win modifiers. Modifiers press first; all action-owned keys release in reverse order."},
+                "keys":{"type":"array","minItems":1,"maxItems":8,"items":{"type":"string"},"description":"Unique (duplicates are refused) complete key names or ctrl/shift/alt/win modifiers. Modifiers press first; all action-owned keys release in reverse order."},
                 "duration_ms":{"type":"integer","minimum":1,"maximum":10000,"description":"Requested interval from first injected key down through release, including pointer work; measured time is reported, not a real-time guarantee."},
                 "actions":{"type":"array","minItems":1,"maxItems":32,"description":"Complete pixel left clicks/drags. All requested pointer time must fit the hold duration.","items":pointer},
                 "delivery_mode":crate::input::delivery::delivery_mode_schema()

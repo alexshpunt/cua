@@ -249,7 +249,6 @@ fn assert_tools_list_schema_shape(mut d: RawDriver) {
         );
         assert_eq!(params["keys"]["minItems"], 1);
         assert_eq!(params["keys"]["maxItems"], 8);
-        assert_eq!(params["keys"]["uniqueItems"], true);
         assert_eq!(params["duration_ms"]["minimum"], 1);
         assert_eq!(params["duration_ms"]["maximum"], 10000);
         assert_eq!(params["actions"]["maxItems"], 32);
