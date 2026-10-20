@@ -139,6 +139,19 @@ mod frame_geometry {
 
 use frame_geometry::FrameGeometry;
 
+/// Make GDI capture pixels opaque when no desktop compositor runs. Without DWM (an
+/// isolated agent session), GDI leaves the alpha byte at 0 where it draws text and
+/// controls, so those pixels vanish from the PNG. With DWM the bytes stay untouched.
+fn opaque_without_compositor(bgra: &mut [u8]) {
+    use windows::Win32::Graphics::Dwm::DwmIsCompositionEnabled;
+    if unsafe { DwmIsCompositionEnabled() }.is_ok_and(|enabled| enabled.as_bool()) {
+        return;
+    }
+    for px in bgra.chunks_exact_mut(4) {
+        px[3] = 255;
+    }
+}
+
 /// After GetDIBits we have BGRA bytes from PrintWindow. If essentially every
 /// pixel is fully-transparent black or fully-opaque black, treat the capture
 /// as "PrintWindow didn't render this surface" and let the caller fall back
@@ -325,6 +338,7 @@ unsafe fn screenshot_via_screen_region(hwnd: HWND) -> Result<(Vec<u8>, i32, i32,
     if ok == 0 {
         bail!("screen-region fallback: GetDIBits returned 0");
     }
+    opaque_without_compositor(&mut pixels);
     Ok((pixels, w, h, geometry))
 }
 
@@ -602,6 +616,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     if ok == 0 {
         bail!("GetDIBits returned 0");
     }
+    opaque_without_compositor(&mut pixels);
 
     // Crop the bitmap to the DWM extended-frame bounds (computed above)
     // to remove the invisible-shadow margin PrintWindow doesn't paint.
@@ -791,6 +806,7 @@ pub(crate) fn screenshot_screen_region_bytes(
         if ok == 0 {
             bail!("GetDIBits returned 0");
         }
+        opaque_without_compositor(&mut pixels);
         cua_driver_core::image_utils::encode_bgra_to_png(&pixels, w as u32, h as u32)
     }
 }
