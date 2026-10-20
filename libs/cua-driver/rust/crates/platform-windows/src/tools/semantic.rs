@@ -154,9 +154,20 @@ impl Control for UiaControl<'_> {
         let Some(pattern) = self.prepared.take() else {
             return Err(Failure::refusal("semantic_pattern_unsupported"));
         };
-        // WS_EX_NOACTIVATE removes a window from shell desktop membership.
-        // Restoring that style can reassign it to the current desktop. UIA
-        // must not use the pointer guard; keep only the provider focus shield.
+        // Some providers (Chromium) activate their window on Invoke, which takes the
+        // human's focus. WS_EX_NOACTIVATE prevents that, but setting and restoring it
+        // on a window of another virtual desktop reassigns the window to the current
+        // one. So the guard applies only to windows already on the current desktop;
+        // the provider focus shield applies to all.
+        let on_current = crate::shell_desktop::Query::new()
+            .read(self.pid, self.hwnd)
+            .on_current_desktop
+            == Some(true);
+        let _no_activate = on_current.then(|| {
+            crate::input::NoActivateGuard::arm(windows::Win32::Foundation::HWND(
+                self.hwnd as usize as *mut core::ffi::c_void,
+            ))
+        });
         crate::uia::fg_bypass::run_with_uwp_bypass(self.hwnd as isize, || unsafe {
             match pattern {
                 Prepared::Invoke(pattern) => pattern.Invoke(),
