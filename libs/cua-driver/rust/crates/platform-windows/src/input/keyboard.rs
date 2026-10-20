@@ -520,13 +520,25 @@ pub fn send_text_synthesized_after_focus(
     if let Some(msg) = crate::input::post_message_blocked_by_uipi(hwnd) {
         bail!(msg);
     }
-    // Build the key-event sequence. Printable codepoints go through as Unicode
-    // packets (KEYEVENTF_UNICODE, wVk=0, wScan=code unit), but line breaks are
+    // Build the key-event sequence. Characters on the target's keyboard layout
+    // are real keystrokes (see `keyed`); other codepoints go through as Unicode
+    // packets (KEYEVENTF_UNICODE, wVk=0, wScan=code unit), and line breaks are
     // mapped to a real VK_RETURN keystroke — mirroring the background path
     // (`post_enter_keystroke`) — because terminals and rich editors honour an
     // Enter key event, not a raw `\r`/`\n` Unicode packet. `\r\n` collapses to
     // a single Return (the `\r` emits the Enter; the following `\n` is silent).
-    let units = text_units(text);
+    let layout = unsafe {
+        windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout(GetWindowThreadProcessId(
+            target, None,
+        ))
+    };
+    let caps_lock = unsafe {
+        windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState(
+            windows::Win32::UI::Input::KeyboardAndMouse::VK_CAPITAL.0 as i32,
+        )
+    } & 1
+        == 1;
+    let units = keyed(text_units(text), layout, caps_lock);
     if units.is_empty() {
         return Ok(());
     }
@@ -545,14 +557,16 @@ pub fn send_text_synthesized_after_focus(
                         remaining = n - k,
                     );
                 }
-                match att.send_and_await_read(&unit_events(unit), Duration::from_secs(2)) {
+                let events = unit_events(unit);
+                match att.send_and_await_read(&events, Duration::from_secs(2)) {
                     UnitRead::Read => {}
                     UnitRead::Short(sent) => bail!(
-                        "SendInput inserted only {sent} of 4 key events for text unit {} of {n} \
+                        "SendInput inserted only {sent} of {} key events for text unit {} of {n} \
                          ({k} earlier units were read). Windows blocked the rest: the target \
                          runs at a higher integrity level than the Driver (UIPI), or the input \
                          desktop is locked or showing a secure prompt. To drive an elevated \
                          app, run the Driver elevated (the default autostart daemon is).",
+                        events.len(),
                         k + 1
                     ),
                     UnitRead::Stalled => bail!(
@@ -569,7 +583,7 @@ pub fn send_text_synthesized_after_focus(
         }
         let mut events = Vec::with_capacity(n * 2);
         for unit in &units {
-            events.extend_from_slice(&unit_events(unit)[..2]);
+            events.extend(unit_keys(unit));
         }
         let sent = SendInput(&events, std::mem::size_of::<INPUT>() as i32);
         if sent as usize != events.len() {
@@ -803,7 +817,41 @@ fn sentinel_key_input(up: bool) -> INPUT {
 
 enum TextUnit {
     Packet(u16),
+    /// A layout keystroke for a character, with Shift held when the layout needs it.
+    Key {
+        vk: VIRTUAL_KEY,
+        shift: bool,
+    },
     Return,
+}
+
+/// Type characters as real keystrokes where the target's keyboard layout has them without AltGr: consoles such as
+/// PowerShell's PSReadLine ignore VK_PACKET input. Other characters, and surrogate pairs, stay Unicode packets.
+fn keyed(
+    units: Vec<TextUnit>,
+    layout: windows::Win32::UI::Input::KeyboardAndMouse::HKL,
+    caps_lock: bool,
+) -> Vec<TextUnit> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::VkKeyScanExW;
+    units
+        .into_iter()
+        .map(|unit| match unit {
+            TextUnit::Packet(code) if !(0xD800..0xE000).contains(&code) && code >= 0x20 => {
+                let scan = unsafe { VkKeyScanExW(code, layout) } as u16;
+                let (vk, mods) = (scan & 0xFF, scan >> 8);
+                // -1 means unmapped; Ctrl/Alt (AltGr) combinations stay packets.
+                if scan == 0xFFFF || mods & !1 != 0 {
+                    return TextUnit::Packet(code);
+                }
+                let letter = char::from_u32(code as u32).is_some_and(char::is_alphabetic);
+                TextUnit::Key {
+                    vk: VIRTUAL_KEY(vk),
+                    shift: (mods & 1 == 1) != (caps_lock && letter),
+                }
+            }
+            other => other,
+        })
+        .collect()
 }
 
 /// One readable VK_PACKET, or one Return. A supplementary scalar is two Packets (high, low).
@@ -831,14 +879,27 @@ fn text_units(text: &str) -> Vec<TextUnit> {
     units
 }
 
+/// The unit's own key events, Shift wrapped around a shifted keystroke.
+fn unit_keys(unit: &TextUnit) -> Vec<INPUT> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VK_RETURN, VK_SHIFT};
+    match unit {
+        TextUnit::Packet(c) => vec![unicode_key_input(*c, false), unicode_key_input(*c, true)],
+        TextUnit::Return => vec![key_input(VK_RETURN, false), key_input(VK_RETURN, true)],
+        TextUnit::Key { vk, shift: false } => vec![key_input(*vk, false), key_input(*vk, true)],
+        TextUnit::Key { vk, shift: true } => vec![
+            key_input(VK_SHIFT, false),
+            key_input(*vk, false),
+            key_input(*vk, true),
+            key_input(VK_SHIFT, true),
+        ],
+    }
+}
+
 /// The unit's key events followed by the drain sentinel, inserted by one SendInput.
-fn unit_events(unit: &TextUnit) -> [INPUT; 4] {
-    use windows::Win32::UI::Input::KeyboardAndMouse::VK_RETURN;
-    let (d, u) = match unit {
-        TextUnit::Packet(c) => (unicode_key_input(*c, false), unicode_key_input(*c, true)),
-        TextUnit::Return => (key_input(VK_RETURN, false), key_input(VK_RETURN, true)),
-    };
-    [d, u, sentinel_key_input(false), sentinel_key_input(true)]
+fn unit_events(unit: &TextUnit) -> Vec<INPUT> {
+    let mut events = unit_keys(unit);
+    events.extend([sentinel_key_input(false), sentinel_key_input(true)]);
+    events
 }
 
 /// Build a single Unicode keyboard INPUT struct for one UTF-16 code unit,
@@ -1090,6 +1151,35 @@ mod text_unit_tests {
         assert_ne!(keys[3].dwFlags.0 & KEYEVENTF_KEYUP.0, 0);
         assert_eq!(keys[2].wVk.0, 0xE8);
         assert_eq!(keys[3].wVk.0, 0xE8);
+    }
+
+    #[test]
+    fn a_shifted_key_holds_shift_around_it_then_drains() {
+        use windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
+        let events = unit_events(&TextUnit::Key {
+            vk: VIRTUAL_KEY(0xBD),
+            shift: true,
+        });
+        let keys: Vec<_> = events
+            .iter()
+            .map(|input| unsafe { input.Anonymous.ki })
+            .collect();
+        // key_input sends scan codes; the drain sentinel is a virtual key.
+        let scan = |vk: u16| unsafe { MapVirtualKeyW(vk as u32, MAPVK_VK_TO_VSC) } as u16;
+        assert_eq!(
+            keys[..4].iter().map(|key| key.wScan).collect::<Vec<_>>(),
+            [scan(VK_SHIFT.0), scan(0xBD), scan(0xBD), scan(VK_SHIFT.0)]
+        );
+        assert_eq!([keys[4].wVk.0, keys[5].wVk.0], [0xE8, 0xE8]);
+        assert!(keys
+            .iter()
+            .all(|key| key.dwFlags.0 & KEYEVENTF_UNICODE.0 == 0));
+        assert_eq!(
+            keys.iter()
+                .map(|key| key.dwFlags.0 & KEYEVENTF_KEYUP.0 != 0)
+                .collect::<Vec<_>>(),
+            [false, false, true, true, false, true]
+        );
     }
 
     #[test]
