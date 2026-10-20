@@ -237,6 +237,7 @@ impl NativePointer {
 
 impl Backend for NativePointer {
     fn check_target(&mut self) -> Result<(), Failure> {
+        crate::human_input::check().map_err(|detail| failure("human_takeover", detail))?;
         self.check_identity()?;
         if foreground_window() != self.hwnd {
             return Err(failure(

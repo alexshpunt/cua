@@ -94,6 +94,7 @@ impl Backend for NativePath {
         if self.cancelled.load(Ordering::Acquire) {
             return Err("cancelled".into());
         }
+        crate::human_input::check()?;
         if crate::win32::window_owner_pid(self.hwnd) != Some(self.pid)
             || !unsafe { IsWindowVisible(HWND(self.hwnd as *mut _)) }.as_bool()
             || crate::input::window_is_iconic(self.hwnd)

@@ -444,6 +444,7 @@ pub fn send_key_synthesized_after_focus(
     modifiers: &[&str],
     focus: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
+    crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(hwnd as *mut _);
     if target.0.is_null() {
         bail!("invalid target hwnd");
@@ -511,6 +512,7 @@ pub fn send_text_synthesized_after_focus(
     text: &str,
     focus: impl FnOnce() -> Result<()>,
 ) -> Result<()> {
+    crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(hwnd as *mut _);
     if target.0.is_null() {
         bail!("invalid target hwnd");

@@ -127,6 +127,8 @@ pub mod uia;
 #[cfg(target_os = "windows")]
 pub mod msaa;
 
+/// Pause foreground input while the human uses the keyboard or mouse.
+pub mod human_input;
 #[cfg(target_os = "windows")]
 pub mod input;
 

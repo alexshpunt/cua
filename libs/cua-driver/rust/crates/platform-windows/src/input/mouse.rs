@@ -475,6 +475,7 @@ fn send_click_synthesized_mods_impl(
     modifiers: &[&str],
     activate: bool,
 ) -> Result<()> {
+    crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(target as *mut _);
     if target.0.is_null() {
         bail!("invalid target hwnd");
@@ -761,6 +762,7 @@ pub fn send_drag_synthesized(
     steps: usize,
     button: &str,
 ) -> Result<()> {
+    crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(target as *mut _);
     if target.0.is_null() {
         bail!("invalid target hwnd");
@@ -895,6 +897,7 @@ fn wheel_mouse_data(ticks: i32) -> u32 {
 /// delivery follows the cursor, so positioning the cursor is sufficient. The
 /// cursor is restored to its previous position afterward.
 pub fn send_wheel_synthesized(sx: i32, sy: i32, ticks: i32, horizontal: bool) -> Result<()> {
+    crate::human_input::check().map_err(anyhow::Error::msg)?;
     let flag = if horizontal {
         MOUSEEVENTF_HWHEEL
     } else {
