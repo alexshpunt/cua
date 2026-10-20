@@ -73,6 +73,8 @@ pub(crate) struct WindowsCaptureBridge {
     service: Arc<CaptureService>,
     // Only metadata is retained; PNG ownership/expiry remains in CaptureService.
     wgc: Mutex<HashMap<(String, u32, u64), (CaptureId, CaptureBinding)>>,
+    /// Per window: visible frame size at its latest default-route capture and that capture's native size.
+    frames: Mutex<HashMap<u64, ((i32, i32), (u32, u32))>>,
 }
 
 impl WindowsCaptureBridge {
@@ -80,6 +82,7 @@ impl WindowsCaptureBridge {
         Arc::new(Self {
             service,
             wgc: Mutex::new(HashMap::new()),
+            frames: Mutex::new(HashMap::new()),
         })
     }
 
@@ -148,6 +151,18 @@ impl WindowsCaptureBridge {
                 return Err(CaptureActionError::Lookup(CaptureLookupError::TargetMismatch).into());
             }
         }
+        if let (false, WindowsCaptureTarget::Window { pid, window_id }) = (retained, target) {
+            // A window whose visible frame kept the size it had at its last capture still has that capture's
+            // native size; only a changed frame needs a fresh capture to learn the new size.
+            let remembered = self.frames.lock().unwrap().get(&window_id).copied();
+            if let Some((frame, (width, height))) = remembered {
+                if window_owner_matches(pid, window_id)?
+                    && visible_frame_size(window_id) == Some(frame)
+                {
+                    return CaptureGeometry::new(width, height, width, height);
+                }
+            }
+        }
         live_geometry_for_backend(target, retained)
     }
     pub(crate) fn publish(
@@ -170,6 +185,20 @@ impl WindowsCaptureBridge {
             0.0,
             0.0,
         )?;
+        if let WindowsCaptureTarget::Window { window_id, .. } = target {
+            // Remember the visible frame size beside the native capture size, so an action can confirm an
+            // unchanged window without capturing it again.
+            if let Some(frame) = visible_frame_size(window_id) {
+                let mut frames = self.frames.lock().unwrap();
+                if frames.len() >= 512 {
+                    frames.clear();
+                }
+                frames.insert(
+                    window_id,
+                    (frame, (geometry.native_width, geometry.native_height)),
+                );
+            }
+        }
         let capture_id = self.service.publish(CapturePublication {
             png_bytes,
             target: target.core(),
@@ -285,6 +314,54 @@ fn live_geometry_for_backend(
     };
     let (width, height) = crate::capture::png_dimensions_pub(&png)?;
     CaptureGeometry::new(width, height, width, height)
+}
+
+/// Size of the window's visible frame (DWM extended frame bounds, else the window rectangle).
+#[cfg(target_os = "windows")]
+fn visible_frame_size(window_id: u64) -> Option<(i32, i32)> {
+    use windows::Win32::Foundation::{HWND, RECT};
+    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
+    let hwnd = HWND(window_id as usize as *mut std::ffi::c_void);
+    let mut rect = RECT::default();
+    let dwm = unsafe {
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            &mut rect as *mut RECT as *mut std::ffi::c_void,
+            std::mem::size_of::<RECT>() as u32,
+        )
+    };
+    if dwm.is_err() && unsafe { GetWindowRect(hwnd, &mut rect) }.is_err() {
+        return None;
+    }
+    Some((rect.right - rect.left, rect.bottom - rect.top))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn visible_frame_size(_window_id: u64) -> Option<(i32, i32)> {
+    None
+}
+
+/// The window still exists and belongs to the captured process.
+#[cfg(target_os = "windows")]
+fn window_owner_matches(pid: u32, window_id: u64) -> anyhow::Result<bool> {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
+    let hwnd = HWND(window_id as usize as *mut std::ffi::c_void);
+    anyhow::ensure!(
+        unsafe { IsWindow(hwnd).as_bool() },
+        "native window was replaced"
+    );
+    let mut owner = 0_u32;
+    unsafe { GetWindowThreadProcessId(hwnd, Some(&mut owner)) };
+    anyhow::ensure!(owner == pid, "native window owner changed after capture");
+    Ok(true)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn window_owner_matches(_pid: u32, _window_id: u64) -> anyhow::Result<bool> {
+    Ok(false)
 }
 
 #[cfg(not(target_os = "windows"))]
