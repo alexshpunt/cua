@@ -2444,13 +2444,14 @@ impl Tool for LaunchAppTool {
                 "cdp_debugging_port moved to browser_prepare so DevTools is never enabled on an unproven user profile",
             );
         }
-        if launch_path_opt
-            .as_deref()
-            .into_iter()
-            .chain(path_opt.as_deref())
-            .chain(name_opt.as_deref())
-            .chain(extra_args.iter().map(String::as_str))
-            .any(cua_driver_core::launch_guard::contains_remote_debugging_flag)
+        if !cua_driver_core::launch_guard::remote_debugging_launch_allowed()
+            && launch_path_opt
+                .as_deref()
+                .into_iter()
+                .chain(path_opt.as_deref())
+                .chain(name_opt.as_deref())
+                .chain(extra_args.iter().map(String::as_str))
+                .any(cua_driver_core::launch_guard::contains_remote_debugging_flag)
         {
             return ToolResult::error(
                 cua_driver_core::launch_guard::REMOTE_DEBUGGING_LAUNCH_REFUSAL,

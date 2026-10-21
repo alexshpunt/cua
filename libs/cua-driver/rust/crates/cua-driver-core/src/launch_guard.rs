@@ -4,6 +4,13 @@
 /// DevTools. `browser_prepare` owns that transition.
 pub const REMOTE_DEBUGGING_LAUNCH_REFUSAL: &str = "Chromium remote-debugging flags moved to browser_prepare so DevTools is never enabled on an unproven user profile";
 
+/// Whether the host that started this driver lets `launch_app` start a browser
+/// with remote debugging. Off unless `CUA_DRIVER_ALLOW_DEBUGGING_LAUNCH=1`, for
+/// hosts that gate such launches themselves and attach their own automation.
+pub fn remote_debugging_launch_allowed() -> bool {
+    std::env::var("CUA_DRIVER_ALLOW_DEBUGGING_LAUNCH").as_deref() == Ok("1")
+}
+
 /// Whether a launch argument, executable path, or command line carries a
 /// Chromium remote-debugging switch in any spelling or case.
 pub fn contains_remote_debugging_flag(value: &str) -> bool {
