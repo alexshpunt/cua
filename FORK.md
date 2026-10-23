@@ -1,0 +1,44 @@
+# What this fork changes
+
+This is a fork of [trycua/cua](https://github.com/trycua/cua). It adds Windows features to Cua Driver that [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use) needs and upstream doesn't have yet. Everything else is upstream's code, under upstream's license.
+
+The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `13dbacca`. Its binaries are attached to the [`pi-runtime-0.37.0-13dbacca` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-13dbacca) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
+
+All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux behave like upstream.
+
+## Input
+
+- Held drag paths: a left-button stroke through up to 254 points, released at the end of the call. Interrupted paths report which points were delivered. This is what makes continuous brush strokes in Paint possible.
+- Key holds: hold up to 8 keys while a bounded set of clicks and drags runs, then release them in the same call.
+- `input_timeline`: timed key, button, move, raw relative move, wheel and pen events in one call, with pen pressure and tilt. Everything still held is released when the call ends or fails.
+- Native pointer move and hover with a dwell time on an exact window.
+- Coordinate wheel scroll at a point of the last capture, in wheel detents.
+- Straight drags are bound to the capture they were planned on.
+- Foreground clicks and drags go through `SendInput` and keep the target window active. Clicks on a target's owned popups work.
+- Foreground input pauses while the person at the machine uses the keyboard or mouse, and resumes 10 seconds after they stop.
+- Text is typed as keystrokes when the target's keyboard layout has the character.
+- Strict UI Automation actions: `invoke`, `select` and `set_value` on an element, without falling back to mouse or keyboard, and without moving the human's focus or switching virtual desktops.
+
+## Windows and displays
+
+- Restore a minimized window, and move, resize, minimize, maximize or focus an exact window, with a receipt of what actually changed.
+- Read a selected display with its native topology, not only the primary one.
+- Report which virtual desktop a window belongs to.
+- Confirm that a window hasn't changed from its frame size instead of capturing it again before each capture-bound action.
+
+## Capture
+
+- Window overviews are resized before PNG encoding, with fast Bilinear resizing.
+- Process metadata is read once per process ID.
+- Capture returns opaque pixels when no desktop compositor runs, as in isolated agent sessions.
+- An opt-in retained Windows Graphics Capture route. Pi Agent Computer Use tried it and dropped it, because on the machines it was measured on it was slower than the default route.
+
+## Protocol
+
+- An EOF-aware MCP receiver, so a host that closes stdin still gets the receipt of an interrupted held path.
+- Input schemas stay inside the JSON Schema subset that Vertex AI accepts.
+- `launch_app` can start a browser with remote debugging when the host sets `CUA_DRIVER_ALLOW_DEBUGGING_LAUNCH=1`. Pi Agent Computer Use sets it only in its YOLO mode and then attaches Playwright to that browser.
+
+## Upstream
+
+These changes are made for one consumer and tested on Windows 11 from WSL. Some of them could go upstream; none has been offered as a pull request yet.

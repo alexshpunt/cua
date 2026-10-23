@@ -1,3 +1,5 @@
+> [!NOTE]
+> This is a fork of [trycua/cua](https://github.com/trycua/cua) with Windows additions to Cua Driver for [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use). See [FORK.md](FORK.md) for what it changes. The rest of this README is upstream's.
 <div align="center">
   <a href="https://cua.ai" target="_blank" rel="noopener noreferrer">
     <picture>
