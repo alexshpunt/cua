@@ -93,6 +93,7 @@ unsafe fn walk_unsafe(hwnd: u64, budget: &mut WalkBudget) -> UiaTreeResult {
                 "- Window <SAL/VCL — MSAA fallback failed (AccessibleObjectFromWindow hr={hr:?})>\n"
             ),
             nodes: Vec::new(),
+            walk_complete: false,
         };
     }
     let root: IAccessible = IAccessible::from_raw(raw_root);
@@ -104,9 +105,11 @@ unsafe fn walk_unsafe(hwnd: u64, budget: &mut WalkBudget) -> UiaTreeResult {
     walk(&root, 0, None, &mut nodes, &mut lines, &mut counter, budget);
 
     let tree_markdown = render_lines(&lines);
+    // MSAA cannot prove that every child was enumerated.
     UiaTreeResult {
         tree_markdown,
         nodes,
+        walk_complete: false,
     }
 }
 
@@ -198,6 +201,8 @@ unsafe fn walk(
                 depth,
                 parent_element_index: parent_index,
                 in_web_content: false,
+                actionable: true,
+                states: Default::default(),
             }
         } else {
             UiaNode {
@@ -218,6 +223,8 @@ unsafe fn walk(
                 depth,
                 parent_element_index: parent_index,
                 in_web_content: false,
+                actionable: false,
+                states: Default::default(),
             }
         };
         // Track this node as the parent_index for its descendants only when

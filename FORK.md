@@ -26,6 +26,13 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 - Report which virtual desktop a window belongs to.
 - Confirm that a window hasn't changed from its frame size instead of capturing it again before each capture-bound action.
 
+## Structural tree
+
+- `get_window_state` lists every row the UIA walk emits, not only actionable ones. Static text, disabled controls and named containers get an `element_index`, an `element_token`, a `frame` and become the `parent_index` of their children. `actionable` says which rows have action patterns; read-only rows keep an empty `actions`.
+- Each element carries the raw UIA `name`, `automation_id`, `class_name` and `help_text`, and, when UIA reports them, `checked` (`on`/`off`/`mixed`, separate from `selected`), `expanded`, `offscreen`, `focused`, `read_only`, `password`, `required` and `range` (`value`/`min`/`max`). They come from the same single cached walk.
+- `elements_complete` is `true` when the walk visited the whole control view: no node or time budget stop, no depth cut and a successful bulk fetch. Then an element missing from the list is absent. MSAA and error paths stay `false`.
+- This is the tree a Playwright-style locator engine resolves against.
+
 ## Capture
 
 - Window overviews are resized before PNG encoding, with fast Bilinear resizing.

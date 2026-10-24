@@ -19,13 +19,16 @@ use windows::Win32::UI::Accessibility::{
     IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
     IUIAutomationSelectionItemPattern, IUIAutomationTogglePattern, ToggleState_Off, ToggleState_On,
     TreeScope, TreeScope_Children, TreeScope_Element, TreeScope_Subtree,
-    UIA_AutomationIdPropertyId, UIA_BoundingRectanglePropertyId, UIA_ControlTypePropertyId,
-    UIA_ExpandCollapsePatternId, UIA_HelpTextPropertyId, UIA_InvokePatternId,
-    UIA_IsEnabledPropertyId, UIA_IsOffscreenPropertyId, UIA_NamePropertyId,
-    UIA_ProcessIdPropertyId, UIA_RangeValuePatternId, UIA_ScrollPatternId,
+    UIA_AutomationIdPropertyId, UIA_BoundingRectanglePropertyId, UIA_ClassNamePropertyId,
+    UIA_ControlTypePropertyId, UIA_ExpandCollapseExpandCollapseStatePropertyId,
+    UIA_ExpandCollapsePatternId, UIA_HasKeyboardFocusPropertyId, UIA_HelpTextPropertyId,
+    UIA_InvokePatternId, UIA_IsEnabledPropertyId, UIA_IsOffscreenPropertyId,
+    UIA_IsPasswordPropertyId, UIA_IsRequiredForFormPropertyId, UIA_NamePropertyId,
+    UIA_ProcessIdPropertyId, UIA_RangeValueMaximumPropertyId, UIA_RangeValueMinimumPropertyId,
+    UIA_RangeValuePatternId, UIA_RangeValueValuePropertyId, UIA_ScrollPatternId,
     UIA_SelectionItemIsSelectedPropertyId, UIA_SelectionItemPatternId, UIA_TextPatternId,
-    UIA_TogglePatternId, UIA_ToggleToggleStatePropertyId, UIA_ValuePatternId,
-    UIA_ValueValuePropertyId,
+    UIA_TogglePatternId, UIA_ToggleToggleStatePropertyId, UIA_ValueIsReadOnlyPropertyId,
+    UIA_ValuePatternId, UIA_ValueValuePropertyId,
 };
 
 pub mod fg_bypass;
@@ -87,17 +90,50 @@ pub struct UiaNode {
     /// level). Defaults to 0 when the node came from a builder that
     /// doesn't track depth.
     pub depth: usize,
-    /// `element_index` of the nearest actionable ancestor, if any.
-    /// Mirrors the markdown's parent-of-this-row.
+    /// `element_index` of the nearest emitted ancestor, if any (on the MSAA
+    /// path, the nearest actionable one). Mirrors the markdown's
+    /// parent-of-this-row.
     pub parent_element_index: Option<usize>,
     /// True when this node is below a UIA Document control. Browser-owned
     /// consent chrome must never match renderer-controlled descendants.
     pub in_web_content: bool,
+    /// The node is enabled and exposes at least one action pattern. Every
+    /// emitted UIA node carries an `element_index`; only actionable ones have
+    /// `actions`. Static text, disabled controls and named containers are
+    /// indexed read-only rows.
+    pub actionable: bool,
+    /// Structural state read from the same cache request as the rest of the
+    /// node. Every field is `None` when UIA did not report it.
+    pub states: UiaStates,
+}
+
+/// Per-node UIA state for locator engines. Values come from cached
+/// properties only; a property the provider does not support stays `None`.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UiaStates {
+    /// Raw UIA ClassName.
+    pub class_name: Option<String>,
+    /// TogglePattern state: "on", "off" or "mixed".
+    pub checked: Option<&'static str>,
+    /// ExpandCollapse state; `None` for LeafNode or without the pattern.
+    pub expanded: Option<bool>,
+    pub offscreen: Option<bool>,
+    pub focused: Option<bool>,
+    pub password: Option<bool>,
+    /// ValuePattern IsReadOnly.
+    pub read_only: Option<bool>,
+    pub required: Option<bool>,
+    /// RangeValuePattern (value, minimum, maximum).
+    pub range: Option<(f64, f64, f64)>,
 }
 
 pub struct UiaTreeResult {
     pub tree_markdown: String,
     pub nodes: Vec<UiaNode>,
+    /// True only when a UIA walk visited every node of the window's control
+    /// view: no node or time budget ran out, no depth cap cut a subtree, and
+    /// the bulk fetch succeeded. Error paths and the MSAA fallback are false.
+    pub walk_complete: bool,
 }
 
 /// Walk the UIA tree for the window with the given HWND.
@@ -273,6 +309,7 @@ unsafe fn walk_tree_unsafe(
                 return UiaTreeResult {
                     tree_markdown: format!("UIA init failed: {e}"),
                     nodes: Vec::new(),
+                    walk_complete: false,
                 }
             }
         };
@@ -284,6 +321,7 @@ unsafe fn walk_tree_unsafe(
             return UiaTreeResult {
                 tree_markdown: format!("CreateCacheRequest failed: {e}"),
                 nodes: Vec::new(),
+                walk_complete: false,
             }
         }
     };
@@ -338,6 +376,7 @@ unsafe fn walk_tree_unsafe(
             return UiaTreeResult {
                 tree_markdown: format!("ElementFromHandle failed: {e}"),
                 nodes: Vec::new(),
+                walk_complete: false,
             }
         }
     };
@@ -362,6 +401,7 @@ unsafe fn walk_tree_unsafe(
                                 "BuildUpdatedCache failed after {attempt} attempts: {e}"
                             ),
                             nodes: Vec::new(),
+                            walk_complete: false,
                         };
                     }
                     std::thread::sleep(std::time::Duration::from_millis(40));
@@ -402,7 +442,7 @@ unsafe fn walk_tree_unsafe(
     // wrapper-only node from the primary walk stays the result — better than
     // erasing it AND leaving the consumed `MAX_TOTAL_ELEMENTS` budget intact
     // for the fallback (which would then truncate large trees prematurely).
-    if nodes.iter().filter(|n| n.element_index.is_some()).count() == 0 && !budget.expired() {
+    if !nodes.iter().any(|n| n.actionable) && !budget.expired() {
         // Skip the desktop-root walk-by-pid fallback for VCL / SAL
         // targets (LibreOffice, OpenOffice). The fallback does its own
         // `BuildUpdatedCache(TreeScope.Subtree)` per matched top-level
@@ -451,7 +491,7 @@ unsafe fn walk_tree_unsafe(
                     max_depth,
                 );
 
-                if fallback_nodes.iter().any(|n| n.element_index.is_some()) {
+                if fallback_nodes.iter().any(|n| n.actionable) {
                     nodes = fallback_nodes;
                     lines = fallback_lines;
                     // counter isn't read after this point — it's only used
@@ -485,6 +525,7 @@ unsafe fn walk_tree_unsafe(
             return UiaTreeResult {
                 tree_markdown: stub,
                 nodes: Vec::new(),
+                walk_complete: false,
             };
         }
     }
@@ -496,9 +537,14 @@ unsafe fn walk_tree_unsafe(
         raw_md
     };
 
+    // Complete only when the budget never stopped, no subtree was cut at the
+    // depth cap, and the walk found real controls (an empty CoreWindow
+    // wrapper whose fallback found nothing is not proof of an empty window).
+    let walk_complete = budget.exhausted_tree() && nodes.iter().any(|n| n.actionable);
     UiaTreeResult {
         tree_markdown,
         nodes,
+        walk_complete,
     }
 }
 
@@ -632,7 +678,11 @@ unsafe fn walk_cached_bounded(
 ) {
     // Node and time budget: a refused node is counted as discovered but not
     // visited, and the walk unwinds with the partial tree it has.
-    if depth > max_depth || !budget.admit() {
+    if depth > max_depth {
+        budget.note_depth_limit();
+        return;
+    }
+    if !budget.admit() {
         return;
     }
 
@@ -684,6 +734,16 @@ unsafe fn node_cache_request(
         UIA_BoundingRectanglePropertyId,
         UIA_ToggleToggleStatePropertyId,
         UIA_SelectionItemIsSelectedPropertyId,
+        // Structural state for locator engines; same single bulk fetch.
+        UIA_ClassNamePropertyId,
+        UIA_ExpandCollapseExpandCollapseStatePropertyId,
+        UIA_HasKeyboardFocusPropertyId,
+        UIA_IsPasswordPropertyId,
+        UIA_ValueIsReadOnlyPropertyId,
+        UIA_IsRequiredForFormPropertyId,
+        UIA_RangeValueValuePropertyId,
+        UIA_RangeValueMinimumPropertyId,
+        UIA_RangeValueMaximumPropertyId,
     ] {
         let _ = cache_req.AddProperty(*prop);
     }
@@ -838,56 +898,111 @@ fn emit_cached_node(
         let ptr = retained.as_raw() as usize;
         std::mem::forget(retained);
 
-        let node = if is_actionable {
-            let idx = *counter;
-            *counter += 1;
-            let (center_x, center_y, rect) = read_cached_bounding_rect_full(element);
-            emitted_parent = Some(idx);
-            UiaNode {
-                element_index: Some(idx),
-                control_type: control_type.clone(),
-                name: name.clone(),
-                value: value.clone(),
-                automation_id: automation_id.clone(),
-                help_text: help_text.clone(),
-                actions: actions.clone(),
-                enabled,
-                selected,
-                element_ptr: ptr,
-                center_x,
-                center_y,
-                rect,
-                msaa_role: None,
-                depth,
-                parent_element_index: parent_index,
-                in_web_content,
-            }
-        } else {
-            UiaNode {
-                element_index: None,
-                control_type: control_type.clone(),
-                name: name.clone(),
-                value: value.clone(),
-                automation_id: automation_id.clone(),
-                help_text: help_text.clone(),
-                actions: vec![],
-                enabled,
-                selected,
-                element_ptr: ptr,
-                center_x: 0,
-                center_y: 0,
-                rect: None,
-                msaa_role: None,
-                depth,
-                parent_element_index: parent_index,
-                in_web_content,
-            }
+        // Every emitted row is addressable: static text, disabled controls and
+        // named containers get an index, a token and bounds like actionable
+        // ones, and become the parent of their descendants. `actions` stays
+        // empty for them, so `actionable` tells callers which rows have
+        // patterns to act through.
+        let idx = *counter;
+        *counter += 1;
+        let (center_x, center_y, rect) = read_cached_bounding_rect_full(element);
+        emitted_parent = Some(idx);
+        let node = UiaNode {
+            element_index: Some(idx),
+            control_type: control_type.clone(),
+            name,
+            value,
+            automation_id,
+            help_text,
+            actions: if is_actionable { actions } else { vec![] },
+            enabled,
+            selected,
+            element_ptr: ptr,
+            center_x,
+            center_y,
+            rect,
+            msaa_role: None,
+            depth,
+            parent_element_index: parent_index,
+            in_web_content,
+            actionable: is_actionable,
+            states: read_cached_states(element),
         };
 
         lines.push((depth, format_node_line(&node)));
         nodes.push(node);
     }
     (control_type, emitted_parent)
+}
+
+/// Read every structural state a locator engine needs from the cached
+/// properties. A property the provider does not support comes back as UIA's
+/// "not supported" sentinel (VT_UNKNOWN) and is left `None`.
+fn read_cached_states(element: &IUIAutomationElement) -> UiaStates {
+    let toggle = read_cached_i32(element, UIA_ToggleToggleStatePropertyId);
+    let expand = read_cached_i32(element, UIA_ExpandCollapseExpandCollapseStatePropertyId);
+    let range = match (
+        read_cached_f64(element, UIA_RangeValueValuePropertyId),
+        read_cached_f64(element, UIA_RangeValueMinimumPropertyId),
+        read_cached_f64(element, UIA_RangeValueMaximumPropertyId),
+    ) {
+        (Some(value), Some(min), Some(max)) => Some((value, min, max)),
+        _ => None,
+    };
+    UiaStates {
+        class_name: read_cached_bstr(element, UIA_ClassNamePropertyId),
+        checked: toggle.and_then(toggle_state_name),
+        expanded: expand.and_then(expand_state),
+        offscreen: read_cached_bool(element, UIA_IsOffscreenPropertyId),
+        focused: read_cached_bool(element, UIA_HasKeyboardFocusPropertyId),
+        password: read_cached_bool(element, UIA_IsPasswordPropertyId),
+        read_only: read_cached_bool(element, UIA_ValueIsReadOnlyPropertyId),
+        required: read_cached_bool(element, UIA_IsRequiredForFormPropertyId),
+        range,
+    }
+}
+
+/// UIA ToggleState: 0 Off, 1 On, 2 Indeterminate.
+fn toggle_state_name(state: i32) -> Option<&'static str> {
+    match state {
+        0 => Some("off"),
+        1 => Some("on"),
+        2 => Some("mixed"),
+        _ => None,
+    }
+}
+
+/// UIA ExpandCollapseState: 0 Collapsed, 1 Expanded, 2 PartiallyExpanded,
+/// 3 LeafNode (nothing to expand, reported as no state).
+fn expand_state(state: i32) -> Option<bool> {
+    match state {
+        0 => Some(false),
+        1 | 2 => Some(true),
+        _ => None,
+    }
+}
+
+fn read_cached_i32(
+    element: &IUIAutomationElement,
+    property_id: windows::Win32::UI::Accessibility::UIA_PROPERTY_ID,
+) -> Option<i32> {
+    unsafe {
+        let variant = element.GetCachedPropertyValue(property_id).ok()?;
+        let raw = variant.as_raw();
+        (raw.Anonymous.Anonymous.vt == 3/* VT_I4 */).then(|| raw.Anonymous.Anonymous.Anonymous.lVal)
+    }
+}
+
+fn read_cached_f64(
+    element: &IUIAutomationElement,
+    property_id: windows::Win32::UI::Accessibility::UIA_PROPERTY_ID,
+) -> Option<f64> {
+    unsafe {
+        let variant = element.GetCachedPropertyValue(property_id).ok()?;
+        let raw = variant.as_raw();
+        (raw.Anonymous.Anonymous.vt == 5/* VT_R8 */)
+            .then(|| raw.Anonymous.Anonymous.Anonymous.dblVal)
+    }
 }
 
 fn read_cached_control_type(element: &IUIAutomationElement) -> String {

@@ -2205,12 +2205,36 @@
           "elements": {
             "items": {
               "properties": {
+                "actionable": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
                 "actions": {
                   "items": {
                     "type": "string"
                   },
                   "type": [
                     "array",
+                    "null"
+                  ]
+                },
+                "automation_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "checked": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "class_name": {
+                  "type": [
+                    "string",
                     "null"
                   ]
                 },
@@ -2229,6 +2253,18 @@
                   ]
                 },
                 "enabled": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "expanded": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "focused": {
                   "type": [
                     "boolean",
                     "null"
@@ -2260,6 +2296,12 @@
                     "null"
                   ]
                 },
+                "help_text": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
                 "in_web_content": {
                   "type": [
                     "boolean",
@@ -2284,10 +2326,62 @@
                     "null"
                   ]
                 },
+                "name": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "offscreen": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
                 "parent_index": {
                   "minimum": 0,
                   "type": [
                     "integer",
+                    "null"
+                  ]
+                },
+                "password": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "range": {
+                  "properties": {
+                    "max": {
+                      "type": "number"
+                    },
+                    "min": {
+                      "type": "number"
+                    },
+                    "value": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "min",
+                    "max"
+                  ],
+                  "type": [
+                    "object",
+                    "null"
+                  ]
+                },
+                "read_only": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "required": {
+                  "type": [
+                    "boolean",
                     "null"
                   ]
                 },
@@ -3802,10 +3896,7 @@
             "description": "For resize, supply the height between 1 and 32767 desktop pixels. Omit for other operations.",
             "maximum": 32767,
             "minimum": 1,
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer"
           },
           "operation": {
             "description": "Choose one native operation. Focus never restores a minimized window; maximize may activate it.",
@@ -3844,10 +3935,7 @@
             "description": "For resize, supply the width between 1 and 32767 desktop pixels. Omit for other operations.",
             "maximum": 32767,
             "minimum": 1,
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer"
           },
           "window_id": {
             "description": "Exact native window from the sampled control state.",
@@ -3858,19 +3946,13 @@
             "description": "For move, supply the left desktop-pixel position between -100000 and 100000. Omit for other operations.",
             "maximum": 100000,
             "minimum": -100000,
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer"
           },
           "y": {
             "description": "For move, supply the top desktop-pixel position between -100000 and 100000. Omit for other operations.",
             "maximum": 100000,
             "minimum": -100000,
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer"
           }
         },
         "required": [

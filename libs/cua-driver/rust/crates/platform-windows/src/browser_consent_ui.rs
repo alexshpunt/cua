@@ -523,6 +523,8 @@ mod tests {
             depth: 0,
             parent_element_index: None,
             in_web_content: false,
+            actionable: !actions.is_empty(),
+            states: Default::default(),
         }
     }
 

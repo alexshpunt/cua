@@ -52,6 +52,9 @@ pub struct WalkBudget {
     visited: usize,
     pending: usize,
     stop: Option<WalkStop>,
+    /// A subtree below the depth cap was skipped (not a budget stop: the walk
+    /// continued elsewhere), so the walk did not visit every node.
+    depth_limited: bool,
 }
 
 impl WalkBudget {
@@ -67,6 +70,7 @@ impl WalkBudget {
             visited: 0,
             pending: 0,
             stop: None,
+            depth_limited: false,
         }
     }
 
@@ -117,6 +121,22 @@ impl WalkBudget {
     /// (a bulk fetch that returned after the deadline).
     pub fn stop_for_timeout(&mut self) {
         self.stop.get_or_insert(WalkStop::Timeout);
+    }
+
+    /// Record that a node below the walk's depth cap was skipped.
+    pub fn note_depth_limit(&mut self) {
+        self.depth_limited = true;
+    }
+
+    /// Whether any subtree was skipped at the depth cap.
+    pub fn depth_limited(&self) -> bool {
+        self.depth_limited
+    }
+
+    /// Whether the walk visited every node it discovered: no budget stop and
+    /// no depth cut. Backends still decide whether their walk could prove it.
+    pub fn exhausted_tree(&self) -> bool {
+        self.stop.is_none() && !self.depth_limited
     }
 
     /// Record that the application never became reachable within the budget,
@@ -243,6 +263,19 @@ mod tests {
         let outcome = budget.outcome();
         assert_eq!(outcome.reason(), Some("node_budget"));
         assert_eq!((outcome.nodes_visited, outcome.nodes_pending), (2, 2));
+    }
+
+    #[test]
+    fn a_depth_cut_keeps_walking_but_is_not_an_exhausted_tree() {
+        let mut budget = WalkBudget::nodes_only(10);
+        assert!(budget.admit());
+        assert!(budget.exhausted_tree());
+        budget.note_depth_limit();
+        assert!(budget.admit());
+        assert!(budget.depth_limited());
+        assert!(!budget.exhausted_tree());
+        // A depth cut is not a budget stop: the shared truncation fields stay clean.
+        assert!(!budget.outcome().truncated());
     }
 
     #[test]

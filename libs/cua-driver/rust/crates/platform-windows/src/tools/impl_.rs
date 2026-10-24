@@ -1175,6 +1175,46 @@ fn build_element_entry(
     if let Some(parent) = n.parent_element_index {
         entry["parent_index"] = json!(parent);
     }
+    // Structural fields for locator engines. Each is present only when UIA
+    // reported it; flags that are almost always false appear only when true.
+    entry["actionable"] = json!(n.actionable);
+    if let Some(name) = &n.name {
+        entry["name"] = json!(name);
+    }
+    if let Some(id) = &n.automation_id {
+        entry["automation_id"] = json!(id);
+    }
+    if let Some(help) = &n.help_text {
+        entry["help_text"] = json!(help);
+    }
+    let s = &n.states;
+    if let Some(class_name) = &s.class_name {
+        entry["class_name"] = json!(class_name);
+    }
+    if let Some(checked) = s.checked {
+        entry["checked"] = json!(checked);
+    }
+    if let Some(expanded) = s.expanded {
+        entry["expanded"] = json!(expanded);
+    }
+    if let Some(offscreen) = s.offscreen {
+        entry["offscreen"] = json!(offscreen);
+    }
+    if let Some(focused) = s.focused {
+        entry["focused"] = json!(focused);
+    }
+    if s.password == Some(true) {
+        entry["password"] = json!(true);
+    }
+    if let Some(read_only) = s.read_only {
+        entry["read_only"] = json!(read_only);
+    }
+    if s.required == Some(true) {
+        entry["required"] = json!(true);
+    }
+    if let Some((value, min, max)) = s.range {
+        entry["range"] = json!({ "value": value, "min": min, "max": max });
+    }
     if let Some((l, t, r, b)) = n.rect {
         entry["frame"] = json!({
             "x": l,
@@ -1207,12 +1247,18 @@ impl Tool for GetWindowStateTool {
             // Space validation; no per-call `javascript` field — that's a
             // macOS AppleScript hook).
             description: "Walk a running app's UIA tree and return it ONCE, as compact \
-                Markdown by default (`tree_format:\"markdown\"`). Every actionable element is \
+                Markdown by default (`tree_format:\"markdown\"`). Every listed element is \
                 tagged `[N]` (an element_index); its element_token is `<snapshot_id>:N`, where \
                 `snapshot_id` is printed in the response header and returned in structuredContent. \
-                Pass `tree_format:\"elements\"` for the structured `elements` array instead \
-                (explicit `element_token`, `frame`, `parent_index`, `value`, `actions` per row), \
-                or `\"both\"` for both (about twice the size).\n\n\
+                Rows with `actions=[...]` are actionable; rows without are read-only (static \
+                text, disabled controls, named containers) and are still addressable for reading \
+                and as parents. Pass `tree_format:\"elements\"` for the structured `elements` \
+                array instead (explicit `element_token`, `frame`, `parent_index`, `value`, \
+                `actions`, `actionable`, raw `name`, `automation_id`, `class_name`, `help_text`, \
+                and when UIA reports them `checked` on|off|mixed, `expanded`, `offscreen`, \
+                `focused`, `read_only`, `password`, `required`, `range` {value,min,max}), \
+                or `\"both\"` for both (about twice the size). `elements_complete:true` means the \
+                walk visited the whole control view, so an element missing from it is absent.\n\n\
                 Size: a read is bounded by default (`max_elements` 250). When the walk stops at \
                 that budget the response says `Tree truncated at max_elements=…` and `truncated: \
                 true`; pass a larger `max_elements`, or `query` / `max_depth`, to reach the rest. \
@@ -1498,6 +1544,7 @@ impl Tool for GetWindowStateTool {
                              delivery_mode:\"foreground\" for a dialog's default accelerator.)"
                         ),
                         nodes: Vec::new(),
+                        walk_complete: false,
                     };
                     let payload = crate::uia::snapshot::UiaSnapshot::from_nodes(
                         &[],
@@ -1620,10 +1667,12 @@ impl Tool for GetWindowStateTool {
                         header + &tr.tree_markdown,
                     ));
                     structured["element_count"] = json!(count);
-                    // UIA currently does not expose whether a bounded walk
-                    // exhausted every subtree. Keep negative existence
-                    // conservative until that proof is available.
-                    structured["elements_complete"] = json!(false);
+                    // True only when the UIA walk visited the whole control view:
+                    // no node/time budget stop, no depth cut, a successful bulk
+                    // fetch and real controls. MSAA and error paths stay false.
+                    // With `query`, this still describes the walk; `elements` is
+                    // then a projection of that complete tree.
+                    structured["elements_complete"] = json!(tr.walk_complete && !is_msaa);
                     structured["tree_markdown"] = json!(tr.tree_markdown);
                     walk.apply(&mut structured);
 

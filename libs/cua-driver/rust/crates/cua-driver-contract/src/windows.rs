@@ -305,6 +305,47 @@ pub struct WindowElement {
     pub min: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub max: Option<f64>,
+    /// Windows UIA: the row exposes an action pattern and is enabled. Rows
+    /// without one (static text, disabled controls, named containers) are
+    /// listed read-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub actionable: Option<bool>,
+    /// Windows UIA: raw Name, separate from the `label` fallback chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub automation_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help_text: Option<String>,
+    /// Windows UIA TogglePattern state: `on`, `off` or `mixed`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub checked: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expanded: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offscreen: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focused: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub read_only: Option<bool>,
+    /// Present only when true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub password: Option<bool>,
+    /// Present only when true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub required: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub range: Option<ElementRange>,
+}
+
+/// Windows UIA RangeValuePattern of a slider, spinner or progress bar.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, uniffi::Record)]
+pub struct ElementRange {
+    pub value: f64,
+    pub min: f64,
+    pub max: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, uniffi::Record)]
