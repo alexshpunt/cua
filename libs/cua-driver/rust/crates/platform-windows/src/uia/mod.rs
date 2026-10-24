@@ -936,27 +936,44 @@ fn emit_cached_node(
 }
 
 /// Read every structural state a locator engine needs from the cached
-/// properties. A property the provider does not support comes back as UIA's
-/// "not supported" sentinel (VT_UNKNOWN) and is left `None`.
+/// properties. `GetCachedPropertyValue` answers a pattern property with the
+/// pattern's default (ToggleState Indeterminate, RangeValue 0, Value
+/// IsReadOnly true) when the element lacks the pattern, so pattern properties
+/// are read only when that pattern is in the cache too. Both come from the
+/// same bulk fetch; nothing here makes another call to the provider.
 fn read_cached_states(element: &IUIAutomationElement) -> UiaStates {
-    let toggle = read_cached_i32(element, UIA_ToggleToggleStatePropertyId);
-    let expand = read_cached_i32(element, UIA_ExpandCollapseExpandCollapseStatePropertyId);
-    let range = match (
-        read_cached_f64(element, UIA_RangeValueValuePropertyId),
-        read_cached_f64(element, UIA_RangeValueMinimumPropertyId),
-        read_cached_f64(element, UIA_RangeValueMaximumPropertyId),
-    ) {
-        (Some(value), Some(min), Some(max)) => Some((value, min, max)),
-        _ => None,
+    let has = |pattern| unsafe { element.GetCachedPattern(pattern).is_ok() };
+    let checked = has(UIA_TogglePatternId)
+        .then(|| read_cached_i32(element, UIA_ToggleToggleStatePropertyId))
+        .flatten()
+        .and_then(toggle_state_name);
+    let expanded = has(UIA_ExpandCollapsePatternId)
+        .then(|| read_cached_i32(element, UIA_ExpandCollapseExpandCollapseStatePropertyId))
+        .flatten()
+        .and_then(expand_state);
+    let range = if has(UIA_RangeValuePatternId) {
+        match (
+            read_cached_f64(element, UIA_RangeValueValuePropertyId),
+            read_cached_f64(element, UIA_RangeValueMinimumPropertyId),
+            read_cached_f64(element, UIA_RangeValueMaximumPropertyId),
+        ) {
+            (Some(value), Some(min), Some(max)) => Some((value, min, max)),
+            _ => None,
+        }
+    } else {
+        None
     };
+    let read_only = has(UIA_ValuePatternId)
+        .then(|| read_cached_bool(element, UIA_ValueIsReadOnlyPropertyId))
+        .flatten();
     UiaStates {
         class_name: read_cached_bstr(element, UIA_ClassNamePropertyId),
-        checked: toggle.and_then(toggle_state_name),
-        expanded: expand.and_then(expand_state),
+        checked,
+        expanded,
         offscreen: read_cached_bool(element, UIA_IsOffscreenPropertyId),
         focused: read_cached_bool(element, UIA_HasKeyboardFocusPropertyId),
         password: read_cached_bool(element, UIA_IsPasswordPropertyId),
-        read_only: read_cached_bool(element, UIA_ValueIsReadOnlyPropertyId),
+        read_only,
         required: read_cached_bool(element, UIA_IsRequiredForFormPropertyId),
         range,
     }
