@@ -2,7 +2,7 @@
 
 This is a fork of [trycua/cua](https://github.com/trycua/cua). It adds Windows features to Cua Driver that [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use) needs and upstream doesn't have yet. Everything else is upstream's code, under upstream's license.
 
-The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `13dbacca`. Its binaries are attached to the [`pi-runtime-0.37.0-13dbacca` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-13dbacca) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
+The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `f754b104`. Its binaries are attached to the [`pi-runtime-0.37.0-f754b104` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-f754b104) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
 
 All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux behave like upstream.
 
@@ -38,6 +38,7 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 - Window overviews are resized before PNG encoding, with fast Bilinear resizing.
 - Process metadata is read once per process ID.
 - Capture returns opaque pixels when no desktop compositor runs, as in isolated agent sessions.
+- A DPI-virtualized window (DPI-unaware, or system-aware on a monitor with another DPI) is captured the way the desktop compositor shows it: stretched to its physical frame. Upstream's PrintWindow capture leaves a DPI-unaware window at 2/3 size in the image's top-left corner on a 150% display, while UI bounds and input use the physical frame.
 - An opt-in retained Windows Graphics Capture route. Pi Agent Computer Use tried it and dropped it, because on the machines it was measured on it was slower than the default route.
 
 ## Protocol
