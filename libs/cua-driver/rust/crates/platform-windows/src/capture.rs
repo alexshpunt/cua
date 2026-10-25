@@ -78,6 +78,19 @@ mod frame_geometry {
             .unwrap_or(self)
         }
 
+        /// Size of the bitmap the window itself paints for this physical frame
+        /// when Windows virtualizes the window's DPI: a DPI-unaware window (96)
+        /// or a system-aware one on a monitor with another DPI. The compositor
+        /// stretches that bitmap to the frame on screen; PrintWindow does not.
+        /// `None` when the window paints in physical pixels.
+        pub fn painted_size(self, window_dpi: u32, monitor_dpi: u32) -> Option<(f64, f64)> {
+            if window_dpi == 0 || monitor_dpi == 0 || window_dpi == monitor_dpi {
+                return None;
+            }
+            let scale = f64::from(window_dpi) / f64::from(monitor_dpi);
+            Some((f64::from(self.width) * scale, f64::from(self.height) * scale))
+        }
+
         pub fn local_point(self, x: i32, y: i32) -> Option<(f64, f64)> {
             let x = i64::from(x) - i64::from(self.left);
             let y = i64::from(y) - i64::from(self.top);
@@ -123,6 +136,18 @@ mod frame_geometry {
             }
             assert_eq!(frame.local_point(100, -200), Some((0.0, 0.0)));
             assert_eq!(frame.local_point(499, 99), Some((399.0, 299.0)));
+        }
+
+        #[test]
+        fn virtualized_dpi_paints_at_the_window_dpi() {
+            let frame = FrameGeometry::from_bounds((150, 150, 780, 600)).unwrap();
+            // DPI-unaware window on a 150% monitor: 630x450 physical, painted at 420x300.
+            assert_eq!(frame.painted_size(96, 144), Some((420.0, 300.0)));
+            // System-aware at 150% moved to a 100% monitor paints larger than it shows.
+            assert_eq!(frame.painted_size(144, 96), Some((945.0, 675.0)));
+            for (window, monitor) in [(144, 144), (96, 96), (0, 144), (96, 0)] {
+                assert_eq!(frame.painted_size(window, monitor), None);
+            }
         }
 
         #[test]
@@ -441,11 +466,22 @@ pub fn screenshot_window(hwnd: u64) -> Result<(String, u32, u32)> {
     Ok((BASE64.encode(&png_bytes), w, h))
 }
 
+/// Effective DPI of the monitor that shows most of the window, in this
+/// process's physical coordinate space; 0 when Windows cannot tell.
+unsafe fn window_monitor_dpi(hwnd: HWND) -> u32 {
+    use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
+    use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
+    let (mut x, mut y) = (0, 0);
+    let monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut x, &mut y).map_or(0, |_| x)
+}
+
 unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     hwnd: u64,
     encode: impl Fn(&[u8], u32, u32) -> Result<T> + Copy,
 ) -> Result<(T, bool, Option<FrameGeometry>)> {
     use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::HiDpi::GetDpiForWindow;
     use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsIconic};
 
     let hwnd_raw = hwnd;
@@ -550,7 +586,17 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
 
     let screen_dc = GetWindowDC(hwnd);
     let mem_dc = CreateCompatibleDC(screen_dc);
-    let bitmap = CreateCompatibleBitmap(screen_dc, w, h);
+    // A DPI-virtualized window (DPI-unaware, or system-aware on a monitor
+    // with another DPI) paints at its own DPI: PrintWindow leaves a 96-DPI
+    // window at 2/3 size in the top-left of a 150% frame, while UIA bounds,
+    // the frame and input stay physical. Give PrintWindow a buffer that holds
+    // the whole painted bitmap and stretch it to the frame below, as the
+    // compositor does on screen.
+    let painted = geometry.painted_size(GetDpiForWindow(hwnd), window_monitor_dpi(hwnd));
+    let (buf_w, buf_h) = painted.map_or((w, h), |(painted_w, painted_h)| {
+        (w.max(painted_w.ceil() as i32), h.max(painted_h.ceil() as i32))
+    });
+    let bitmap = CreateCompatibleBitmap(screen_dc, buf_w, buf_h);
     let old_bitmap = SelectObject(mem_dc, bitmap);
 
     let pw_ok = PrintWindow(hwnd, mem_dc, PW_RENDERFULLCONTENT);
@@ -585,24 +631,24 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     let mut bmi = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
             biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: w,
-            biHeight: -h,
+            biWidth: buf_w,
+            biHeight: -buf_h,
             biPlanes: 1,
             biBitCount: 32,
             biCompression: BI_RGB.0,
-            biSizeImage: (w * h * 4) as u32,
+            biSizeImage: (buf_w * buf_h * 4) as u32,
             ..Default::default()
         },
         bmiColors: [RGBQUAD::default(); 1],
     };
 
-    let pixel_count = (w * h) as usize;
+    let pixel_count = (buf_w * buf_h) as usize;
     let mut pixels = vec![0u8; pixel_count * 4];
     let ok = GetDIBits(
         mem_dc,
         bitmap,
         0,
-        h as u32,
+        buf_h as u32,
         Some(pixels.as_mut_ptr() as *mut _),
         &mut bmi,
         DIB_RGB_COLORS,
@@ -615,6 +661,22 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
 
     if ok == 0 {
         bail!("GetDIBits returned 0");
+    }
+    // From here on the bitmap is the physical frame. The BitBlt fallback
+    // copied physical screen pixels, so for it only the extra buffer goes.
+    let (painted_w, painted_h) = painted
+        .filter(|_| pw_ok.as_bool())
+        .unwrap_or((f64::from(w), f64::from(h)));
+    if painted.is_some() {
+        pixels = cua_driver_core::image_utils::stretch_pixels_region(
+            &pixels,
+            buf_w as u32,
+            buf_h as u32,
+            painted_w,
+            painted_h,
+            w as u32,
+            h as u32,
+        )?;
     }
     opaque_without_compositor(&mut pixels);
 

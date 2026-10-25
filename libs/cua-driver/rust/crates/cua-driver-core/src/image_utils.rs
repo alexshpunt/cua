@@ -397,6 +397,45 @@ fn resize_windows_overview(img: DynamicImage, max_dim: u32) -> Result<DynamicIma
         )),
     }
 }
+
+/// Stretch the top-left `src_w`×`src_h` region (fractional sizes allowed) of a
+/// `buf_w`×`buf_h` 4-byte-per-pixel buffer to `w`×`h` with bilinear filtering.
+///
+/// Windows uses this for a DPI-virtualized window: the window paints at its own
+/// DPI, and the desktop compositor stretches that bitmap the same way on screen.
+/// Channel order is kept and alpha is not premultiplied.
+pub fn stretch_pixels_region(
+    pixels: &[u8],
+    buf_w: u32,
+    buf_h: u32,
+    src_w: f64,
+    src_h: f64,
+    w: u32,
+    h: u32,
+) -> Result<Vec<u8>> {
+    use fast_image_resize as fir;
+    if src_w <= 0.0 || src_h <= 0.0 || src_w > f64::from(buf_w) || src_h > f64::from(buf_h) {
+        bail!("stretch_pixels_region: region {src_w}x{src_h} is outside the {buf_w}x{buf_h} buffer");
+    }
+    // Copy the region first: a crop box alone lets the filter read pixels
+    // beyond it, which would blend the unpainted rest into the edges.
+    let (region_w, region_h) = (src_w.ceil() as usize, src_h.ceil() as usize);
+    let stride = buf_w as usize * 4;
+    let mut region = Vec::with_capacity(region_w * region_h * 4);
+    for row in pixels.chunks_exact(stride).take(region_h) {
+        region.extend_from_slice(&row[..region_w * 4]);
+    }
+    let source =
+        fir::images::ImageRef::new(region_w as u32, region_h as u32, &region, fir::PixelType::U8x4)?;
+    let mut stretched = fir::images::Image::new(w, h, fir::PixelType::U8x4);
+    let options = fir::ResizeOptions::new()
+        .crop(0.0, 0.0, src_w, src_h)
+        .resize_alg(fir::ResizeAlg::Convolution(fir::FilterType::Bilinear))
+        .use_alpha(false);
+    fir::Resizer::new().resize(&source, &mut stretched, &options)?;
+    Ok(stretched.into_vec())
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -432,6 +471,33 @@ mod tests {
             };
             assert_eq!(limits.resolve(), expected, "{limits:?}");
         }
+    }
+
+    #[test]
+    fn stretch_pixels_region_fills_the_target_with_only_the_region() {
+        // A 96-DPI window rendered into a 150% buffer: its 4x2 paint sits in the
+        // top-left of an 8x4 buffer, the rest stays black.
+        let (red, blue, black) = ([0, 0, 255, 255], [255, 0, 0, 255], [0, 0, 0, 255]);
+        let mut buf = Vec::new();
+        for y in 0..4 {
+            for x in 0..8 {
+                buf.extend_from_slice(if y >= 2 || x >= 4 { &black } else if x < 2 { &red } else { &blue });
+            }
+        }
+        let out = stretch_pixels_region(&buf, 8, 4, 4.0, 2.0, 6, 3).expect("stretch");
+        assert_eq!(out.len(), 6 * 3 * 4);
+        let px = |x: usize, y: usize| &out[(y * 6 + x) * 4..(y * 6 + x) * 4 + 4];
+        for y in 0..3 {
+            assert_eq!(px(0, y), red);
+            assert_eq!(px(5, y), blue);
+            for x in 0..6 {
+                assert_eq!(px(x, y)[3], 255, "alpha at {x},{y}");
+                assert_eq!(px(x, y)[1], 0, "no black or other color mixed in at {x},{y}");
+                assert!(px(x, y)[0] > 0 || px(x, y)[2] > 0, "black leaked in at {x},{y}");
+            }
+        }
+        assert!(stretch_pixels_region(&buf, 8, 4, 9.0, 2.0, 6, 3).is_err());
+        assert!(stretch_pixels_region(&buf, 8, 4, 0.0, 2.0, 6, 3).is_err());
     }
 
     #[test]
