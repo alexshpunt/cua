@@ -2,7 +2,7 @@
 
 This is a fork of [trycua/cua](https://github.com/trycua/cua). It adds Windows features to Cua Driver that [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use) needs and upstream doesn't have yet. Everything else is upstream's code, under upstream's license.
 
-The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `f754b104`. Its binaries are attached to the [`pi-runtime-0.37.0-f754b104` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-f754b104) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
+The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `c920b66b`. Its binaries are attached to the [`pi-runtime-0.37.0-c920b66b` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-c920b66b) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
 
 All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux behave like upstream.
 
@@ -18,6 +18,7 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 - Foreground input pauses while the person at the machine uses the keyboard or mouse, and resumes 10 seconds after they stop.
 - Text is typed as keystrokes when the target's keyboard layout has the character.
 - Strict UI Automation actions: `invoke`, `select` and `set_value` on an element, without falling back to mouse or keyboard, and without moving the human's focus or switching virtual desktops.
+- `click` and `scroll` take `uia_only`: an element is pressed or scrolled only through its UI Automation patterns, and when none carries the action the call refuses with the cause before sending anything. Upstream falls back to posted window messages, which some apps (Windows Terminal, XAML islands) drop while the call still reports success.
 
 ## Windows and displays
 
