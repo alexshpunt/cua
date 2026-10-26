@@ -3380,6 +3380,29 @@ enum BackgroundElementClick {
         y: i32,
         failed_calls: Vec<ActionTransport>,
     },
+    /// `uia_only`: no UIA pattern carried the click, so nothing was sent.
+    NoPattern {
+        failed_calls: Vec<ActionTransport>,
+    },
+}
+
+/// Schema of the `uia_only` argument shared by `click` and `scroll`.
+fn uia_only_schema() -> Value {
+    json!({"type":"boolean","description":"With delivery_mode \"background\" and an element_token: act only through the element's UIA patterns. When no pattern carries the action the call refuses with background_unavailable before anything is sent: no window messages and no targeted injection. Points (x,y) refuse."})
+}
+
+/// `uia_only` acts on an element through UIA only, so it needs an element_token and background delivery.
+fn uia_only_refusal(args: &Value, uia_only: bool) -> Option<ToolResult> {
+    if !uia_only {
+        return None;
+    }
+    if args.get("element_token").is_none_or(Value::is_null) {
+        return Some(ToolResult::error("uia_only acts on an element through UIA: give element_token, not x,y."));
+    }
+    if crate::input::delivery::DeliveryMode::from_args(args) == crate::input::delivery::DeliveryMode::Foreground {
+        return Some(ToolResult::error("uia_only applies to delivery_mode \"background\"; foreground delivery is real input."));
+    }
+    None
 }
 
 fn background_element_click_result(
@@ -3493,7 +3516,8 @@ impl Tool for ClickTool {
                     "modifier": cua_driver_core::tool_schema::modifier_schema(),
                     "from_zoom":{"type":"boolean","description":"When true, x and y are pixel coordinates in the last `zoom` image for this pid. The driver maps them back to window coords."},
                     "scope":{"type":"string","enum":["window","desktop"],"default":"window","description":"Coordinate frame (default \"window\"). Pass \"desktop\" with x,y and no pid/window_id for a screen-absolute click in get_desktop_state coordinates."},
-                    "delivery_mode": crate::input::delivery::delivery_mode_schema()
+                    "delivery_mode": crate::input::delivery::delivery_mode_schema(),
+                    "uia_only": uia_only_schema()
                 },"additionalProperties":false
             }),
             read_only: false, destructive: true, idempotent: false, open_world: true,
@@ -3505,6 +3529,10 @@ impl Tool for ClickTool {
         use crate::uia::snapshot::SnapshotKind;
         use cua_driver_core::tool_args::ArgsExt;
         let cursor_key = resolve_cursor_key(&args);
+        let uia_only = args.get("uia_only").and_then(Value::as_bool).unwrap_or(false);
+        if let Some(refusal) = uia_only_refusal(&args, uia_only) {
+            return refusal;
+        }
 
         // ── Window-less screen-absolute branch (desktop target) ───────────────
         // When the caller gives x,y with NO pid/window_id, treat x,y as TRUE
@@ -4050,6 +4078,7 @@ impl Tool for ClickTool {
             // target resolution and use the posted-message transport only for
             // the empirically verified single-left-click shape.
             if delivery == DeliveryMode::Background
+                && !uia_only
                 && btn == "left"
                 && count == 1
                 && crate::input::is_chromium_target_window(hwnd)
@@ -4094,6 +4123,7 @@ impl Tool for ClickTool {
                 // first: it lands while visible and reports occlusion without
                 // raising the window when hidden.
                 if delivery == DeliveryMode::Background
+                    && !uia_only
                     && crate::input::is_chromium_target_window(hwnd)
                 {
                     let (cx, cy) = resolve_onscreen_point_with_scroll(
@@ -4197,6 +4227,9 @@ impl Tool for ClickTool {
                         std::mem::forget(elem);
                     }
                 }
+                if uia_only {
+                    return Ok(BackgroundElementClick::NoPattern { failed_calls });
+                }
                 if delivery == DeliveryMode::Background
                     && crate::input::delivery::would_be_silently_dropped(
                         hwnd,
@@ -4228,6 +4261,18 @@ impl Tool for ClickTool {
                     failed_calls,
                 } => {
                     return background_element_click_result(message, transport, failed_calls);
+                }
+                BackgroundElementClick::NoPattern { failed_calls } => {
+                    let tried = failed_calls.iter().map(|call| format!("{call:?}")).collect::<Vec<_>>().join(", ");
+                    return crate::input::delivery::background_unavailable_error_with_cause(
+                        hwnd,
+                        EventKind::MouseClick,
+                        if tried.is_empty() {
+                            format!("element [{idx}] has no UIA pattern for this click (uia_only); nothing was sent")
+                        } else {
+                            format!("no UIA pattern of element [{idx}] carried this click (uia_only; tried {tried}); nothing was sent")
+                        },
+                    );
                 }
                 BackgroundElementClick::Inject { x, y, failed_calls } => (x, y, failed_calls, true),
                 BackgroundElementClick::Post { x, y, failed_calls } => (x, y, failed_calls, false),
@@ -4542,6 +4587,9 @@ mod pixel_click_transport_tests;
 
 #[cfg(test)]
 mod background_element_click_record_tests;
+
+#[cfg(test)]
+mod uia_only_tests;
 
 // ── type_text ─────────────────────────────────────────────────────────────────
 
@@ -6468,7 +6516,8 @@ impl Tool for ScrollTool {
                     "window_id":{"type":"integer","description":"HWND of the target window. Omit when element_token is supplied; otherwise auto-resolves the pid's first visible window."},
                     "element_token": cua_driver_core::tool_schema::element_token_schema(),
                     "scope":{"type":"string","enum":["window","desktop"],"default":"window","description":"Use \"desktop\" with x,y and no pid/window_id for screen-absolute coordinates from get_desktop_state. Default \"window\"."},
-                    "delivery_mode": crate::input::delivery::delivery_mode_schema()
+                    "delivery_mode": crate::input::delivery::delivery_mode_schema(),
+                    "uia_only": uia_only_schema()
                 },"additionalProperties":false
             }),
             read_only: false, destructive: false, idempotent: false, open_world: true,
@@ -6478,6 +6527,10 @@ impl Tool for ScrollTool {
     async fn invoke(&self, args: Value) -> ToolResult {
         use crate::input::delivery::{DeliveryMode, EventKind};
         use cua_driver_core::tool_args::ArgsExt;
+        let uia_only = args.get("uia_only").and_then(Value::as_bool).unwrap_or(false);
+        if let Some(refusal) = uia_only_refusal(&args, uia_only) {
+            return refusal;
+        }
         // ── Window-less screen-absolute branch (desktop target) ───────────────
         // No pid/window_id + numeric x,y + desktop scope → synthesize a wheel
         // event at the screen point via SendInput. The wheel routes to whatever
@@ -6656,6 +6709,18 @@ impl Tool for ScrollTool {
                     "verified": false,
                     "delivery_mode": "background"
                 }));
+            }
+            if uia_only {
+                let cause = match uia_result {
+                    Ok(Err(error)) => error.to_string(),
+                    Err(error) => format!("task error: {error}"),
+                    Ok(Ok(())) => unreachable!(),
+                };
+                return crate::input::delivery::background_unavailable_error_with_cause(
+                    hwnd,
+                    EventKind::MouseScroll,
+                    format!("element [{idx}] could not scroll through UIA ({cause}) (uia_only); nothing was sent"),
+                );
             }
         }
 
