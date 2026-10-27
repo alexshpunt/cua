@@ -33,3 +33,33 @@ async fn display_only_refuses_accessibility_snapshot_requests() {
         );
     }
 }
+
+#[test]
+fn a_crop_is_advertised_and_parsed_only_for_display_only_reads() {
+    let tool = GetWindowStateTool {
+        state: ToolState::new(None),
+    };
+    assert_eq!(
+        tool.def().input_schema["properties"]["crop"]["type"],
+        "object"
+    );
+    let crop = serde_json::json!({"crop": {"x": 10, "y": 20, "width": 300, "height": 200}});
+    assert_eq!(
+        super::window_crop(&crop, true).unwrap(),
+        Some(cua_driver_core::image_utils::PixelRegion {
+            x: 10,
+            y: 20,
+            width: 300,
+            height: 200
+        })
+    );
+    assert_eq!(
+        super::window_crop(&serde_json::json!({}), true).unwrap(),
+        None
+    );
+    assert!(super::window_crop(&crop, false).is_err());
+    let empty = serde_json::json!({"crop": {"x": 0, "y": 0, "width": 0, "height": 5}});
+    assert!(super::window_crop(&empty, true).is_err());
+    let partial = serde_json::json!({"crop": {"x": 0, "y": 0}});
+    assert!(super::window_crop(&partial, true).is_err());
+}

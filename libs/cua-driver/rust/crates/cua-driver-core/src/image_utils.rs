@@ -341,6 +341,47 @@ pub fn encode_bgra_to_png_resized(bgra: &[u8], w: u32, h: u32, max_dim: u32) -> 
     Ok(out)
 }
 
+/// A rectangle of an image in its pixels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct PixelRegion {
+    pub x: u32,
+    pub y: u32,
+    pub width: u32,
+    pub height: u32,
+}
+
+impl PixelRegion {
+    /// The part of the region inside a `w`x`h` image, or `None` when they do not overlap.
+    pub fn within(self, w: u32, h: u32) -> Option<PixelRegion> {
+        if self.x >= w || self.y >= h || self.width == 0 || self.height == 0 {
+            return None;
+        }
+        Some(PixelRegion {
+            x: self.x,
+            y: self.y,
+            width: self.width.min(w - self.x),
+            height: self.height.min(h - self.y),
+        })
+    }
+}
+
+/// Copy one region out of a BGRA frame. The region must lie inside the frame (see [`PixelRegion::within`]).
+pub fn crop_bgra(bgra: &[u8], w: u32, h: u32, region: PixelRegion) -> Result<Vec<u8>> {
+    if bgra.len() as u64 != (w as u64) * (h as u64) * 4 {
+        bail!("crop_bgra: invalid buffer for w={w} h={h}");
+    }
+    if region.within(w, h) != Some(region) {
+        bail!("crop_bgra: region {region:?} is not inside {w}x{h}");
+    }
+    let row = w as usize * 4;
+    let (x, width) = (region.x as usize * 4, region.width as usize * 4);
+    let mut out = Vec::with_capacity(width * region.height as usize);
+    for y in region.y as usize..(region.y + region.height) as usize {
+        out.extend_from_slice(&bgra[y * row + x..y * row + x + width]);
+    }
+    Ok(out)
+}
+
 /// Downscale a Windows display overview PNG with SIMD Bilinear.
 ///
 /// Native-size and within-cap PNG bytes stay unchanged. Other platforms and
@@ -437,6 +478,44 @@ pub fn stretch_pixels_region(
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod crop_tests {
+    use super::{crop_bgra, PixelRegion};
+
+    fn region(x: u32, y: u32, width: u32, height: u32) -> PixelRegion {
+        PixelRegion {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    #[test]
+    fn a_region_is_clamped_to_the_image() {
+        assert_eq!(region(2, 1, 10, 10).within(4, 3), Some(region(2, 1, 2, 2)));
+        assert_eq!(region(0, 0, 4, 3).within(4, 3), Some(region(0, 0, 4, 3)));
+        assert_eq!(region(4, 0, 1, 1).within(4, 3), None);
+        assert_eq!(region(0, 3, 1, 1).within(4, 3), None);
+        assert_eq!(region(0, 0, 0, 1).within(4, 3), None);
+    }
+
+    #[test]
+    fn a_crop_keeps_the_rows_and_columns_of_its_region() {
+        // A 3x2 frame whose pixel (x, y) is [x, y, 0, 255].
+        let frame: Vec<u8> = (0..2u8)
+            .flat_map(|y| (0..3u8).flat_map(move |x| [x, y, 0, 255]))
+            .collect();
+        let cropped = crop_bgra(&frame, 3, 2, region(1, 0, 2, 2)).unwrap();
+        assert_eq!(
+            cropped,
+            vec![1, 0, 0, 255, 2, 0, 0, 255, 1, 1, 0, 255, 2, 1, 0, 255]
+        );
+        assert!(crop_bgra(&frame, 3, 2, region(2, 0, 2, 1)).is_err());
+        assert!(crop_bgra(&frame[1..], 3, 2, region(0, 0, 1, 1)).is_err());
+    }
+}
 
 #[cfg(test)]
 mod tests {

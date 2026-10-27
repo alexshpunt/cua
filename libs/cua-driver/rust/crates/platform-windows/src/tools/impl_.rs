@@ -1331,7 +1331,8 @@ impl Tool for GetWindowStateTool {
                 "max_depth":{"type":"integer","minimum":1,"description":"Cap on the UIA-tree walk depth. Nodes whose rendered indent would exceed this are omitted. Omit for the default (25). Lower for deep menu / Electron trees."},
                 "timeout_ms": cua_driver_core::tool_schema::timeout_ms_schema(),
                 "max_image_dimension":{"type":"integer","minimum":0,"description":"Per-call long-edge limit for the returned screenshot, in pixels (aspect ratio preserved). Explicit values override configured behavior; 0 returns native resolution. Omit to preserve the configured default."},
-                "max_dimension":{"type":"integer","minimum":1,"description":"Legacy optional cap on the returned screenshot's long edge, in pixels (aspect ratio preserved). Applied on top of the configured max_image_dimension ceiling when max_image_dimension is omitted; the tighter wins."}
+                "max_dimension":{"type":"integer","minimum":1,"description":"Legacy optional cap on the returned screenshot's long edge, in pixels (aspect ratio preserved). Applied on top of the configured max_image_dimension ceiling when max_image_dimension is omitted; the tighter wins."},
+                "crop":{"type":"object","required":["x","y","width","height"],"additionalProperties":false,"description":"With display_only:true only: return just this rectangle of the window, in its physical pixels (screenshot_original_width/height space), clamped to the window. Only the rectangle is encoded; max_image_dimension applies to it. The result names the clamped rectangle as screenshot_crop.","properties":{"x":{"type":"integer","minimum":0},"y":{"type":"integer","minimum":0},"width":{"type":"integer","minimum":1},"height":{"type":"integer","minimum":1}}}
             },"additionalProperties":false})),
             // Swift annotation: idempotent: false (each call is a fresh snapshot).
             read_only: true, destructive: false, idempotent: false, open_world: false,
@@ -1341,6 +1342,11 @@ impl Tool for GetWindowStateTool {
     async fn invoke(&self, args: Value) -> ToolResult {
         let display_only = match cua_driver_core::window_state_view::display_only(&args) {
             Ok(display_only) => display_only,
+            Err(refusal) => return refusal,
+        };
+        // A crop is a preview of part of the window: it never becomes a coordinate source for input.
+        let crop = match window_crop(&args, display_only) {
+            Ok(crop) => crop,
             Err(refusal) => return refusal,
         };
         // Swift error wording 1:1.
@@ -1504,6 +1510,10 @@ impl Tool for GetWindowStateTool {
                     .with_structured(json!({"code": error.to_string()}))
             }
         };
+        if retained_wgc && crop.is_some() {
+            return ToolResult::error("crop is not available with capture_backend:\"wgc\".")
+                .with_structured(json!({"code": "invalid_arguments"}));
+        }
         let state = self.state.clone();
         let q = query.clone();
         let out_file = screenshot_out_file.clone();
@@ -1592,10 +1602,16 @@ impl Tool for GetWindowStateTool {
             // to call `bring_to_front` instead of retrying).
             // The previous `Err(_) => None` silently dropped the error and
             // upstream agents saw an empty response with no signal.
+            let mut applied_crop = None;
             let (screenshot, screenshot_err) = if do_shot {
-                let captured = match retained {
-                    Some(frame) => Ok((frame.png, frame.width, frame.height)),
-                    None => crate::capture::screenshot_window_overview(hwnd, max_dim),
+                let captured = match (retained, crop) {
+                    (Some(frame), _) => Ok((frame.png, frame.width, frame.height)),
+                    (None, Some(region)) => crate::capture::screenshot_window_region(hwnd, max_dim, region)
+                        .map(|(png, w, h, inside)| {
+                            applied_crop = Some(inside);
+                            (png, w, h)
+                        }),
+                    (None, None) => crate::capture::screenshot_window_overview(hwnd, max_dim),
                 };
                 match captured {
                     Ok((png, native_w, native_h)) => {
@@ -1622,7 +1638,7 @@ impl Tool for GetWindowStateTool {
             } else {
                 (None, None)
             };
-            Ok((screenshot, screenshot_err))
+            Ok((screenshot, screenshot_err, applied_crop))
         });
         let result: anyhow::Result<_> =
             match tokio::time::timeout(UIA_SCREENSHOT_TIMEOUT, blocking).await {
@@ -1635,10 +1651,14 @@ impl Tool for GetWindowStateTool {
                         "window capture did not finish within {}s",
                         UIA_SCREENSHOT_TIMEOUT.as_secs()
                     )),
+                    None,
                 )),
             };
-        let result =
-            result.map(|(screenshot, screenshot_err)| (tree_result, screenshot, screenshot_err));
+        let mut applied_crop = None;
+        let result = result.map(|(screenshot, screenshot_err, crop)| {
+            applied_crop = crop;
+            (tree_result, screenshot, screenshot_err)
+        });
 
         match result {
             Ok((tree_opt, screenshot_opt, screenshot_err)) => {
@@ -1895,6 +1915,9 @@ impl Tool for GetWindowStateTool {
                     // the structured payload so consumers don't have to sniff
                     // magic bytes off the base64 to know the format.
                     structured["screenshot_mime_type"] = json!("image/png");
+                    if let Some(crop) = applied_crop {
+                        structured["screenshot_crop"] = json!(crop);
+                    }
                     if let Some(capture_id) = capture_id {
                         structured["capture_id"] = json!(capture_id);
                     }
@@ -10723,6 +10746,33 @@ impl Tool for DebugWindowInfoTool {
 }
 
 // ── registry builder ──────────────────────────────────────────────────────────
+
+/// The optional `crop` of `get_window_state`: a rectangle of the window in its physical
+/// pixels. Only a display-only read may crop, so a cropped image is never an input source.
+fn window_crop(
+    args: &Value,
+    display_only: bool,
+) -> Result<Option<cua_driver_core::image_utils::PixelRegion>, ToolResult> {
+    let Some(value) = args.get("crop") else {
+        return Ok(None);
+    };
+    if !display_only {
+        return Err(ToolResult::error(
+            "crop requires display_only:true (and include_accessibility_tree:false): a cropped image is a preview, never an input source.",
+        )
+        .with_structured(json!({"code": "invalid_arguments"})));
+    }
+    let region: cua_driver_core::image_utils::PixelRegion = serde_json::from_value(value.clone())
+        .map_err(|error| {
+            ToolResult::error(format!("crop needs integer x, y, width and height: {error}"))
+                .with_structured(json!({"code": "invalid_arguments"}))
+        })?;
+    if region.width == 0 || region.height == 0 {
+        return Err(ToolResult::error("crop width and height must be at least 1.")
+            .with_structured(json!({"code": "invalid_arguments"})));
+    }
+    Ok(Some(region))
+}
 
 pub fn build_registry(compat: bool) -> ToolRegistry {
     build_registry_with_provider(compat, None)

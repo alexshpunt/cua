@@ -2,7 +2,7 @@
 
 This is a fork of [trycua/cua](https://github.com/trycua/cua). It adds Windows features to Cua Driver that [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use) needs and upstream doesn't have yet. Everything else is upstream's code, under upstream's license.
 
-The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `d9f380f6`. Its binaries are attached to the [`pi-runtime-0.37.0-d9f380f6` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-d9f380f6) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
+The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `2437a85e`. Its binaries are attached to the [`pi-runtime-0.37.0-2437a85e` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-2437a85e) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
 
 All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux behave like upstream.
 
@@ -42,6 +42,7 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 - Process metadata is read once per process ID.
 - Capture returns opaque pixels when no desktop compositor runs, as in isolated agent sessions.
 - A DPI-virtualized window (DPI-unaware, or system-aware on a monitor with another DPI) is captured the way the desktop compositor shows it: stretched to its physical frame. Upstream's PrintWindow capture leaves a DPI-unaware window at 2/3 size in the image's top-left corner on a 150% display, while UI bounds and input use the physical frame.
+- `get_window_state` takes a `crop` rectangle for display-only reads: only that part of the window, in its physical pixels, is copied, resized and PNG-encoded, and the result names it as `screenshot_crop`. Pi Agent Computer Use watches a viewport this way. A crop is never an input source and is refused with the retained WGC route.
 - An opt-in retained Windows Graphics Capture route. Pi Agent Computer Use tried it and dropped it, because on the machines it was measured on it was slower than the default route.
 
 ## Protocol

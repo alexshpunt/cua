@@ -408,6 +408,30 @@ pub fn screenshot_window_overview(hwnd: u64, max_dim: u32) -> Result<(Vec<u8>, u
     .map(|(overview, _, _)| overview)
 }
 
+/// Capture one region of a window, in its physical pixels, with one PNG encoding of
+/// that region only after optional resize. Returns the PNG, the window's physical
+/// frame size and the region as clamped to the frame.
+pub fn screenshot_window_region(
+    hwnd: u64,
+    max_dim: u32,
+    region: cua_driver_core::image_utils::PixelRegion,
+) -> Result<(Vec<u8>, u32, u32, cua_driver_core::image_utils::PixelRegion)> {
+    screenshot_window_encoded(hwnd, move |pixels, w, h| {
+        let Some(inside) = region.within(w, h) else {
+            bail!("crop_outside_window: the crop does not overlap the {w}x{h} window");
+        };
+        let cropped = cua_driver_core::image_utils::crop_bgra(pixels, w, h, inside)?;
+        let png = cua_driver_core::image_utils::encode_bgra_to_png_resized(
+            &cropped,
+            inside.width,
+            inside.height,
+            max_dim,
+        )?;
+        Ok((png, w, h, inside))
+    })
+    .map(|(capture, _, _)| capture)
+}
+
 fn screenshot_window_mapped(hwnd: u64) -> Result<(Vec<u8>, bool, Option<FrameGeometry>)> {
     screenshot_window_encoded(hwnd, cua_driver_core::image_utils::encode_bgra_to_png)
 }
