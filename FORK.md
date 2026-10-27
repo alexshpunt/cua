@@ -2,7 +2,7 @@
 
 This is a fork of [trycua/cua](https://github.com/trycua/cua). It adds Windows features to Cua Driver that [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use) needs and upstream doesn't have yet. Everything else is upstream's code, under upstream's license.
 
-The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `c920b66b`. Its binaries are attached to the [`pi-runtime-0.37.0-c920b66b` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-c920b66b) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
+The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `2f1a8b1d`. Its binaries are attached to the [`pi-runtime-0.37.0-2f1a8b1d` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-2f1a8b1d) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
 
 All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux behave like upstream.
 
@@ -15,6 +15,7 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 - Coordinate wheel scroll at a point of the last capture, in wheel detents.
 - Straight drags are bound to the capture they were planned on.
 - Foreground clicks and drags go through `SendInput` and keep the target window active. Clicks on a target's owned popups work.
+- A foreground press checks its point first: a click, the start of a drag or held path, and each button or pen press of an `input_timeline`. When after activation another top-level window still covers the point, the call refuses with `pointer_target_occluded` before pressing, and names that window's id, pid, title and relation (`owned_window`, `same_process` or `other_process`). The target's own captionless popups, such as menus and drop-downs, take the press.
 - Foreground input pauses while the person at the machine uses the keyboard or mouse, and resumes 10 seconds after they stop.
 - Text is typed as keystrokes when the target's keyboard layout has the character.
 - Strict UI Automation actions: `invoke`, `select` and `set_value` on an element, without falling back to mouse or keyboard, and without moving the human's focus or switching virtual desktops.
