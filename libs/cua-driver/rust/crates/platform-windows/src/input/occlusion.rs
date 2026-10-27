@@ -6,6 +6,8 @@
 //! first and refuses before pressing when another window covers it.
 
 use std::fmt;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::System::Threading::GetCurrentProcessId;
@@ -179,10 +181,26 @@ fn title(window: HWND) -> String {
     String::from_utf16_lossy(&buffer[..length.min(buffer.len())])
 }
 
+/// How long a covered point may take to clear. Windows raises an activated
+/// window asynchronously: right after activation, the window that was in front
+/// can still be the one at the point for a few milliseconds.
+const SETTLE: Duration = Duration::from_millis(250);
+
 /// Refuses when a press at screen point `(x, y)` would reach another window
 /// than `target`. Call it after the target is activated or raised, right before
-/// the press. When Windows reports no window at the point, the press goes on.
+/// the press. A covered point is checked again until it clears or [`SETTLE`]
+/// passes. When Windows reports no window at the point, the press goes on.
 pub(crate) fn check_point(target: u64, x: i32, y: i32) -> Result<(), Occluded> {
+    let deadline = Instant::now() + SETTLE;
+    loop {
+        match probe_point(target, x, y) {
+            Err(_) if Instant::now() < deadline => sleep(Duration::from_millis(10)),
+            outcome => return outcome,
+        }
+    }
+}
+
+fn probe_point(target: u64, x: i32, y: i32) -> Result<(), Occluded> {
     let target = root_of(hwnd(target));
     let Some(top) = top_window_at(x, y) else {
         return Ok(());
