@@ -175,6 +175,11 @@ fn owner_chain_reaches(target: HWND, window: HWND) -> bool {
     false
 }
 
+/// The window's title, read without sending it a message for another process.
+pub(crate) fn window_title(window: u64) -> String {
+    title(hwnd(window))
+}
+
 fn title(window: HWND) -> String {
     let mut buffer = [0u16; 256];
     let length = unsafe { GetWindowTextW(window, &mut buffer) }.max(0) as usize;
