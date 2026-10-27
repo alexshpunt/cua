@@ -2,7 +2,7 @@
 
 This is a fork of [trycua/cua](https://github.com/trycua/cua). It adds Windows features to Cua Driver that [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use) needs and upstream doesn't have yet. Everything else is upstream's code, under upstream's license.
 
-The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `2437a85e`. Its binaries are attached to the [`pi-runtime-0.37.0-2437a85e` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-2437a85e) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
+The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `cac6f49d`. Its binaries are attached to the [`pi-runtime-0.37.0-cac6f49d` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-cac6f49d) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
 
 All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux behave like upstream.
 
@@ -11,6 +11,7 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 - Held drag paths: a left-button stroke through up to 254 points, released at the end of the call. Interrupted paths report which points were delivered. This is what makes continuous brush strokes in Paint possible.
 - Key holds: hold up to 8 keys while a bounded set of clicks and drags runs, then release them in the same call.
 - `input_timeline`: timed key, button, move, raw relative move, wheel and pen events in one call, with pen pressure and tilt. Everything still held is released when the call ends or fails.
+- Pen events of every `input_timeline` in a driver process come from one synthetic pen, so apps that keep settings per device see one pen. Pen frames out of contact (in range before contact, lift-off and after) carry no pressure.
 - Native pointer move and hover with a dwell time on an exact window.
 - Coordinate wheel scroll at a point of the last capture, in wheel detents.
 - Straight drags are bound to the capture they were planned on.
