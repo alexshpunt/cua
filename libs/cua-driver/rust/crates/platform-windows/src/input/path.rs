@@ -152,6 +152,9 @@ impl Backend for NativePath {
     }
 
     fn press(&mut self) -> Result<(), String> {
+        if let Some((x, y)) = self.last_cursor {
+            crate::input::occlusion::check_point(self.hwnd, x, y).map_err(|e| e.to_string())?;
+        }
         self.send(Self::button_input(MOUSEEVENTF_LEFTDOWN))?;
         self.held = true;
         self.pressed_at = Instant::now();
@@ -297,6 +300,11 @@ fn prepare(
     }
     if !unsafe { crate::input::force_foreground_assisted(HWND(hwnd as *mut _)) }.0 {
         return Err("foreground_unavailable: exact window did not become foreground".into());
+    }
+    // The first press is checked before anything is sent; later presses check when they come.
+    if let Some(point) = paths.first().and_then(|path| path.points.first()) {
+        let (x, y) = native.screen_point(*point)?;
+        crate::input::occlusion::check_point(hwnd, x, y).map_err(|e| e.to_string())?;
     }
     Ok(native)
 }

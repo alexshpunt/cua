@@ -23,8 +23,8 @@ use windows::Win32::UI::Input::Pointer::{
     POINTER_FLAG_INRANGE, POINTER_FLAG_UP, POINTER_FLAG_UPDATE, POINTER_INFO, POINTER_PEN_INFO,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetForegroundWindow, GetSystemMetrics, IsWindowVisible, PT_PEN, SM_CXVIRTUALSCREEN,
-    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    GetCursorPos, GetForegroundWindow, GetSystemMetrics, IsWindowVisible, PT_PEN,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
 
 use crate::timeline::{self, Backend, Button, Event, Pen, Report, Timed};
@@ -215,6 +215,13 @@ impl Backend for Native {
                 ))
             }
             Event::ButtonDown(button) | Event::ButtonUp(button) => {
+                if matches!(event, Event::ButtonDown(_)) {
+                    let mut cursor = POINT::default();
+                    if unsafe { GetCursorPos(&mut cursor) }.is_ok() {
+                        crate::input::occlusion::check_point(self.hwnd, cursor.x, cursor.y)
+                            .map_err(|e| e.to_string())?;
+                    }
+                }
                 let (flags, data) = button_flags(*button, matches!(event, Event::ButtonDown(_)));
                 self.insert(mouse(flags, 0, 0, data))
             }
@@ -236,6 +243,9 @@ impl Backend for Native {
                 Ok(())
             }
             Event::PenDown { x, y, pen } => {
+                let (sx, sy) = self.screen(*x, *y)?;
+                crate::input::occlusion::check_point(self.hwnd, sx, sy)
+                    .map_err(|e| e.to_string())?;
                 // Bring the pen into range above the point before contact so apps see a normal stroke start.
                 self.pen_event(POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE, *x, *y, *pen)?;
                 self.pen_event(
@@ -305,6 +315,31 @@ impl Drop for Native {
     }
 }
 
+/// The screen point of the program's first press when only absolute moves come
+/// before it, so it can be checked before anything is sent. Keys, wheels or
+/// relative moves first may change what the press reaches; then the press is
+/// checked only when it comes.
+fn first_press(program: &[Timed], native: &Native) -> Result<Option<(i32, i32)>, String> {
+    let mut at = None;
+    for timed in program {
+        match &timed.event {
+            Event::Move { x, y } => at = Some(native.screen(*x, *y)?),
+            Event::PenDown { x, y, .. } => return native.screen(*x, *y).map(Some),
+            Event::ButtonDown(_) => {
+                if at.is_none() {
+                    let mut cursor = POINT::default();
+                    if unsafe { GetCursorPos(&mut cursor) }.is_ok() {
+                        at = Some((cursor.x, cursor.y));
+                    }
+                }
+                return Ok(at);
+            }
+            _ => return Ok(None),
+        }
+    }
+    Ok(None)
+}
+
 /// Bring the exact window forward, then run the whole program. Everything still held is released at the end.
 pub(crate) fn send_timeline(
     hwnd: u64,
@@ -357,6 +392,9 @@ pub(crate) fn send_timeline(
     }
     if !unsafe { crate::input::force_foreground_assisted(HWND(hwnd as *mut _)) }.0 {
         return Err("foreground_unavailable: exact window did not become foreground".into());
+    }
+    if let Some((x, y)) = first_press(program, &native)? {
+        crate::input::occlusion::check_point(hwnd, x, y).map_err(|e| e.to_string())?;
     }
     native.started = Instant::now();
     let mut report = timeline::execute(program, &mut native);

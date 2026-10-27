@@ -625,8 +625,10 @@ fn send_click_synthesized_mods_impl(
         // poll GetKeyState (WPF, Chromium) observe the held state, then released
         // after the click loop below.
         let (mod_downs, mod_ups) = crate::input::keyboard::modifier_hold_inputs(modifiers);
+        // After the target is raised, a window still on top at the point would take the press.
+        let occluded = crate::input::occlusion::check_point(target.0 as usize as u64, sx, sy).err();
         let mut sent_ok = true;
-        if !mod_downs.is_empty() {
+        if occluded.is_none() && !mod_downs.is_empty() {
             let sent = SendInput(&mod_downs, std::mem::size_of::<INPUT>() as i32);
             sent_ok = sent as usize == mod_downs.len();
             sleep(Duration::from_millis(5));
@@ -634,7 +636,7 @@ fn send_click_synthesized_mods_impl(
 
         let count = count.max(1);
         for i in 0..count {
-            if !sent_ok {
+            if !sent_ok || occluded.is_some() {
                 break;
             }
             // Only the move record carries absolute coordinates. Button-only
@@ -665,7 +667,7 @@ fn send_click_synthesized_mods_impl(
         }
 
         // Release any held modifiers (reverse order) before restoring z-order.
-        if !mod_ups.is_empty() {
+        if occluded.is_none() && !mod_ups.is_empty() {
             let released = SendInput(&mod_ups, std::mem::size_of::<INPUT>() as i32);
             if released as usize != mod_ups.len() {
                 // A second release attempt is safe and reduces the chance of a
@@ -708,6 +710,9 @@ fn send_click_synthesized_mods_impl(
             let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
         }
         drop(noactivate);
+        if let Some(occluded) = occluded {
+            return Err(occluded.into());
+        }
         if !sent_ok {
             bail!(
                 "SendInput inserted fewer modifier or mouse events than expected for the \
@@ -839,6 +844,8 @@ pub fn send_drag_synthesized(
             );
         }
     }
+    // Only the press point matters: the window that takes the press captures the moves.
+    crate::input::occlusion::check_point(target.0 as usize as u64, sx_from, sy_from)?;
     let (nfx, nfy) = norm(sx_from, sy_from);
     if !send(make_input(nfx, nfy, MOUSEEVENTF_MOVE)) {
         bail!("SendInput did not insert the drag's first move; no button was pressed");
