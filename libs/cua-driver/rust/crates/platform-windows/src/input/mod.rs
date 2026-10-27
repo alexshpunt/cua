@@ -13,6 +13,7 @@ pub mod delivery;
 pub mod inject;
 pub mod keyboard;
 pub mod mouse;
+pub(crate) mod occlusion;
 pub(crate) mod path;
 pub(crate) mod pointer;
 pub(crate) mod timeline;

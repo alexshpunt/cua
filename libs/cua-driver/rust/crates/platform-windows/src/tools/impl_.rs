@@ -3650,7 +3650,7 @@ impl Tool for ClickTool {
                     // SendInput dispatched but is not driver-verifiable (no read-back).
                     .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" }))
                 }
-                Ok(Err(e)) => ToolResult::error(e.to_string()),
+                Ok(Err(e)) => crate::input::occlusion::input_error(e),
                 Err(e) => ToolResult::error(format!("Task error: {e}")),
             };
         }
@@ -3892,7 +3892,7 @@ impl Tool for ClickTool {
                     .with_structured(
                         json!({ "path": "msaa", "verified": false, "effect": "unverifiable" }),
                     ),
-                    Ok(Err(e)) => ToolResult::error(e.to_string()),
+                    Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
             }
@@ -4049,7 +4049,7 @@ impl Tool for ClickTool {
                         "✅ Performed SendInput click on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
                     ))
                     .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" })),
-                    Ok(Err(e)) => ToolResult::error(e.to_string()),
+                    Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
             }
@@ -4421,7 +4421,7 @@ impl Tool for ClickTool {
                         ))
                         .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" }))
                     }
-                    Ok(Err(e)) => ToolResult::error(e.to_string()),
+                    Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
             }
@@ -7267,7 +7267,7 @@ impl Tool for DoubleClickTool {
                     Ok(Ok(())) => ToolResult::text(format!(
                         "✅ Sent double-click via SendInput on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
                     )),
-                    Ok(Err(e)) => ToolResult::error(e.to_string()),
+                    Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
             }
@@ -7384,7 +7384,7 @@ impl Tool for DoubleClickTool {
                     Ok(Ok(())) => ToolResult::text(format!(
                         "✅ Sent double-click via SendInput to pid {pid} at screen ({sx_i},{sy_i}) (delivery_mode:foreground)."
                     )),
-                    Ok(Err(e)) => ToolResult::error(e.to_string()),
+                    Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
             }
@@ -7620,7 +7620,7 @@ impl Tool for RightClickTool {
                     Ok(Ok(())) => ToolResult::text(format!(
                         "✅ Sent right-click via SendInput on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
                     )),
-                    Ok(Err(e)) => ToolResult::error(e.to_string()),
+                    Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
             }
@@ -7734,7 +7734,7 @@ impl Tool for RightClickTool {
                     Ok(Ok(())) => ToolResult::text(format!(
                         "✅ Sent right-click via SendInput to pid {pid} at screen ({sx_i},{sy_i}) (delivery_mode:foreground)."
                     )),
-                    Ok(Err(e)) => ToolResult::error(e.to_string()),
+                    Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
             }
@@ -8179,7 +8179,7 @@ impl Tool for DragTool {
                     "from": {"x": from_x, "y": from_y}, "to": {"x": to_x, "y": to_y},
                     "effect": "unverifiable"
                 })),
-                Ok(Err(error)) => ToolResult::error(error.to_string()),
+                Ok(Err(error)) => crate::input::occlusion::input_error(error),
                 Err(error) => ToolResult::error(format!("desktop drag task failed: {error}")),
             };
         }
@@ -8404,7 +8404,7 @@ impl Tool for DragTool {
                      from screen ({sx_from},{sy_from}) → ({sx_to},{sy_to}) \
                      in {duration_ms}ms / {steps} steps (delivery_mode:foreground)."
                 )),
-                Ok(Err(e)) => ToolResult::error(e.to_string()),
+                Ok(Err(e)) => crate::input::occlusion::input_error(e),
                 Err(e) => ToolResult::error(format!("Task error: {e}")),
             };
         }
