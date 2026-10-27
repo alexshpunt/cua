@@ -3875,7 +3875,7 @@ impl Tool for ClickTool {
                         } else {
                             crate::input::send_click_synthesized_mods(
                                 hwnd, tx, ty, count, &btn_fg, &mod_refs,
-                            )
+                            ).map(|()| None)
                         }
                     }
                 })
@@ -3886,12 +3886,12 @@ impl Tool for ClickTool {
                 }
                 let half = if want_expand { "dropdown" } else { "press" };
                 return match send_result {
-                    Ok(Ok(())) => ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
                         "✅ Performed SendInput click on MSAA [{idx}] {half} half at ({tx},{ty})."
                     ))
                     .with_structured(
                         json!({ "path": "msaa", "verified": false, "effect": "unverifiable" }),
-                    ),
+                    ), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
@@ -4045,10 +4045,10 @@ impl Tool for ClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(())) => ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
                         "✅ Performed SendInput click on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
                     ))
-                    .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" })),
+                    .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" })), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
@@ -4410,7 +4410,7 @@ impl Tool for ClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(())) => {
+                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after({
                         let click_word = match count {
                             2 => "double-click",
                             3 => "triple-click",
@@ -4420,7 +4420,7 @@ impl Tool for ClickTool {
                             "✅ Sent {click_word} via SendInput to pid {pid} at ({sx},{sy}) (delivery_mode:foreground)."
                         ))
                         .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" }))
-                    }
+                    }, after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
@@ -7264,9 +7264,9 @@ impl Tool for DoubleClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(())) => ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
                         "✅ Sent double-click via SendInput on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
-                    )),
+                    )), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
@@ -7381,9 +7381,9 @@ impl Tool for DoubleClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(())) => ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
                         "✅ Sent double-click via SendInput to pid {pid} at screen ({sx_i},{sy_i}) (delivery_mode:foreground)."
-                    )),
+                    )), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
@@ -7617,9 +7617,9 @@ impl Tool for RightClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(())) => ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
                         "✅ Sent right-click via SendInput on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
-                    )),
+                    )), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
@@ -7731,9 +7731,9 @@ impl Tool for RightClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(())) => ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
                         "✅ Sent right-click via SendInput to pid {pid} at screen ({sx_i},{sy_i}) (delivery_mode:foreground)."
-                    )),
+                    )), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };

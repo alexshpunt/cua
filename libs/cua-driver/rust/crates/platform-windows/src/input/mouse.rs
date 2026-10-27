@@ -6,7 +6,7 @@
 
 use anyhow::{bail, Result};
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
@@ -448,13 +448,17 @@ pub fn send_click_synthesized_mods(
     button: &str,
     modifiers: &[&str],
 ) -> Result<()> {
-    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers, false)
+    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers, false).map(|_| ())
 }
 
 /// SendInput click for an explicit foreground request. Unlike the historical
 /// z-order-assisted path, this activates the target and does not add
 /// `WS_EX_NOACTIVATE`, so retained-mode frameworks such as WPF process the
 /// system-queue pointer event. The caller owns any later foreground restore.
+///
+/// Returns the window of the target's process that took the foreground when
+/// the click closed the target, such as OK in a dialog; `None` when the target
+/// or one of its owned windows stays in front.
 pub fn send_click_synthesized_active_mods(
     target: u64,
     sx: i32,
@@ -462,7 +466,7 @@ pub fn send_click_synthesized_active_mods(
     count: usize,
     button: &str,
     modifiers: &[&str],
-) -> Result<()> {
+) -> Result<Option<u64>> {
     send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers, true)
 }
 
@@ -474,7 +478,7 @@ fn send_click_synthesized_mods_impl(
     button: &str,
     modifiers: &[&str],
     activate: bool,
-) -> Result<()> {
+) -> Result<Option<u64>> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(target as *mut _);
     if target.0.is_null() {
@@ -720,23 +724,68 @@ fn send_click_synthesized_mods_impl(
             );
         }
         if activate {
-            let actual = GetForegroundWindow();
-            if !crate::win32::foreground_matches_target_or_owned_window(
-                foreground_target.expect("foreground target captured before input"),
-                actual.0 as usize as u64,
-            ) {
-                bail!(
-                    "foreground_unavailable: exact target HWND {:?} or a verified same-process \
-                     post-action window was not foreground after the click \
-                     (actual foreground HWND {:?})",
-                    target.0,
-                    actual.0
-                );
+            let snapshot = foreground_target.expect("foreground target captured before input");
+            // A click that closes its target hands the foreground to another window of
+            // its app; Windows may take a few milliseconds to do so.
+            let deadline = Instant::now() + Duration::from_millis(300);
+            loop {
+                let actual = GetForegroundWindow().0 as usize as u64;
+                if crate::win32::foreground_after_target_closed(snapshot, actual) {
+                    return Ok(Some(actual));
+                }
+                if crate::win32::foreground_matches_target_or_owned_window(snapshot, actual) {
+                    return Ok(None);
+                }
+                if Instant::now() >= deadline {
+                    bail!(
+                        "foreground_unavailable: exact target HWND {:?} or a verified same-process \
+                         post-action window was not foreground after the click \
+                         (actual foreground HWND 0x{actual:x})",
+                        target.0
+                    );
+                }
+                sleep(Duration::from_millis(10));
             }
         }
     }
 
-    Ok(())
+    Ok(None)
+}
+
+/// Adds the window that took the foreground after a click closed its target to
+/// the click's result: `foreground_after` in its structured content and a line
+/// of its text.
+pub fn note_foreground_after(
+    result: cua_driver_core::protocol::ToolResult,
+    after: Option<u64>,
+) -> cua_driver_core::protocol::ToolResult {
+    let Some(hwnd) = after else {
+        return result;
+    };
+    let title = crate::input::occlusion::window_title(hwnd);
+    let mut result = result;
+    let mut structured = result
+        .structured_content
+        .take()
+        .unwrap_or_else(|| serde_json::json!({}));
+    if let Some(object) = structured.as_object_mut() {
+        object.insert(
+            "foreground_after".into(),
+            serde_json::json!({
+                "window_id": hwnd,
+                "pid": crate::win32::window_owner_pid(hwnd),
+                "title": title,
+            }),
+        );
+    }
+    result.structured_content = Some(structured);
+    result
+        .content
+        .push(cua_driver_core::protocol::Content::text(format!(
+            "The click closed its target; window {hwnd} of the same process is now in front: {}.",
+            serde_json::to_string(&title).unwrap_or_default()
+        )));
+    result
 }
 
 /// Press-hold-move-release drag via `SendInput`. Companion to
@@ -1083,5 +1132,26 @@ mod wheel_tests {
         ] {
             assert_eq!(wheel_mouse_data(ticks), expected, "ticks={ticks}");
         }
+    }
+}
+
+#[cfg(test)]
+mod foreground_after_tests {
+    use super::note_foreground_after;
+    use cua_driver_core::protocol::ToolResult;
+    use serde_json::json;
+
+    #[test]
+    fn a_click_that_closed_its_target_names_the_window_now_in_front() {
+        let click =
+            ToolResult::text("Sent click").with_structured(json!({"effect": "unverifiable"}));
+        let noted = note_foreground_after(click, Some(0x2a));
+        let structured = noted.structured_content.as_ref().unwrap();
+        assert_eq!(structured["effect"], "unverifiable");
+        assert_eq!(structured["foreground_after"]["window_id"], 0x2a);
+        assert_eq!(noted.content.len(), 2);
+        let unchanged = note_foreground_after(ToolResult::text("Sent click"), None);
+        assert!(unchanged.structured_content.is_none());
+        assert_eq!(unchanged.content.len(), 1);
     }
 }

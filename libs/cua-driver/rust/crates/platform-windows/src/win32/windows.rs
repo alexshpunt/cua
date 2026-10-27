@@ -274,6 +274,44 @@ pub(crate) fn foreground_matches_target_or_owned_window(
     })
 }
 
+#[derive(Clone, Copy, Debug)]
+struct ClosedTargetRelation {
+    /// The target is destroyed, reused by another process or hidden.
+    target_closed: bool,
+    actual_is_target: bool,
+    actual_live: bool,
+    actual_visible: bool,
+    same_pid: bool,
+}
+
+fn closed_target_successor_allowed(relation: ClosedTargetRelation) -> bool {
+    relation.target_closed
+        && !relation.actual_is_target
+        && relation.actual_live
+        && relation.actual_visible
+        && relation.same_pid
+}
+
+/// After an action closed its target, such as OK or Cancel in a dialog: the
+/// window now in front is a visible window of the target's process. The target
+/// counts as closed once it is destroyed or hidden; toolkits such as GTK hide a
+/// dialog before they destroy it. Only for the check after input was sent:
+/// before input the exact target must be in front.
+pub(crate) fn foreground_after_target_closed(target: ForegroundTarget, actual: u64) -> bool {
+    let target_live = window_owner_pid(target.hwnd) == Some(target.pid);
+    let target_visible =
+        target_live && unsafe { IsWindowVisible(HWND(target.hwnd as *mut _)) }.as_bool();
+    let actual_pid = window_owner_pid(actual);
+    closed_target_successor_allowed(ClosedTargetRelation {
+        target_closed: !target_visible,
+        actual_is_target: actual == target.hwnd,
+        actual_live: actual_pid.is_some(),
+        actual_visible: actual_pid.is_some()
+            && unsafe { IsWindowVisible(HWND(actual as *mut _)) }.as_bool(),
+        same_pid: actual_pid == Some(target.pid),
+    })
+}
+
 fn window_info_by_handle(hwnd: u64) -> Option<WindowInfo> {
     let native = HWND(hwnd as *mut _);
     let pid = window_owner_pid(hwnd)?;
@@ -401,9 +439,9 @@ fn get_window_bounds(hwnd: HWND) -> (i32, i32, i32, i32) {
 #[cfg(test)]
 mod exact_window_tests {
     use super::{
-        exact_window_from_probe, lookup_window_for_pid_with, owner_chain_reaches_target,
-        post_action_foreground_allowed, win32_first_with, PidWindowLookup,
-        PostActionForegroundRelation, WindowInfo,
+        closed_target_successor_allowed, exact_window_from_probe, lookup_window_for_pid_with,
+        owner_chain_reaches_target, post_action_foreground_allowed, win32_first_with,
+        ClosedTargetRelation, PidWindowLookup, PostActionForegroundRelation, WindowInfo,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -553,6 +591,40 @@ mod exact_window_tests {
         dismissed.actual_is_prior_owner = true;
         dismissed.same_pid = false;
         assert!(!post_action_foreground_allowed(dismissed));
+    }
+
+    #[test]
+    fn a_same_process_window_may_take_the_foreground_after_the_target_closed() {
+        let closed = ClosedTargetRelation {
+            target_closed: true,
+            actual_is_target: false,
+            actual_live: true,
+            actual_visible: true,
+            same_pid: true,
+        };
+        assert!(closed_target_successor_allowed(closed));
+        // The target still shows: an unrelated sibling in front stays unverified.
+        assert!(!closed_target_successor_allowed(ClosedTargetRelation {
+            target_closed: false,
+            ..closed
+        }));
+        // Another process in front stays unverified.
+        assert!(!closed_target_successor_allowed(ClosedTargetRelation {
+            same_pid: false,
+            ..closed
+        }));
+        assert!(!closed_target_successor_allowed(ClosedTargetRelation {
+            actual_visible: false,
+            ..closed
+        }));
+        assert!(!closed_target_successor_allowed(ClosedTargetRelation {
+            actual_live: false,
+            ..closed
+        }));
+        assert!(!closed_target_successor_allowed(ClosedTargetRelation {
+            actual_is_target: true,
+            ..closed
+        }));
     }
 
     #[test]
