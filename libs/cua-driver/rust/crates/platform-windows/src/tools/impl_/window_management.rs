@@ -328,8 +328,12 @@ impl Backend for NativeBackend {
             }
             WindowManagementOperation::Focus => {
                 self.alive()?;
+                // While another process holds the foreground, Windows lets the driver activate a window only
+                // after input from it: a no-op key event (VK_NONAME) gives that right, as for clicks and keys.
+                // It waits like real input while the human uses the computer.
+                crate::human_input::check().map_err(|detail| failure("human_takeover", detail))?;
                 self.mutation_attempted = true;
-                if !unsafe { crate::input::force_foreground_attached(hwnd) } {
+                if !unsafe { crate::input::force_foreground_assisted(hwnd) }.0 {
                     return Err(failure("foreground_unavailable", "Windows refused foreground activation; no restore, keys, pointer or replay fallback was attempted"));
                 }
             }
