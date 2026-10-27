@@ -11,6 +11,7 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 - Held drag paths: a left-button stroke through up to 254 points, released at the end of the call. Interrupted paths report which points were delivered. This is what makes continuous brush strokes in Paint possible.
 - Key holds: hold up to 8 keys while a bounded set of clicks and drags runs, then release them in the same call.
 - `input_timeline`: timed key, button, move, raw relative move, wheel and pen events in one call, with pen pressure and tilt. Everything still held is released when the call ends or fails.
+- Pen events of every `input_timeline` in a driver process come from one synthetic pen, so apps that keep settings per device see one pen. Pen frames out of contact (in range before contact, lift-off and after) carry no pressure.
 - Native pointer move and hover with a dwell time on an exact window.
 - Coordinate wheel scroll at a point of the last capture, in wheel detents.
 - Straight drags are bound to the capture they were planned on.

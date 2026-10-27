@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{HANDLE, HWND, POINT};
 use windows::Win32::UI::Controls::{
-    CreateSyntheticPointerDevice, DestroySyntheticPointerDevice, HSYNTHETICPOINTERDEVICE,
-    POINTER_FEEDBACK_DEFAULT, POINTER_TYPE_INFO, POINTER_TYPE_INFO_0,
+    CreateSyntheticPointerDevice, HSYNTHETICPOINTERDEVICE, POINTER_FEEDBACK_DEFAULT,
+    POINTER_TYPE_INFO, POINTER_TYPE_INFO_0,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE,
@@ -139,8 +139,7 @@ impl Native {
         if let Some(device) = self.pen {
             return Ok(device);
         }
-        let device = unsafe { CreateSyntheticPointerDevice(PT_PEN, 1, POINTER_FEEDBACK_DEFAULT) }
-            .map_err(|error| format!("pen_unavailable: {error}"))?;
+        let device = shared_pen_device()?;
         self.pen = Some(device);
         Ok(device)
     }
@@ -164,7 +163,7 @@ impl Native {
                     penFlags: (if pen.barrel { PEN_FLAG_BARREL } else { 0 })
                         | (if pen.eraser { PEN_FLAG_ERASER } else { 0 }),
                     penMask: PEN_MASK_PRESSURE | PEN_MASK_TILT_X | PEN_MASK_TILT_Y,
-                    pressure: pen.pressure,
+                    pressure: frame_pressure(flags, pen.pressure),
                     rotation: 0,
                     tiltX: pen.tilt_x,
                     tiltY: pen.tilt_y,
@@ -307,11 +306,66 @@ impl Backend for Native {
     }
 }
 
-impl Drop for Native {
-    fn drop(&mut self) {
-        if let Some(device) = self.pen.take() {
-            unsafe { DestroySyntheticPointerDevice(device) };
-        }
+/// The driver process's one synthetic pen, created on first use and kept until the process ends.
+/// Apps such as GIMP remember every pen device they see and keep tool settings per device: a new
+/// device per call made them register a new pen, with default settings, on every timeline.
+static PEN_DEVICE: std::sync::Mutex<usize> = std::sync::Mutex::new(0);
+
+fn shared_pen_device() -> Result<HSYNTHETICPOINTERDEVICE, String> {
+    let mut device = PEN_DEVICE
+        .lock()
+        .map_err(|_| "pen_unavailable: the pen device lock is poisoned".to_string())?;
+    if *device == 0 {
+        let created = unsafe { CreateSyntheticPointerDevice(PT_PEN, 1, POINTER_FEEDBACK_DEFAULT) }
+            .map_err(|error| format!("pen_unavailable: {error}"))?;
+        *device = created.0 as usize;
+    }
+    Ok(HSYNTHETICPOINTERDEVICE(*device as _))
+}
+
+/// A pen frame carries its pressure only in contact: a real pen above the surface, or just
+/// lifted, reports none.
+fn frame_pressure(flags: POINTER_FLAGS, pressure: u32) -> u32 {
+    if flags.0 & POINTER_FLAG_INCONTACT.0 != 0 {
+        pressure
+    } else {
+        0
+    }
+}
+
+#[cfg(test)]
+mod pen_frame_tests {
+    use super::frame_pressure;
+    use windows::Win32::UI::Input::Pointer::{
+        POINTER_FLAG_DOWN, POINTER_FLAG_INCONTACT, POINTER_FLAG_INRANGE, POINTER_FLAG_UP,
+        POINTER_FLAG_UPDATE,
+    };
+
+    #[test]
+    fn only_frames_in_contact_carry_pressure() {
+        assert_eq!(
+            frame_pressure(
+                POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                77
+            ),
+            77
+        );
+        assert_eq!(
+            frame_pressure(
+                POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                77
+            ),
+            77
+        );
+        assert_eq!(
+            frame_pressure(POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE, 77),
+            0
+        );
+        assert_eq!(
+            frame_pressure(POINTER_FLAG_UP | POINTER_FLAG_INRANGE, 512),
+            0
+        );
+        assert_eq!(frame_pressure(POINTER_FLAG_UPDATE, 512), 0);
     }
 }
 
