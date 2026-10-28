@@ -2,7 +2,7 @@
 
 This is a fork of [trycua/cua](https://github.com/trycua/cua). It adds Windows features to Cua Driver that [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use) needs and upstream doesn't have yet. Everything else is upstream's code, under upstream's license.
 
-The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `e2c256de`. Its binaries are attached to the [`pi-runtime-0.37.0-e2c256de` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-e2c256de) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
+The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `33c4b82b`. Its binaries are attached to the [`pi-runtime-0.37.0-33c4b82b` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-33c4b82b) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
 
 All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux behave like upstream.
 
@@ -25,7 +25,7 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 
 ## Windows and displays
 
-- Restore a minimized window, and move, resize, minimize, maximize or focus an exact window, with a receipt of what actually changed.
+- Restore a minimized window, and move, resize, minimize, maximize or focus an exact window, with a receipt of what actually changed. A resize may land up to 2 px away in width or height and still counts as done: Windows keeps a window that is not DPI aware in whole logical pixels on a scaled display, so some sizes are unreachable. Position and every other operation stay exact.
 - Focus activates a window while another app holds the foreground the same way input does, with a no-op key event that gives the driver foreground rights; it waits while the human uses the keyboard or mouse.
 - Read a selected display with its native topology, not only the primary one.
 - Report which virtual desktop a window belongs to.
