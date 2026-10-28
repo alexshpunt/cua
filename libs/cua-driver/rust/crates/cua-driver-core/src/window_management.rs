@@ -3,14 +3,37 @@
 pub use crate::pointer::Failure;
 use cua_driver_contract::{
     DesktopWindowBounds, ToolInput, WindowControlSample, WindowManagementInput,
-    WindowManagementOperation,
+    WindowManagementOperation, MAX_RESIZE_SIZE_DIFFERENCE_PX,
 };
 
 /// Maximum monotonic wait for one accepted native mutation's measured postcondition.
 pub const WINDOW_MANAGEMENT_MAX_WAIT_MS: u64 = 1_000;
 
+/// The size difference that scaling a window for its display explains, in pixels.
+///
+/// Windows draws a window at its own scale and stretches it to the display's. A window that is not DPI
+/// aware (100%) on a 150% display takes only whole logical pixels, so a physical size is rounded to the
+/// nearest one it can reach: ZinPC settled 593 for 592 and 599 for 598. Logical pixels are `ceil(ratio)`
+/// physical pixels apart at most, so half of that is the farthest the nearest reachable size can be.
+/// A window at or above the display's scale, or an unknown scale, explains no difference.
+pub fn virtualized_resize_tolerance_px(
+    window_scale_percent: u32,
+    monitor_scale_percent: u32,
+) -> u32 {
+    if window_scale_percent == 0 || monitor_scale_percent <= window_scale_percent {
+        return 0;
+    }
+    (monitor_scale_percent.div_ceil(window_scale_percent) / 2).min(MAX_RESIZE_SIZE_DIFFERENCE_PX)
+}
+
 /// Native seam; implementations must not inject input, switch desktops or replay requests.
 pub trait Backend {
+    /// How many pixels a resized width or height may differ from the request and still count as reached.
+    /// A window that Windows scales for the display (a DPI-unaware one) can only take whole logical pixels,
+    /// so the nearest size it can reach may be a pixel or more away. Position is never loosened.
+    fn resize_tolerance_px(&mut self) -> u32 {
+        0
+    }
     /// Monotonic milliseconds, independent of wall-clock adjustments.
     fn now_ms(&self) -> u64;
     /// Check cancellation and the admitted exact window lifetime.
@@ -83,6 +106,7 @@ pub fn execute(input: &WindowManagementInput, backend: &mut impl Backend) -> Rep
             })?;
         }
         backend.check_target()?;
+        let resize_tolerance_px = backend.resize_tolerance_px();
         report.mutation_attempted = true;
         backend.request(input.operation, report.requested_bounds)?;
         report.mutation_accepted = true;
@@ -91,8 +115,13 @@ pub fn execute(input: &WindowManagementInput, backend: &mut impl Backend) -> Rep
             backend.check_target()?;
             let observed = backend.sample()?;
             validate_sample(&observed, input.window_id)?;
-            let confirmed =
-                postcondition(input.operation, report.requested_bounds, &before, &observed);
+            let confirmed = postcondition(
+                input.operation,
+                report.requested_bounds,
+                resize_tolerance_px,
+                &before,
+                &observed,
+            );
             report.observed = Some(observed);
             report.postcondition_confirmed = confirmed;
             backend.check_target()?;
@@ -188,15 +217,23 @@ fn check_preconditions(
 fn postcondition(
     operation: WindowManagementOperation,
     requested: Option<DesktopWindowBounds>,
+    resize_tolerance_px: u32,
     before: &WindowControlSample,
     observed: &WindowControlSample,
 ) -> bool {
+    let steady = !observed.minimized
+        && !observed.maximized
+        && before.bounds_source == observed.bounds_source;
     match operation {
-        WindowManagementOperation::Move | WindowManagementOperation::Resize => {
-            !observed.minimized
-                && !observed.maximized
-                && before.bounds_source == observed.bounds_source
-                && requested == Some(observed.bounds)
+        WindowManagementOperation::Move => steady && requested == Some(observed.bounds),
+        WindowManagementOperation::Resize => {
+            steady
+                && requested.is_some_and(|requested| {
+                    requested.x == observed.bounds.x
+                        && requested.y == observed.bounds.y
+                        && requested.width.abs_diff(observed.bounds.width) <= resize_tolerance_px
+                        && requested.height.abs_diff(observed.bounds.height) <= resize_tolerance_px
+                })
         }
         WindowManagementOperation::Minimize => observed.minimized,
         WindowManagementOperation::Maximize => observed.maximized && !observed.minimized,

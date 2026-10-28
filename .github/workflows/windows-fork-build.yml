@@ -12,6 +12,11 @@ on:
         description: Exact source commit to build
         required: true
         type: string
+      skip_tests:
+        description: Build without the test steps (quick builds for the maintainer's own machine)
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -68,6 +73,7 @@ jobs:
             Set-Content build-evidence/msvc-installation.json
           if ($LASTEXITCODE -ne 0) { throw 'Visual Studio discovery failed' }
       - name: Run hermetic owner tests
+        if: ${{ !inputs.skip_tests }}
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
         run: |
@@ -75,6 +81,7 @@ jobs:
             Tee-Object build-evidence/tests.log
           if ($LASTEXITCODE -ne 0) { throw "cargo test failed: $LASTEXITCODE" }
       - name: Run native pointer contract and execution tests
+        if: ${{ !inputs.skip_tests }}
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
         run: |
@@ -85,6 +92,7 @@ jobs:
             Tee-Object build-evidence/pointer-execution-tests.log
           if ($LASTEXITCODE -ne 0) { throw "pointer execution tests failed: $LASTEXITCODE" }
       - name: Run coordinate scroll contract and execution tests
+        if: ${{ !inputs.skip_tests }}
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
         run: |
@@ -95,6 +103,7 @@ jobs:
             Tee-Object build-evidence/scroll-execution-tests.log
           if ($LASTEXITCODE -ne 0) { throw "scroll execution tests failed: $LASTEXITCODE" }
       - name: Run window restore contract and execution tests
+        if: ${{ !inputs.skip_tests }}
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
         run: |
@@ -105,6 +114,7 @@ jobs:
             Tee-Object build-evidence/window-restore-execution-tests.log
           if ($LASTEXITCODE -ne 0) { throw "window restore execution tests failed: $LASTEXITCODE" }
       - name: Run window management contract and execution tests
+        if: ${{ !inputs.skip_tests }}
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
         run: |
@@ -115,7 +125,7 @@ jobs:
             Tee-Object build-evidence/window-management-execution-tests.log
           if ($LASTEXITCODE -ne 0) { throw "window management execution tests failed: $LASTEXITCODE" }
       - name: Build isolated persistent WGC probe when present
-        if: hashFiles('libs/cua-driver/rust/crates/platform-windows/examples/persistent-wgc-probe.rs') != ''
+        if: ${{ !inputs.skip_tests && hashFiles('libs/cua-driver/rust/crates/platform-windows/examples/persistent-wgc-probe.rs') != '' }}
         run: |
           cargo test --locked -p platform-windows --example persistent-wgc-probe 2>&1 |
             Tee-Object build-evidence/persistent-wgc-tests.log
@@ -132,6 +142,7 @@ jobs:
           'Read-only experiment. Not a Driver runtime. No capture or input qualification.' |
             Set-Content "$probe/BUILD-NOTICE.txt"
       - name: Run protocol and schema tests
+        if: ${{ !inputs.skip_tests }}
         env:
           CUA_DRIVER_RS_TELEMETRY_ENABLED: "false"
         run: |

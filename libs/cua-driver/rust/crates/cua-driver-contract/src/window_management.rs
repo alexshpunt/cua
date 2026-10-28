@@ -25,6 +25,13 @@ fn nullable_bounds_schema(generator: &mut SchemaGenerator) -> Schema {
 fn nullable_sample_schema(generator: &mut SchemaGenerator) -> Schema {
     Option::<WindowControlSample>::json_schema(generator)
 }
+/// The most a confirmed resize may differ from the request in width or height, in pixels.
+///
+/// A window Windows scales for its display (a DPI-unaware one on a scaled display) takes only whole
+/// logical pixels, so the nearest size it can reach may be off by up to half a logical pixel, which is
+/// 2 physical pixels at the 500% maximum scale. Position and every other operation stay exact.
+pub const MAX_RESIZE_SIZE_DIFFERENCE_PX: u32 = 2;
+
 fn validate_identity(pid: u32, window_id: u64) -> Result<(), String> {
     if pid == 0 || pid > i32::MAX as u32 || window_id == 0 {
         return Err("Exact positive PID and window ID are required".into());
@@ -377,7 +384,17 @@ impl ToolOutput for ManagementOutput {
                     || observed.minimized
                     || observed.maximized
                     || before.bounds_source != observed.bounds_source
-                    || observed.bounds != requested
+                    || !match self.operation {
+                        WindowManagementOperation::Resize => {
+                            observed.bounds.x == requested.x
+                                && observed.bounds.y == requested.y
+                                && observed.bounds.width.abs_diff(requested.width)
+                                    <= MAX_RESIZE_SIZE_DIFFERENCE_PX
+                                && observed.bounds.height.abs_diff(requested.height)
+                                    <= MAX_RESIZE_SIZE_DIFFERENCE_PX
+                        }
+                        _ => observed.bounds == requested,
+                    }
                 {
                     return Err(
                         "Frame postcondition must match requested normal-window bounds and source"
