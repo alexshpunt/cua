@@ -1447,8 +1447,8 @@ unsafe extern "system" fn wnd_proc(
 /// Stores the overlay HWND as an `isize` (HWND is `*mut c_void` and not
 /// `Send`/`Sync`) and rehydrates it inside `reassert`. Driven by the
 /// `WM_TIMER` branch in `wnd_proc` on the overlay STA thread.
-struct WinZOrderEnforcer {
-    hwnd_isize: isize,
+pub(crate) struct WinZOrderEnforcer {
+    pub(crate) hwnd_isize: isize,
 }
 
 /// Of the given window ids, return the one highest in the current z-order (the

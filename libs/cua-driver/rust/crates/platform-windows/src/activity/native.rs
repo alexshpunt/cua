@@ -1,10 +1,11 @@
 //! Protected native HUD surfaces. Each is owned and destroyed on this one worker thread.
 
 use super::*;
-use crate::overlay::WinSurface;
+use crate::overlay::{WinSurface, WinZOrderEnforcer};
 use cursor_overlay::activity::{
     decode_preview, identity_property, paint_activity, ActivityRect, ActivitySource, TTL_MS,
 };
+use cursor_overlay::ZOrderEnforcer;
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 use windows::core::PCWSTR;
@@ -353,28 +354,23 @@ pub(super) fn run(rx: Receiver<()>) {
                     return false;
                 }
                 let previous = GetForegroundWindow();
-                let insert = match source {
+                let target = match source {
                     ActivitySource::Window { window_id, .. } => {
-                        GetWindow(HWND(*window_id as *mut _), GW_HWNDPREV)
-                            .ok()
-                            .filter(|h| !h.0.is_null() && *h != item.hwnd)
-                            .unwrap_or(HWND_TOP)
+                        let root = GetAncestor(HWND(*window_id as *mut _), GA_ROOT);
+                        Some(if root.0.is_null() {
+                            *window_id
+                        } else {
+                            root.0 as u64
+                        })
                     }
-                    _ => HWND_TOPMOST,
+                    _ => None,
                 };
-                if SetWindowPos(
-                    item.hwnd,
-                    insert,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-                )
-                .is_err()
-                {
-                    return false;
+                // Reuse the cursor's nonactivating z-order policy, including
+                // topmost demotion and stable self-sibling handling.
+                WinZOrderEnforcer {
+                    hwnd_isize: item.hwnd.0 as isize,
                 }
+                .reassert(target);
                 if GetForegroundWindow() != previous {
                     return false;
                 }
