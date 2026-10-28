@@ -360,6 +360,94 @@ mod native;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn work(session: &mut Session, admitted: Instant) -> Work {
+        assert!(session.advance(1));
+        Work {
+            event: serde_json::from_value(serde_json::json!({
+                "generation": 1, "kind": "overview",
+                "source": {"display": "primary", "bounds": {"x":0,"y":0,"width":100,"height":100}}
+            }))
+            .unwrap(),
+            admitted,
+            epoch: session.epoch,
+        }
+    }
+    #[test]
+    fn pending_preview_is_discarded_before_decode_or_first_show_after_250_ms() {
+        let mut session = Session::default();
+        let at = Instant::now();
+        let work = work(&mut session, at);
+        assert!(work.ready(at + Duration::from_millis(249)));
+        assert!(!work.ready(at + Duration::from_millis(250)));
+    }
+    #[test]
+    fn final_commit_keeps_the_invalidation_barrier_until_side_effects_finish() {
+        let key = "activity-commit-barrier-test";
+        configure(key, serde_json::json!({"preset":"full"})).unwrap();
+        let (work, gate) = {
+            let mut state = state().lock().unwrap();
+            let session = state.sessions.get_mut(key).unwrap();
+            (work(session, Instant::now()), session.commit.clone())
+        };
+        with_current(key, &work, |_| assert!(gate.try_lock().is_err())).unwrap();
+        assert!(gate.try_lock().is_ok());
+    }
+    #[test]
+    fn drag_tracking_and_complete_action_cues_respect_drag_not_pointer_settings() {
+        let key = "activity-drag-categories-test";
+        let commands = || {
+            [
+                cursor_overlay::track_pointer_command(10.0, 10.0),
+                OverlayCommand::SetPressed(true),
+                OverlayCommand::SetPressed(false),
+            ]
+        };
+        configure(key, serde_json::json!({"pointer":false,"scroll_drag":true})).unwrap();
+        for command in commands() {
+            assert!(allows_cursor(key, &command));
+        }
+        configure(key, serde_json::json!({"pointer":true,"scroll_drag":false})).unwrap();
+        for command in commands() {
+            assert!(!allows_cursor(key, &command));
+        }
+        let mut session = Session::default();
+        let at = Instant::now();
+        let mut work = work(&mut session, at);
+        work.event.kind = ActivityKind::Action;
+        work.event.action = Some("drag".into());
+        session.settings.scroll_drag = false;
+        assert!(!session.current(&work, at));
+    }
+    #[test]
+    fn preview_expires_relative_to_admission_not_completed_allocation() {
+        let mut session = Session::default();
+        let at = Instant::now();
+        let work = work(&mut session, at);
+        assert!(session.current(&work, at + Duration::from_millis(1199)));
+        assert!(!session.current(&work, at + Duration::from_millis(1200)));
+    }
+    #[test]
+    fn off_then_on_does_not_revive_an_in_progress_frame_or_consume_generation() {
+        let mut session = Session::default();
+        let at = Instant::now();
+        let work = work(&mut session, at);
+        let mut off = session.settings.clone();
+        off.preset = "off".into();
+        session.set_settings(off);
+        session.set_settings(VisualSettings::default());
+        assert_eq!(session.generation, 1);
+        assert!(!session.current(&work, at));
+    }
+    #[tokio::test]
+    async fn native_completion_does_not_wait_for_unfinished_presentation() {
+        let result = tokio::time::timeout(
+            Duration::from_millis(50),
+            alongside_presentation(async { 42 }, std::future::pending()),
+        )
+        .await;
+        assert_eq!(result.unwrap(), 42);
+    }
     #[test]
     fn generations_reject_late_events_and_survive_session_revival() {
         let mut session = Session::default();

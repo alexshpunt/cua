@@ -1845,6 +1845,28 @@ mod tests {
     // Before the shared predicate, a landed Windows cursor dropped to the IDLE
     // cadence for the whole idle-hide delay and its resting bob froze.
     #[test]
+    fn missing_release_has_a_separate_bounded_safety_lease() {
+        let mut cursor = RenderState::from_config(CursorConfig::default());
+        cursor.apply_command(OverlayCommand::SetPressed(true));
+        cursor.tick(0.016);
+        assert!(cursor.core.pressed);
+        cursor.tick(31.0);
+        assert!(!cursor.core.pressed);
+    }
+    #[test]
+    fn held_drag_survives_empty_playback_until_native_release() {
+        let mut cursor = RenderState::from_config(CursorConfig::default());
+        cursor.apply_command(OverlayCommand::SetPressed(true));
+        for step in 0..8 {
+            cursor.apply_command(cursor_overlay::track_pointer_command(step as f64, 10.0));
+            cursor.tick(0.15);
+            assert!(cursor.core.pressed);
+        }
+        cursor.apply_command(OverlayCommand::SetPressed(false));
+        cursor.tick(0.016);
+        assert!(!cursor.core.pressed);
+    }
+    #[test]
     fn stalled_renderer_discards_old_presentation_using_elapsed_frame_time() {
         let mut cursor = RenderState::from_config(CursorConfig::default());
         cursor.apply_command(OverlayCommand::MoveTo {
