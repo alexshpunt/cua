@@ -30,15 +30,14 @@
 
 #![allow(non_snake_case, non_upper_case_globals)]
 
-use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 #[cfg(target_os = "windows")]
 use cursor_overlay::SurfaceFit;
 use cursor_overlay::{
-    CursorConfig, CursorKey, KeyedOverlayCommand, MotionConfig, MsgOutcome, OverlayCommand,
-    OverlayMsg, RenderEntry, RenderStateCore, ScreenFrame, SurfaceGeometry, ZOrderEnforcer,
+    CursorConfig, CursorKey, KeyedOverlayCommand, MotionConfig, OverlayCommand, OverlayMsg,
+    RenderEntry, RenderStateCore, ScreenFrame, SurfaceGeometry, ZOrderEnforcer,
 };
 
 // ── Global channel ────────────────────────────────────────────────────────
@@ -46,44 +45,6 @@ use cursor_overlay::{
 static CMD_TX: OnceLock<std::sync::mpsc::SyncSender<OverlayMsg>> = OnceLock::new();
 static CMD_RX_CELL: Mutex<Option<std::sync::mpsc::Receiver<OverlayMsg>>> = Mutex::new(None);
 static RENDER: Mutex<Option<RenderMap>> = Mutex::new(None);
-
-// ── Arrival-signal channels (one waiter slot per cursor key) ──────────────
-//
-// Each session's `animate_cursor_to` registers an arrival oneshot keyed by its
-// own cursor key. A new animation only supersedes the SAME key's prior waiter,
-// so concurrent sessions never cross-cancel each other's arrivals. Mirrors
-// macOS so click handlers can `.await` until the cursor visually lands before
-// dispatching the actual UIA / PostMessage action.
-static ARRIVAL_TX: Mutex<Option<HashMap<CursorKey, tokio::sync::oneshot::Sender<()>>>> =
-    Mutex::new(None);
-
-fn arrival_register(key: CursorKey, tx: tokio::sync::oneshot::Sender<()>) {
-    let mut guard = ARRIVAL_TX.lock().unwrap();
-    let map = guard.get_or_insert_with(HashMap::new);
-    // Cancel only the same key's previous waiter (superseded by new animation).
-    if let Some(old_tx) = map.insert(key, tx) {
-        let _ = old_tx.send(());
-    }
-}
-
-fn arrival_fire(key: &CursorKey) {
-    if let Ok(mut guard) = ARRIVAL_TX.lock() {
-        if let Some(map) = guard.as_mut() {
-            if let Some(tx) = map.remove(key) {
-                let _ = tx.send(());
-            }
-        }
-    }
-}
-
-/// Drop a removed session's waiter; the dropped sender releases its await.
-fn arrival_cancel(key: &CursorKey) {
-    if let Ok(mut guard) = ARRIVAL_TX.lock() {
-        if let Some(map) = guard.as_mut() {
-            map.remove(key);
-        }
-    }
-}
 
 // ── Keyed render collection ───────────────────────────────────────────────
 
@@ -145,11 +106,15 @@ fn apply_msg(map: &mut RenderMap, msg: OverlayMsg) -> Option<CursorKey> {
             return None;
         }
     }
-    let outcome = map.apply_msg(msg);
-    if let MsgOutcome::Removed { key, .. } = &outcome {
-        arrival_cancel(key);
+    if let OverlayMsg::Cmd(KeyedOverlayCommand {
+        key,
+        cmd: OverlayCommand::MoveTo { x, y, .. },
+    }) = &msg
+    {
+        let frame = map.platform.frame();
+        map.seed_start_if_sentinel(key, *x, *y, frame);
     }
-    outcome.applied_key().cloned()
+    map.apply_msg(msg).applied_key().cloned()
 }
 
 pub fn init(cfg: CursorConfig) {
@@ -160,7 +125,6 @@ pub fn init(cfg: CursorConfig) {
             .set(tx)
             .expect("cursor overlay sender is initialized exactly once");
         *CMD_RX_CELL.lock().unwrap() = Some(rx);
-        *ARRIVAL_TX.lock().unwrap() = Some(HashMap::new());
         *RENDER.lock().unwrap() = Some(RenderMap::new(
             cfg,
             WinScreen {
@@ -336,7 +300,6 @@ pub(crate) fn clear_presentation(key: &str) {
             entry.core.session_label = label;
         }
     }
-    arrival_cancel(&key.to_owned());
     wake_overlay();
 }
 pub fn is_enabled(key: &str) -> bool {
@@ -410,31 +373,9 @@ pub fn current_position(key: &str) -> (f64, f64) {
         .unwrap_or(cursor_overlay::render_state::UNPLACED_POS)
 }
 
-/// Seed a brand-new (sentinel-positioned) cursor at an on-screen start point
-/// offset up-left of `(target_x, target_y)` so the immediately-following
-/// `MoveTo` glides INTO the target instead of silently snapping. No-op when the
-/// cursor is already on-screen or its session already ended. Returns true if a
-/// seed was applied. Mirrors `platform_macos::cursor::overlay::seed_start_*`.
-fn seed_start_if_sentinel(key: &CursorKey, target_x: f64, target_y: f64) -> bool {
-    let mut guard = RENDER.lock().unwrap();
-    let Some(map) = guard.as_mut() else {
-        return false;
-    };
-    let frame = map.platform.frame();
-    map.seed_start_if_sentinel(key, target_x, target_y, frame)
-}
-
-/// Animate the overlay cursor for `key` to `(x, y)` and suspend until the
-/// planned path completes (the spring-settle phase that follows is allowed to
-/// keep running — we only wait for the visible glide to land).
-///
-/// Returns immediately (no animation, no wait) when:
-/// - the key is empty (anonymous run → no cursor), or
-/// - the cursor for `key` is disabled.
-///
-/// A brand-new cursor still at the off-screen sentinel is first seeded
-/// on-screen via [`seed_start_if_sentinel`] so its FIRST action glides in.
-/// Mirrors `platform_macos::cursor::overlay::animate_cursor_to`.
+/// Queue a visual movement without waiting for the presentation timeline.
+/// Windows input, browser and page routes all use this nonblocking boundary.
+/// The render thread seeds new cursors on-screen and serializes their effects.
 pub async fn animate_cursor_to(key: CursorKey, x: f64, y: f64) {
     animate_cursor_to_target(key, x, y, None).await;
 }
@@ -443,29 +384,9 @@ pub async fn animate_cursor_to(key: CursorKey, x: f64, y: f64) {
 /// `[x, y, width, height]` in the same space as `x`/`y`, so motion styles can
 /// use Fitts timing and highlight the target. `None` for pixel actions.
 pub async fn animate_cursor_to_target(key: CursorKey, x: f64, y: f64, target: Option<[f64; 4]>) {
-    if key.is_empty() {
+    if key.is_empty() || !is_enabled(&key) {
         return;
     }
-    // Seed a sentinel cursor on-screen so the MoveTo below glides instead of
-    // being short-circuited.
-    seed_start_if_sentinel(&key, x, y);
-
-    let should_animate = {
-        let guard = RENDER.lock().unwrap();
-        matches!(
-            guard.as_ref().and_then(|m| m.cursors.get(&key)),
-            Some(rs) if rs.core.cfg.enabled && cursor_overlay::render_state::is_placed(rs.core.pos)
-        )
-    };
-    if !should_animate {
-        return;
-    }
-
-    // Install the keyed oneshot sender BEFORE issuing MoveTo, so the render
-    // thread's arrival-fire can never lose a race against an immediate
-    // path-end (e.g. zero-length glide).
-    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-    arrival_register(key.clone(), tx);
 
     send_command(
         key,
@@ -478,8 +399,6 @@ pub async fn animate_cursor_to_target(key: CursorKey, x: f64, y: f64, target: Op
             target,
         },
     );
-
-    let _ = rx.await;
 }
 
 /// Spin up the overlay on a dedicated thread (STA for Win32 message loop).
@@ -1329,7 +1248,7 @@ unsafe extern "system" fn wnd_proc(
             // the slow IDLE cadence below.
             let was_active =
                 TIMER_PERIOD_MS.load(std::sync::atomic::Ordering::Relaxed) == TIMER_MS_ACTIVE;
-            let (upload, arrived, pinned_wid, needs_tick, needs_hover_poll) = {
+            let (upload, pinned_wid, needs_tick, needs_hover_poll) = {
                 let mut guard = RENDER.lock().unwrap();
                 if let Some(map) = guard.as_mut() {
                     // Drain the channel via get-or-create; the shared map
@@ -1366,12 +1285,9 @@ unsafe extern "system" fn wnd_proc(
                     let dt = real_dt.clamp(0.0, 0.05);
                     map.platform.last_tick = now;
 
-                    // Tick every cursor; record the ones that just arrived.
-                    let mut arrived: Vec<CursorKey> = Vec::new();
-                    for (k, rs) in map.cursors.iter_mut() {
-                        if rs.tick(dt) {
-                            arrived.push(k.clone());
-                        }
+                    // Tick presentation only; no input producer waits for arrival.
+                    for rs in map.cursors.values_mut() {
+                        rs.tick(dt);
                         // Idle-countdown wall-clock catch-up (render-gate fix):
                         // cursors parked in the constant-alpha countdown tick at
                         // the slow IDLE cadence, where the 0.05 s motion clamp
@@ -1412,7 +1328,7 @@ unsafe extern "system" fn wnd_proc(
                         had_msg || refit || hover_changed || needs_tick || was_active;
 
                     if !should_render {
-                        (None, arrived, None, needs_tick, needs_hover_poll)
+                        (None, None, needs_tick, needs_hover_poll)
                     } else {
                         // Decide where to pin the single overlay window in z.
                         //
@@ -1457,10 +1373,10 @@ unsafe extern "system" fn wnd_proc(
                         // preserves pre-retina-fix behaviour on Windows).
                         let upload = composite_dirty(map);
 
-                        (upload, arrived, pinned, needs_tick, needs_hover_poll)
+                        (upload, pinned, needs_tick, needs_hover_poll)
                     }
                 } else {
-                    (None, Vec::new(), None, false, false)
+                    (None, None, false, false)
                 }
             };
 
@@ -1479,13 +1395,6 @@ unsafe extern "system" fn wnd_proc(
                         enforcer.reassert(pinned_wid);
                     }
                 }
-            }
-
-            // Fire arrival oneshots for cursors whose path just ended — unblocks
-            // each session's `animate_cursor_to(...).await` so the click action
-            // only dispatches once that cursor has visually landed.
-            for k in &arrived {
-                arrival_fire(k);
             }
 
             // ── Re-arm the render timer at the cadence the current state needs ─
