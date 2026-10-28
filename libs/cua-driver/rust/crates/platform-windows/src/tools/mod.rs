@@ -13,6 +13,7 @@ pub(crate) mod page;
 pub(crate) mod page_bookmark;
 // Pure title parsing for `page_bookmark`; ungated so its tests run on any host.
 pub(crate) mod page_title_marker;
+mod scroll_coordinates;
 
 pub(crate) mod displays;
 #[cfg(target_os = "windows")]
