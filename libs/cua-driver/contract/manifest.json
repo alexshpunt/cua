@@ -5313,6 +5313,194 @@
       }
     },
     {
+      "name": "present_agent_activity",
+      "description": "Enqueue validated human-only observation metadata and an optional operation-output image. Queued is not proof of display or action success. Clear invalidates older generations.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "agent_visuals.present"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "schema_mode": "canonical_runtime",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "maxLength": 64,
+            "type": "string"
+          },
+          "generation": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "image": {
+            "additionalProperties": false,
+            "properties": {
+              "data": {
+                "maxLength": 12582912,
+                "minLength": 1,
+                "type": "string"
+              },
+              "mime_type": {
+                "enum": [
+                  "image/png",
+                  "image/jpeg"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "data",
+              "mime_type"
+            ],
+            "type": "object"
+          },
+          "kind": {
+            "enum": [
+              "overview",
+              "detail",
+              "inspect",
+              "verify",
+              "action",
+              "clear"
+            ],
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "delivered",
+              "refused",
+              "unknown",
+              "verified"
+            ],
+            "type": "string"
+          },
+          "point": {
+            "additionalProperties": false,
+            "properties": {
+              "x": {
+                "type": "integer"
+              },
+              "y": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y"
+            ],
+            "type": "object"
+          },
+          "region": {
+            "additionalProperties": false,
+            "properties": {
+              "height": {
+                "maximum": 32768,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "width": {
+                "maximum": 32768,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "x": {
+                "maximum": 2000000,
+                "minimum": -2000000,
+                "type": "integer"
+              },
+              "y": {
+                "maximum": 2000000,
+                "minimum": -2000000,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "width",
+              "height"
+            ],
+            "type": "object"
+          },
+          "session": {
+            "type": "string"
+          },
+          "source": {
+            "additionalProperties": false,
+            "properties": {
+              "bounds": {
+                "additionalProperties": false,
+                "properties": {
+                  "height": {
+                    "maximum": 32768,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "width": {
+                    "maximum": 32768,
+                    "minimum": 1,
+                    "type": "integer"
+                  },
+                  "x": {
+                    "maximum": 2000000,
+                    "minimum": -2000000,
+                    "type": "integer"
+                  },
+                  "y": {
+                    "maximum": 2000000,
+                    "minimum": -2000000,
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "x",
+                  "y",
+                  "width",
+                  "height"
+                ],
+                "type": "object"
+              },
+              "display": {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              "identity": {
+                "maxLength": 128,
+                "type": "string"
+              },
+              "pid": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "window_id": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "bounds"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "generation",
+          "kind"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "press_key",
       "description": "Press one key, with optional modifiers, in the foreground desktop application.",
       "platforms": [
@@ -6700,6 +6888,71 @@
           "session",
           "theme"
         ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "set_agent_visuals",
+      "description": "Configure the current session's human-only native activity presentation. Off clears pending visuals without changing capture or input.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "agent_visuals.configure"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "schema_mode": "canonical_runtime",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "keyboard": {
+            "type": "boolean"
+          },
+          "observations": {
+            "type": "boolean"
+          },
+          "opacity": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "pointer": {
+            "type": "boolean"
+          },
+          "preset": {
+            "enum": [
+              "off",
+              "subtle",
+              "full"
+            ],
+            "type": "string"
+          },
+          "previews": {
+            "type": "boolean"
+          },
+          "quality": {
+            "enum": [
+              "performance",
+              "balanced",
+              "high"
+            ],
+            "type": "string"
+          },
+          "reduced_motion": {
+            "type": "boolean"
+          },
+          "scroll_drag": {
+            "type": "boolean"
+          },
+          "session": {
+            "type": "string"
+          }
+        },
         "type": "object"
       }
     },
