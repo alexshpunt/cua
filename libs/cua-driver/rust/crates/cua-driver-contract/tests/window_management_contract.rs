@@ -210,6 +210,53 @@ fn successful_receipts_require_exact_measured_postconditions_and_complete_prefix
 }
 
 #[test]
+fn a_resize_receipt_allows_the_scaled_window_size_difference_and_nothing_else() {
+    let before = sample();
+    let requested = DesktopWindowBounds {
+        width: before.bounds.width + 100,
+        height: before.bounds.height + 50,
+        ..before.bounds
+    };
+    let receipt = |dx: i64, dy: i64, shift: i32| {
+        let mut observed = before.clone();
+        observed.bounds = DesktopWindowBounds {
+            x: requested.x + shift,
+            width: (i64::from(requested.width) + dx) as u32,
+            height: (i64::from(requested.height) + dy) as u32,
+            ..requested
+        };
+        ManagementOutput {
+            pid: 42,
+            window_id: 73,
+            state_id: "state".into(),
+            operation: WindowManagementOperation::Resize,
+            requested_bounds: Some(requested),
+            mutation_attempted: true,
+            mutation_accepted: true,
+            postcondition_confirmed: true,
+            before: Some(before.clone()),
+            observed: Some(observed),
+            route: WindowManagementRoute::Native,
+            effect: WindowManagementEffect::Confirmed,
+        }
+    };
+    let allowed = MAX_RESIZE_SIZE_DIFFERENCE_PX as i64;
+    for (dx, dy) in [(0, 0), (1, 0), (-1, 0), (0, allowed), (-allowed, -allowed)] {
+        receipt(dx, dy, 0).validate().unwrap();
+    }
+    for (dx, dy, shift) in [(allowed + 1, 0, 0), (0, -allowed - 1, 0), (0, 0, 1)] {
+        assert!(
+            receipt(dx, dy, shift).validate().is_err(),
+            "{dx} {dy} {shift}"
+        );
+    }
+    // A move never gets the allowance.
+    let mut moved = receipt(1, 0, 0);
+    moved.operation = WindowManagementOperation::Move;
+    assert!(moved.validate().is_err());
+}
+
+#[test]
 fn management_tools_are_windows_only_canonical_metadata_and_native_mutation() {
     let tools = manifest().tools;
     for (name, readonly) in [("get_window_control_state", true), ("manage_window", false)] {

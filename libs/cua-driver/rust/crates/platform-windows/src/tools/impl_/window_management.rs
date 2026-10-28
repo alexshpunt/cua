@@ -21,6 +21,9 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Shell::GetScaleFactorForMonitor;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, IsZoomed, SetWindowPos, ShowWindowAsync, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE,
     SWP_NOZORDER, SW_MAXIMIZE, SW_SHOWMINNOACTIVE,
@@ -252,6 +255,15 @@ fn tuple(bounds: DesktopWindowBounds) -> (i32, i32, i32, i32) {
 }
 
 impl Backend for NativeBackend {
+    /// A window Windows scales for its display (a DPI-unaware one on a scaled display) takes whole logical pixels.
+    fn resize_tolerance_px(&mut self) -> u32 {
+        let hwnd = self.admitted.lifetime.hwnd();
+        let window = unsafe { GetDpiForWindow(hwnd) }.saturating_mul(100) / 96;
+        let monitor =
+            unsafe { GetScaleFactorForMonitor(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)) }
+                .map_or(0, |scale| u32::try_from(scale.0).unwrap_or(0));
+        window_management::virtualized_resize_tolerance_px(window, monitor)
+    }
     fn now_ms(&self) -> u64 {
         self.started.elapsed().as_millis().min(u64::MAX as u128) as u64
     }

@@ -79,6 +79,7 @@ struct Fake {
     fail_check: Option<usize>,
     request_error: Option<Failure>,
     wait_error: Option<Failure>,
+    resize_tolerance_px: u32,
 }
 impl Fake {
     fn new() -> Self {
@@ -93,10 +94,14 @@ impl Fake {
             fail_check: None,
             request_error: None,
             wait_error: None,
+            resize_tolerance_px: 0,
         }
     }
 }
 impl Backend for Fake {
+    fn resize_tolerance_px(&mut self) -> u32 {
+        self.resize_tolerance_px
+    }
     fn now_ms(&self) -> u64 {
         self.clock
     }
@@ -387,4 +392,109 @@ fn stalled_clock_and_cancelled_wait_are_bounded_and_keep_last_observation() {
             1
         );
     }
+}
+
+/// LPT-940: a DPI-unaware window on a scaled display lands on whole logical pixels, so Windows can
+/// settle a pixel away from the requested size. The backend names how far; position stays exact.
+fn resize_with_observed(
+    tolerance: u32,
+    operation: WindowManagementOperation,
+    observed: DesktopWindowBounds,
+) -> (window_management::Report, Fake) {
+    let mut backend = Fake::new();
+    backend.resize_tolerance_px = tolerance;
+    let mut settled = sample();
+    settled.bounds = observed;
+    backend.samples.push_back(Ok(sample()));
+    for _ in 0..110 {
+        backend.samples.push_back(Ok(settled.clone()));
+    }
+    let report = window_management::execute(&input(operation), &mut backend);
+    (report, backend)
+}
+fn requested_size(width: u32, height: u32) -> DesktopWindowBounds {
+    DesktopWindowBounds {
+        width,
+        height,
+        ..sample().bounds
+    }
+}
+
+#[test]
+fn a_resize_within_the_allowed_size_difference_is_confirmed_and_shows_both_bounds() {
+    for (width, height) in [(801, 600), (799, 600), (800, 601), (801, 599)] {
+        let (report, backend) = resize_with_observed(
+            1,
+            WindowManagementOperation::Resize,
+            requested_size(width, height),
+        );
+        assert!(report.failure.is_none(), "{width}x{height}");
+        assert!(report.postcondition_confirmed);
+        assert_eq!(report.requested_bounds, Some(requested_size(800, 600)));
+        assert_eq!(
+            report.observed.unwrap().bounds,
+            requested_size(width, height)
+        );
+        assert_eq!(backend.requests.len(), 1);
+    }
+}
+
+#[test]
+fn a_resize_outside_the_allowed_difference_still_times_out_after_the_same_wait() {
+    for (tolerance, width, height) in [(1, 802, 600), (1, 800, 598), (0, 801, 600)] {
+        let (report, backend) = resize_with_observed(
+            tolerance,
+            WindowManagementOperation::Resize,
+            requested_size(width, height),
+        );
+        assert_eq!(report.failure.unwrap().code, "window_management_timeout");
+        assert!(report.mutation_accepted);
+        assert!(!report.postcondition_confirmed);
+        assert_eq!(
+            report.observed.unwrap().bounds,
+            requested_size(width, height)
+        );
+        assert_eq!(backend.requests.len(), 1);
+        assert_eq!(backend.clock, 1000);
+    }
+}
+
+#[test]
+fn the_allowed_size_difference_never_loosens_position_or_a_move() {
+    let shifted = DesktopWindowBounds {
+        x: sample().bounds.x + 1,
+        ..requested_size(800, 600)
+    };
+    let (report, _) = resize_with_observed(1, WindowManagementOperation::Resize, shifted);
+    assert_eq!(report.failure.unwrap().code, "window_management_timeout");
+    let nearly = DesktopWindowBounds {
+        x: 201,
+        y: 300,
+        ..sample().bounds
+    };
+    let (report, _) = resize_with_observed(1, WindowManagementOperation::Move, nearly);
+    assert_eq!(report.failure.unwrap().code, "window_management_timeout");
+}
+
+#[test]
+fn the_size_difference_follows_how_far_windows_scales_the_window_for_its_display() {
+    use window_management::virtualized_resize_tolerance_px as tolerance;
+    // ZinPC: a 96 DPI (100%) window on a 150% display reached 593 for 592 and 599 for 598.
+    assert_eq!(tolerance(100, 150), 1);
+    // A window that draws at the display's own scale, or at a larger one, takes exact sizes.
+    assert_eq!(tolerance(150, 150), 0);
+    assert_eq!(tolerance(100, 100), 0);
+    assert_eq!(tolerance(200, 100), 0);
+    // The nearest reachable size is at most 1 px away up to a 300% display, 2 px from 350% to 500%.
+    assert_eq!(
+        [125, 200, 300].map(|monitor| tolerance(100, monitor)),
+        [1, 1, 1]
+    );
+    assert_eq!(
+        [350, 400, 500].map(|monitor| tolerance(100, monitor)),
+        [2, 2, 2]
+    );
+    // An unknown scale explains nothing.
+    assert_eq!(tolerance(0, 150), 0);
+    assert_eq!(tolerance(100, 0), 0);
 }
