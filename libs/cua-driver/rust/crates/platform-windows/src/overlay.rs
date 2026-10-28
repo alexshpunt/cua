@@ -438,7 +438,7 @@ pub fn run_on_thread() {
 struct RenderState {
     core: RenderStateCore,
     playback: cursor_overlay::playback::Playback<OverlayCommand>,
-    clock: Instant,
+    elapsed_ms: f64,
 }
 
 impl RenderEntry for RenderState {
@@ -446,7 +446,7 @@ impl RenderEntry for RenderState {
         RenderState {
             core: RenderStateCore::new(cfg),
             playback: cursor_overlay::playback::Playback::default(),
-            clock: Instant::now(),
+            elapsed_ms: 0.0,
         }
     }
 
@@ -477,12 +477,8 @@ impl RenderEntry for RenderState {
             _ => None,
         };
         if let Some(dwell) = dwell {
-            self.playback.push(
-                self.clock.elapsed().as_millis() as u64,
-                cmd,
-                dwell,
-                navigation,
-            );
+            self.playback
+                .push(self.elapsed_ms as u64, cmd, dwell, navigation);
             return true;
         }
         if matches!(cmd, OverlayCommand::SetEnabled(false)) {
@@ -492,7 +488,12 @@ impl RenderEntry for RenderState {
     }
 
     fn tick(&mut self, dt: f64) -> bool {
-        let now = self.clock.elapsed().as_millis() as u64;
+        self.elapsed_ms += if dt.is_finite() {
+            dt.max(0.0) * 1000.0
+        } else {
+            0.0
+        };
+        let now = self.elapsed_ms as u64;
         for _ in 0..8 {
             let Some(cmd) = self.playback.next(now) else {
                 break;
@@ -512,7 +513,7 @@ impl RenderEntry for RenderState {
             self.core
                 .apply_command_base(OverlayCommand::EndAction(action), false, false);
         }
-        self.core.tick_motion(dt)
+        self.core.tick_motion(dt.clamp(0.0, 0.05))
     }
     fn needs_frame_tick(&self) -> bool {
         !self.playback.is_empty() || self.core.needs_frame_tick()
@@ -1286,7 +1287,7 @@ unsafe extern "system" fn wnd_proc(
 
                     // Tick presentation only; no input producer waits for arrival.
                     for rs in map.cursors.values_mut() {
-                        rs.tick(dt);
+                        rs.tick(real_dt);
                         // Idle-countdown wall-clock catch-up (render-gate fix):
                         // cursors parked in the constant-alpha countdown tick at
                         // the slow IDLE cadence, where the 0.05 s motion clamp
@@ -1828,6 +1829,21 @@ mod tests {
 
     // Before the shared predicate, a landed Windows cursor dropped to the IDLE
     // cadence for the whole idle-hide delay and its resting bob froze.
+    #[test]
+    fn stalled_renderer_discards_old_presentation_using_elapsed_frame_time() {
+        let mut cursor = RenderState::from_config(CursorConfig::default());
+        cursor.apply_command(OverlayCommand::MoveTo {
+            x: 100.0,
+            y: 100.0,
+            end_heading_radians: 0.0,
+            target: None,
+        });
+        cursor.apply_command(OverlayCommand::ClickPulse { x: 100.0, y: 100.0 });
+        cursor.tick(0.7);
+        assert!(cursor.playback.is_empty());
+        assert!(cursor.core.trajectory.is_none());
+        assert!(cursor.core.click_t.is_none());
+    }
     #[test]
     fn resting_cursor_keeps_the_active_cadence_for_its_bob() {
         let mut map = empty_map();
