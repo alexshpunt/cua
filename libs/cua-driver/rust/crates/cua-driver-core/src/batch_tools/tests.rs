@@ -383,19 +383,22 @@ async fn observation_inherits_the_window_and_stays_bounded() {
     );
 }
 
-#[tokio::test]
+/// `delay_ms` waits once between each pair of steps. The clock is the runtime's paused one, which only moves
+/// when the batch sleeps, so the elapsed time is exactly the pauses it asked for however busy the machine is.
+#[tokio::test(start_paused = true)]
 async fn pauses_between_steps_but_not_after_the_last() {
-    let harness = Harness::new();
-    let started = std::time::Instant::now();
-    harness
-        .run(json!({"delay_ms": 120, "steps": [
-            {"tool": "click", "args": {"pid": 42}},
-            {"tool": "click", "args": {"pid": 42}},
-        ]}))
-        .await;
-    let elapsed = started.elapsed();
-    assert!(elapsed >= Duration::from_millis(120), "{elapsed:?}");
-    assert!(elapsed < Duration::from_millis(240), "{elapsed:?}");
+    for (steps, pauses) in [(1, 0), (2, 1), (3, 2)] {
+        let harness = Harness::new();
+        let started = tokio::time::Instant::now();
+        harness
+            .run(json!({"delay_ms": 120, "steps": vec![json!({"tool": "click", "args": {"pid": 42}}); steps]}))
+            .await;
+        assert_eq!(
+            started.elapsed(),
+            Duration::from_millis(120 * pauses),
+            "{steps} steps"
+        );
+    }
 }
 
 #[tokio::test]
