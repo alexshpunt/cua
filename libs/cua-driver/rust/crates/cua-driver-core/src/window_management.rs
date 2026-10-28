@@ -3,7 +3,7 @@
 pub use crate::pointer::Failure;
 use cua_driver_contract::{
     DesktopWindowBounds, ToolInput, WindowControlSample, WindowManagementInput,
-    WindowManagementOperation,
+    WindowManagementOperation, MAX_RESIZE_SIZE_DIFFERENCE_PX,
 };
 
 /// Maximum monotonic wait for one accepted native mutation's measured postcondition.
@@ -23,7 +23,7 @@ pub fn virtualized_resize_tolerance_px(
     if window_scale_percent == 0 || monitor_scale_percent <= window_scale_percent {
         return 0;
     }
-    monitor_scale_percent.div_ceil(window_scale_percent) / 2
+    (monitor_scale_percent.div_ceil(window_scale_percent) / 2).min(MAX_RESIZE_SIZE_DIFFERENCE_PX)
 }
 
 /// Native seam; implementations must not inject input, switch desktops or replay requests.
