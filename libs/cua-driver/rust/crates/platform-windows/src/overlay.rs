@@ -30,15 +30,14 @@
 
 #![allow(non_snake_case, non_upper_case_globals)]
 
-use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 
 #[cfg(target_os = "windows")]
 use cursor_overlay::SurfaceFit;
 use cursor_overlay::{
-    CursorConfig, CursorKey, KeyedOverlayCommand, MotionConfig, MsgOutcome, OverlayCommand,
-    OverlayMsg, RenderEntry, RenderStateCore, ScreenFrame, SurfaceGeometry, ZOrderEnforcer,
+    CursorConfig, CursorKey, KeyedOverlayCommand, MotionConfig, OverlayCommand, OverlayMsg,
+    RenderEntry, RenderStateCore, ScreenFrame, SurfaceGeometry, ZOrderEnforcer,
 };
 
 // ── Global channel ────────────────────────────────────────────────────────
@@ -46,44 +45,6 @@ use cursor_overlay::{
 static CMD_TX: OnceLock<std::sync::mpsc::SyncSender<OverlayMsg>> = OnceLock::new();
 static CMD_RX_CELL: Mutex<Option<std::sync::mpsc::Receiver<OverlayMsg>>> = Mutex::new(None);
 static RENDER: Mutex<Option<RenderMap>> = Mutex::new(None);
-
-// ── Arrival-signal channels (one waiter slot per cursor key) ──────────────
-//
-// Each session's `animate_cursor_to` registers an arrival oneshot keyed by its
-// own cursor key. A new animation only supersedes the SAME key's prior waiter,
-// so concurrent sessions never cross-cancel each other's arrivals. Mirrors
-// macOS so click handlers can `.await` until the cursor visually lands before
-// dispatching the actual UIA / PostMessage action.
-static ARRIVAL_TX: Mutex<Option<HashMap<CursorKey, tokio::sync::oneshot::Sender<()>>>> =
-    Mutex::new(None);
-
-fn arrival_register(key: CursorKey, tx: tokio::sync::oneshot::Sender<()>) {
-    let mut guard = ARRIVAL_TX.lock().unwrap();
-    let map = guard.get_or_insert_with(HashMap::new);
-    // Cancel only the same key's previous waiter (superseded by new animation).
-    if let Some(old_tx) = map.insert(key, tx) {
-        let _ = old_tx.send(());
-    }
-}
-
-fn arrival_fire(key: &CursorKey) {
-    if let Ok(mut guard) = ARRIVAL_TX.lock() {
-        if let Some(map) = guard.as_mut() {
-            if let Some(tx) = map.remove(key) {
-                let _ = tx.send(());
-            }
-        }
-    }
-}
-
-/// Drop a removed session's waiter; the dropped sender releases its await.
-fn arrival_cancel(key: &CursorKey) {
-    if let Ok(mut guard) = ARRIVAL_TX.lock() {
-        if let Some(map) = guard.as_mut() {
-            map.remove(key);
-        }
-    }
-}
 
 // ── Keyed render collection ───────────────────────────────────────────────
 
@@ -136,15 +97,22 @@ impl WinScreen {
 
 type RenderMap = cursor_overlay::RenderMap<RenderState, WinScreen>;
 
-/// Drain one message into the shared map, releasing a removed session's
-/// arrival waiter. Returns the commanded key (also recorded as the map's
-/// `last_active`).
+/// Drain a filtered message into the shared map. Returns its commanded session key.
 fn apply_msg(map: &mut RenderMap, msg: OverlayMsg) -> Option<CursorKey> {
-    let outcome = map.apply_msg(msg);
-    if let MsgOutcome::Removed { key, .. } = &outcome {
-        arrival_cancel(key);
+    if let OverlayMsg::Cmd(command) = &msg {
+        if !crate::activity::allows_cursor(&command.key, &command.cmd) {
+            return None;
+        }
     }
-    outcome.applied_key().cloned()
+    if let OverlayMsg::Cmd(KeyedOverlayCommand {
+        key,
+        cmd: OverlayCommand::MoveTo { x, y, .. },
+    }) = &msg
+    {
+        let frame = map.platform.frame();
+        map.seed_start_if_sentinel(key, *x, *y, frame);
+    }
+    map.apply_msg(msg).applied_key().cloned()
 }
 
 pub fn init(cfg: CursorConfig) {
@@ -155,7 +123,6 @@ pub fn init(cfg: CursorConfig) {
             .set(tx)
             .expect("cursor overlay sender is initialized exactly once");
         *CMD_RX_CELL.lock().unwrap() = Some(rx);
-        *ARRIVAL_TX.lock().unwrap() = Some(HashMap::new());
         *RENDER.lock().unwrap() = Some(RenderMap::new(
             cfg,
             WinScreen {
@@ -224,7 +191,7 @@ pub(crate) fn draws_cursor(key: &str) -> bool {
 /// Empty key = anonymous (no session declared) → no cursor; the command is
 /// dropped so a cursor-less run never paints. See `tools::resolve_cursor_key`.
 pub fn send_command(key: CursorKey, cmd: OverlayCommand) {
-    if !draws_cursor(&key) {
+    if !draws_cursor(&key) || !crate::activity::allows_cursor(&key, &cmd) {
         return;
     }
     if let Some(tx) = CMD_TX.get() {
@@ -284,6 +251,7 @@ pub fn remove_cursor(key: CursorKey) {
     if key.is_empty() {
         return;
     }
+    crate::activity::remove(&key);
     if let Some(tx) = CMD_TX.get() {
         let _ = tx.try_send(OverlayMsg::Remove(key));
         wake_overlay();
@@ -296,6 +264,7 @@ pub fn revive_cursor(key: CursorKey) {
     if key.is_empty() {
         return;
     }
+    crate::activity::revive(&key);
     if let Some(tx) = CMD_TX.get() {
         let _ = tx.try_send(OverlayMsg::Revive(key));
         wake_overlay();
@@ -304,6 +273,34 @@ pub fn revive_cursor(key: CursorKey) {
 
 /// Returns true if the cursor for `key` is currently enabled/visible. A session
 /// with no own cursor yet falls back to the seeded `"default"` cursor.
+pub(crate) fn available() -> bool {
+    CMD_TX.get().is_some()
+}
+/// Clear queued and currently displayed effects without disabling the next authorized action.
+pub(crate) fn clear_presentation(key: &str) {
+    if let Ok(mut render) = RENDER.lock() {
+        if let Some(map) = render.as_mut() {
+            #[cfg(target_os = "windows")]
+            if let Ok(receiver) = CMD_RX_WIN.lock() {
+                if let Some(receiver) = receiver.as_ref() {
+                    while let Ok(message) = receiver.try_recv() {
+                        if !matches!(&message,OverlayMsg::Cmd(command) if command.key==key) {
+                            apply_msg(map, message);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(entry) = render.as_mut().and_then(|m| m.cursors.get_mut(key)) {
+            let mut config = entry.core.cfg.clone();
+            config.motion = entry.core.motion.clone();
+            let label = entry.core.session_label.clone();
+            *entry = RenderState::from_config(config);
+            entry.core.session_label = label;
+        }
+    }
+    wake_overlay();
+}
 pub fn is_enabled(key: &str) -> bool {
     RENDER
         .lock()
@@ -375,31 +372,9 @@ pub fn current_position(key: &str) -> (f64, f64) {
         .unwrap_or(cursor_overlay::render_state::UNPLACED_POS)
 }
 
-/// Seed a brand-new (sentinel-positioned) cursor at an on-screen start point
-/// offset up-left of `(target_x, target_y)` so the immediately-following
-/// `MoveTo` glides INTO the target instead of silently snapping. No-op when the
-/// cursor is already on-screen or its session already ended. Returns true if a
-/// seed was applied. Mirrors `platform_macos::cursor::overlay::seed_start_*`.
-fn seed_start_if_sentinel(key: &CursorKey, target_x: f64, target_y: f64) -> bool {
-    let mut guard = RENDER.lock().unwrap();
-    let Some(map) = guard.as_mut() else {
-        return false;
-    };
-    let frame = map.platform.frame();
-    map.seed_start_if_sentinel(key, target_x, target_y, frame)
-}
-
-/// Animate the overlay cursor for `key` to `(x, y)` and suspend until the
-/// planned path completes (the spring-settle phase that follows is allowed to
-/// keep running — we only wait for the visible glide to land).
-///
-/// Returns immediately (no animation, no wait) when:
-/// - the key is empty (anonymous run → no cursor), or
-/// - the cursor for `key` is disabled.
-///
-/// A brand-new cursor still at the off-screen sentinel is first seeded
-/// on-screen via [`seed_start_if_sentinel`] so its FIRST action glides in.
-/// Mirrors `platform_macos::cursor::overlay::animate_cursor_to`.
+/// Queue a visual movement without waiting for the presentation timeline.
+/// Windows input, browser and page routes all use this nonblocking boundary.
+/// The render thread seeds new cursors on-screen and serializes their effects.
 pub async fn animate_cursor_to(key: CursorKey, x: f64, y: f64) {
     animate_cursor_to_target(key, x, y, None).await;
 }
@@ -408,29 +383,9 @@ pub async fn animate_cursor_to(key: CursorKey, x: f64, y: f64) {
 /// `[x, y, width, height]` in the same space as `x`/`y`, so motion styles can
 /// use Fitts timing and highlight the target. `None` for pixel actions.
 pub async fn animate_cursor_to_target(key: CursorKey, x: f64, y: f64, target: Option<[f64; 4]>) {
-    if key.is_empty() {
+    if key.is_empty() || !is_enabled(&key) {
         return;
     }
-    // Seed a sentinel cursor on-screen so the MoveTo below glides instead of
-    // being short-circuited.
-    seed_start_if_sentinel(&key, x, y);
-
-    let should_animate = {
-        let guard = RENDER.lock().unwrap();
-        matches!(
-            guard.as_ref().and_then(|m| m.cursors.get(&key)),
-            Some(rs) if rs.core.cfg.enabled && cursor_overlay::render_state::is_placed(rs.core.pos)
-        )
-    };
-    if !should_animate {
-        return;
-    }
-
-    // Install the keyed oneshot sender BEFORE issuing MoveTo, so the render
-    // thread's arrival-fire can never lose a race against an immediate
-    // path-end (e.g. zero-length glide).
-    let (tx, rx) = tokio::sync::oneshot::channel::<()>();
-    arrival_register(key.clone(), tx);
 
     send_command(
         key,
@@ -443,8 +398,6 @@ pub async fn animate_cursor_to_target(key: CursorKey, x: f64, y: f64, target: Op
             target,
         },
     );
-
-    let _ = rx.await;
 }
 
 /// Spin up the overlay on a dedicated thread (STA for Win32 message loop).
@@ -484,12 +437,18 @@ pub fn run_on_thread() {
 
 struct RenderState {
     core: RenderStateCore,
+    playback: cursor_overlay::playback::Playback<OverlayCommand>,
+    elapsed_ms: f64,
+    held_until_ms: Option<f64>,
 }
 
 impl RenderEntry for RenderState {
     fn from_config(cfg: CursorConfig) -> Self {
         RenderState {
             core: RenderStateCore::new(cfg),
+            playback: cursor_overlay::playback::Playback::default(),
+            elapsed_ms: 0.0,
+            held_until_ms: None,
         }
     }
 
@@ -502,13 +461,78 @@ impl RenderEntry for RenderState {
     }
 
     fn apply_command(&mut self, cmd: OverlayCommand) -> bool {
-        // Windows uses the non-sentinel-snap behaviour for both MoveTo and
-        // ClickPulse: every command updates `self.pos` unconditionally.
-        // `ShowFocusRect` is not rendered on Windows — `apply_command_base`
-        // returns `false` for it and we silently drop it here.
+        if self.core.pressed && matches!(cmd, OverlayCommand::SnapTo { .. }) {
+            self.held_until_ms = Some(self.elapsed_ms + 30_000.0);
+        }
+        let navigation = matches!(cmd, OverlayCommand::MoveTo { .. });
+        let dwell = match &cmd {
+            OverlayCommand::MoveTo { .. } => Some(180),
+            OverlayCommand::ClickPulse { .. } => Some(80),
+            OverlayCommand::BeginAction {
+                action:
+                    cursor_overlay::CursorAction::Text
+                    | cursor_overlay::CursorAction::Key
+                    | cursor_overlay::CursorAction::Scroll,
+                ..
+            } => Some(120),
+            OverlayCommand::BeginAction { .. }
+            | OverlayCommand::EndAction(_)
+            | OverlayCommand::SetPressed(_)
+            | OverlayCommand::ShowKeyCombo(_) => Some(0),
+            _ => None,
+        };
+        if let Some(dwell) = dwell {
+            self.playback
+                .push(self.elapsed_ms as u64, cmd, dwell, navigation);
+            return true;
+        }
+        if matches!(cmd, OverlayCommand::SetEnabled(false)) {
+            self.playback.clear();
+        }
         self.core.apply_command_base(cmd, false, false)
     }
 
+    fn tick(&mut self, dt: f64) -> bool {
+        self.elapsed_ms += if dt.is_finite() {
+            dt.max(0.0) * 1000.0
+        } else {
+            0.0
+        };
+        let now = self.elapsed_ms as u64;
+        for _ in 0..8 {
+            let Some(cmd) = self.playback.next(now) else {
+                break;
+            };
+            let motion = self.core.motion.glide_duration_ms;
+            if matches!(cmd, OverlayCommand::MoveTo { .. }) {
+                self.core.motion.glide_duration_ms =
+                    self.playback.remaining(now).clamp(1, 180) as f64;
+            }
+            match &cmd {
+                // A separate safety lease covers lost releases; queue emptiness says nothing about a real hold.
+                // Native drag/held paths are bounded to 10 seconds and tracking refreshes this lease.
+                OverlayCommand::SetPressed(true) => {
+                    self.held_until_ms = Some(self.elapsed_ms + 30_000.0)
+                }
+                OverlayCommand::SetPressed(false) => self.held_until_ms = None,
+                _ => {}
+            }
+            self.core.apply_command_base(cmd, false, false);
+            self.core.motion.glide_duration_ms = motion;
+        }
+        if self
+            .held_until_ms
+            .is_some_and(|deadline| self.elapsed_ms >= deadline)
+        {
+            self.held_until_ms = None;
+            self.core
+                .apply_command_base(OverlayCommand::SetPressed(false), false, false);
+        }
+        self.core.tick_motion(dt.clamp(0.0, 0.05))
+    }
+    fn needs_frame_tick(&self) -> bool {
+        !self.playback.is_empty() || self.core.needs_frame_tick()
+    }
     // `tick` (arrival on path end) and `needs_frame_tick` use the shared
     // defaults. The shared predicate keeps a revealed cursor with resting
     // motion (the float bob) at the ACTIVE cadence, and parks a reduced-motion
@@ -839,8 +863,8 @@ fn effect_dirty_rect(
 }
 
 #[cfg(target_os = "windows")]
-struct WinSurface {
-    pixmap: tiny_skia::Pixmap,
+pub(crate) struct WinSurface {
+    pub(crate) pixmap: tiny_skia::Pixmap,
     /// Memory DC with the DIB selected, stored as isize (HDC is !Send).
     hdc_mem: isize,
     /// The DIB section bitmap handle.
@@ -855,7 +879,7 @@ struct WinSurface {
 
 #[cfg(target_os = "windows")]
 impl WinSurface {
-    unsafe fn create(virt_x: i32, virt_y: i32, w: i32, h: i32) -> Option<WinSurface> {
+    pub(crate) unsafe fn create(virt_x: i32, virt_y: i32, w: i32, h: i32) -> Option<WinSurface> {
         use windows::Win32::Graphics::Gdi::*;
 
         let pixmap = tiny_skia::Pixmap::new(w.max(1) as u32, h.max(1) as u32)?;
@@ -898,6 +922,44 @@ impl WinSurface {
         })
     }
 
+    /// Present a protected source-sized activity surface. Shares the cursor's DIB allocation and swizzle path.
+    pub(crate) unsafe fn present_hud(&mut self, hwnd: windows::Win32::Foundation::HWND) -> bool {
+        use windows::Win32::Foundation::{COLORREF, POINT, SIZE};
+        use windows::Win32::Graphics::Gdi::{GetDC, ReleaseDC, BLENDFUNCTION, HDC};
+        use windows::Win32::UI::WindowsAndMessaging::{UpdateLayeredWindow, ULW_ALPHA};
+        self.swizzle_rect(DirtyRect {
+            x0: 0,
+            y0: 0,
+            x1: self.w,
+            y1: self.h,
+        });
+        let dc = GetDC(None);
+        let result = UpdateLayeredWindow(
+            hwnd,
+            dc,
+            Some(&POINT {
+                x: self.virt_x,
+                y: self.virt_y,
+            }),
+            Some(&SIZE {
+                cx: self.w,
+                cy: self.h,
+            }),
+            HDC(self.hdc_mem as *mut _),
+            Some(&POINT { x: 0, y: 0 }),
+            COLORREF(0),
+            Some(&BLENDFUNCTION {
+                BlendOp: 0,
+                BlendFlags: 0,
+                SourceConstantAlpha: 255,
+                AlphaFormat: 1,
+            }),
+            ULW_ALPHA,
+        )
+        .is_ok();
+        ReleaseDC(None, dc);
+        result
+    }
     /// Zero the pixmap pixels inside `r` (rect must already be clamped).
     fn clear_rect(&mut self, r: DirtyRect) {
         let w = self.w as usize;
@@ -1201,7 +1263,7 @@ unsafe extern "system" fn wnd_proc(
             // the slow IDLE cadence below.
             let was_active =
                 TIMER_PERIOD_MS.load(std::sync::atomic::Ordering::Relaxed) == TIMER_MS_ACTIVE;
-            let (upload, arrived, pinned_wid, needs_tick, needs_hover_poll) = {
+            let (upload, pinned_wid, needs_tick, needs_hover_poll) = {
                 let mut guard = RENDER.lock().unwrap();
                 if let Some(map) = guard.as_mut() {
                     // Drain the channel via get-or-create; the shared map
@@ -1238,12 +1300,9 @@ unsafe extern "system" fn wnd_proc(
                     let dt = real_dt.clamp(0.0, 0.05);
                     map.platform.last_tick = now;
 
-                    // Tick every cursor; record the ones that just arrived.
-                    let mut arrived: Vec<CursorKey> = Vec::new();
-                    for (k, rs) in map.cursors.iter_mut() {
-                        if rs.tick(dt) {
-                            arrived.push(k.clone());
-                        }
+                    // Tick presentation only; no input producer waits for arrival.
+                    for rs in map.cursors.values_mut() {
+                        rs.tick(real_dt);
                         // Idle-countdown wall-clock catch-up (render-gate fix):
                         // cursors parked in the constant-alpha countdown tick at
                         // the slow IDLE cadence, where the 0.05 s motion clamp
@@ -1284,7 +1343,7 @@ unsafe extern "system" fn wnd_proc(
                         had_msg || refit || hover_changed || needs_tick || was_active;
 
                     if !should_render {
-                        (None, arrived, None, needs_tick, needs_hover_poll)
+                        (None, None, needs_tick, needs_hover_poll)
                     } else {
                         // Decide where to pin the single overlay window in z.
                         //
@@ -1329,10 +1388,10 @@ unsafe extern "system" fn wnd_proc(
                         // preserves pre-retina-fix behaviour on Windows).
                         let upload = composite_dirty(map);
 
-                        (upload, arrived, pinned, needs_tick, needs_hover_poll)
+                        (upload, pinned, needs_tick, needs_hover_poll)
                     }
                 } else {
-                    (None, Vec::new(), None, false, false)
+                    (None, None, false, false)
                 }
             };
 
@@ -1351,13 +1410,6 @@ unsafe extern "system" fn wnd_proc(
                         enforcer.reassert(pinned_wid);
                     }
                 }
-            }
-
-            // Fire arrival oneshots for cursors whose path just ended — unblocks
-            // each session's `animate_cursor_to(...).await` so the click action
-            // only dispatches once that cursor has visually landed.
-            for k in &arrived {
-                arrival_fire(k);
             }
 
             // ── Re-arm the render timer at the cadence the current state needs ─
@@ -1410,8 +1462,8 @@ unsafe extern "system" fn wnd_proc(
 /// Stores the overlay HWND as an `isize` (HWND is `*mut c_void` and not
 /// `Send`/`Sync`) and rehydrates it inside `reassert`. Driven by the
 /// `WM_TIMER` branch in `wnd_proc` on the overlay STA thread.
-struct WinZOrderEnforcer {
-    hwnd_isize: isize,
+pub(crate) struct WinZOrderEnforcer {
+    pub(crate) hwnd_isize: isize,
 }
 
 /// Of the given window ids, return the one highest in the current z-order (the
@@ -1792,6 +1844,43 @@ mod tests {
 
     // Before the shared predicate, a landed Windows cursor dropped to the IDLE
     // cadence for the whole idle-hide delay and its resting bob froze.
+    #[test]
+    fn missing_release_has_a_separate_bounded_safety_lease() {
+        let mut cursor = RenderState::from_config(CursorConfig::default());
+        cursor.apply_command(OverlayCommand::SetPressed(true));
+        cursor.tick(0.016);
+        assert!(cursor.core.pressed);
+        cursor.tick(31.0);
+        assert!(!cursor.core.pressed);
+    }
+    #[test]
+    fn held_drag_survives_empty_playback_until_native_release() {
+        let mut cursor = RenderState::from_config(CursorConfig::default());
+        cursor.apply_command(OverlayCommand::SetPressed(true));
+        for step in 0..8 {
+            cursor.apply_command(cursor_overlay::track_pointer_command(step as f64, 10.0));
+            cursor.tick(0.15);
+            assert!(cursor.core.pressed);
+        }
+        cursor.apply_command(OverlayCommand::SetPressed(false));
+        cursor.tick(0.016);
+        assert!(!cursor.core.pressed);
+    }
+    #[test]
+    fn stalled_renderer_discards_old_presentation_using_elapsed_frame_time() {
+        let mut cursor = RenderState::from_config(CursorConfig::default());
+        cursor.apply_command(OverlayCommand::MoveTo {
+            x: 100.0,
+            y: 100.0,
+            end_heading_radians: 0.0,
+            target: None,
+        });
+        cursor.apply_command(OverlayCommand::ClickPulse { x: 100.0, y: 100.0 });
+        cursor.tick(0.7);
+        assert!(cursor.playback.is_empty());
+        assert!(cursor.core.trajectory.is_none());
+        assert!(cursor.core.click_t.is_none());
+    }
     #[test]
     fn resting_cursor_keeps_the_active_cadence_for_its_bob() {
         let mut map = empty_map();

@@ -3,6 +3,7 @@
 use async_trait::async_trait;
 use cua_driver_core::action_record::ActionTransport;
 
+mod activity;
 mod pointer;
 mod scroll;
 mod window_management;
@@ -286,22 +287,9 @@ fn screen_to_bitmap(hwnd: u64, sx: i32, sy: i32) -> (i32, i32) {
     (sx - origin_x, sy - origin_y)
 }
 
-/// Animate the agent cursor to (sx, sy) in screen coordinates and wait for the
-/// glide to finish before returning.  No-op when the overlay is not enabled.
-///
-/// On the very first call the cursor is at the off-screen initial position
-/// (-200, -200).  Animating from there would cause a jarring off-screen fly-in,
-/// so we snap to the target with a ClickPulse first and skip the glide wait.
-///
-/// For all subsequent calls this defers to
-/// [`crate::overlay::animate_cursor_to`], which sends `MoveTo` and awaits the
-/// render thread's arrival oneshot — that's how we keep the click action
-/// from firing before the cursor has visually landed (the old heuristic
-/// `tokio::sleep(80..600 ms)` was racing the spring-physics glide).
-///
-/// `key` is the session's cursor key (see [`resolve_cursor_key`]). An empty key
-/// is possible only for a direct platform call without lifecycle metadata; in
-/// that case every overlay operation short-circuits.
+/// Queue movement in screen coordinates on the presentation timeline. Never
+/// await the render thread or sleep before real input. An empty lifecycle key
+/// or a disabled overlay leaves input unchanged.
 async fn overlay_glide_to(key: &str, sx: f64, sy: f64) {
     overlay_glide_to_target(key, sx, sy, None).await;
 }
@@ -315,42 +303,17 @@ async fn overlay_glide_to_target(key: &str, sx: f64, sy: f64, target: Option<[f6
     if !crate::overlay::is_enabled(key) {
         return;
     }
-    let pos = crate::overlay::current_position(key);
-    if pos.0 < 0.0 && pos.1 < 0.0 {
-        // Snap to target on first use; no animation to wait for.
-        crate::overlay::send_command(
-            key.to_owned(),
-            cursor_overlay::OverlayCommand::ClickPulse { x: sx, y: sy },
-        );
-        return;
-    }
-    // Fixed-duration glide → decouple the click from the render thread. When
-    // `glide_duration_ms > 0` the path completes in exactly that wall-clock time
-    // (see render_state::tick_motion), so instead of `await`-ing the render
-    // thread's arrival oneshot — which couples click latency to overlay FPS and
-    // degrades under many concurrent cursors — we fire the move and sleep the
-    // known duration. The click then lands a deterministic time after dispatch
-    // regardless of render load, while the cursor still animates visually on the
-    // render thread. Speed-based glides (`== 0`, the default) keep the precise
-    // arrival-await since their duration depends on distance.
-    let motion = crate::overlay::current_motion(key);
-    if motion.glide_duration_ms > 0.0 {
-        crate::overlay::send_command(
-            key.to_owned(),
-            cursor_overlay::OverlayCommand::MoveTo {
-                x: sx,
-                y: sy,
-                end_heading_radians: std::f64::consts::FRAC_PI_4,
-                target,
-            },
-        );
-        tokio::time::sleep(std::time::Duration::from_millis(
-            motion.glide_duration_ms as u64,
-        ))
-        .await;
-        return;
-    }
-    crate::overlay::animate_cursor_to_target(key.to_owned(), sx, sy, target).await;
+    // Presentation has its own bounded render-side playback. Input must never
+    // sleep for a visual glide or depend on render-thread responsiveness.
+    crate::overlay::send_command(
+        key.to_owned(),
+        cursor_overlay::OverlayCommand::MoveTo {
+            x: sx,
+            y: sy,
+            end_heading_radians: std::f64::consts::FRAC_PI_4,
+            target,
+        },
+    );
 }
 
 /// The admitted element's cached UIA/MSAA bounding rect as the overlay's
@@ -382,10 +345,9 @@ async fn track_overlay_drag(
     if key.is_empty() || !crate::overlay::is_enabled(&key) {
         return;
     }
-    crate::overlay::send_command(
-        key.clone(),
-        cursor_overlay::OverlayCommand::SetPressed(true),
-    );
+    let _pressed = cursor_overlay::PressedVisualGuard::new(|command| {
+        crate::overlay::send_command(key.clone(), command);
+    });
     let steps = steps.max(1);
     let step_delay = std::time::Duration::from_millis(duration_ms / steps as u64);
     for index in 0..=steps {
@@ -397,7 +359,7 @@ async fn track_overlay_drag(
             tokio::time::sleep(step_delay).await;
         }
     }
-    crate::overlay::send_command(key, cursor_overlay::OverlayCommand::SetPressed(false));
+    // The guard releases artwork on native completion, cancellation or normal end.
 }
 use cua_driver_contract::{
     ClickButton, DragInput, GetCursorPositionInput, GetDesktopStateInput, GetScreenSizeInput,
@@ -1606,11 +1568,13 @@ impl Tool for GetWindowStateTool {
             let (screenshot, screenshot_err) = if do_shot {
                 let captured = match (retained, crop) {
                     (Some(frame), _) => Ok((frame.png, frame.width, frame.height)),
-                    (None, Some(region)) => crate::capture::screenshot_window_region(hwnd, max_dim, region)
-                        .map(|(png, w, h, inside)| {
-                            applied_crop = Some(inside);
-                            (png, w, h)
-                        }),
+                    (None, Some(region)) => crate::capture::screenshot_window_region(
+                        hwnd, max_dim, region,
+                    )
+                    .map(|(png, w, h, inside)| {
+                        applied_crop = Some(inside);
+                        (png, w, h)
+                    }),
                     (None, None) => crate::capture::screenshot_window_overview(hwnd, max_dim),
                 };
                 match captured {
@@ -3404,9 +3368,7 @@ enum BackgroundElementClick {
         failed_calls: Vec<ActionTransport>,
     },
     /// `uia_only`: no UIA pattern carried the click, so nothing was sent.
-    NoPattern {
-        failed_calls: Vec<ActionTransport>,
-    },
+    NoPattern { failed_calls: Vec<ActionTransport> },
 }
 
 /// Schema of the `uia_only` argument shared by `click` and `scroll`.
@@ -3420,10 +3382,16 @@ fn uia_only_refusal(args: &Value, uia_only: bool) -> Option<ToolResult> {
         return None;
     }
     if args.get("element_token").is_none_or(Value::is_null) {
-        return Some(ToolResult::error("uia_only acts on an element through UIA: give element_token, not x,y."));
+        return Some(ToolResult::error(
+            "uia_only acts on an element through UIA: give element_token, not x,y.",
+        ));
     }
-    if crate::input::delivery::DeliveryMode::from_args(args) == crate::input::delivery::DeliveryMode::Foreground {
-        return Some(ToolResult::error("uia_only applies to delivery_mode \"background\"; foreground delivery is real input."));
+    if crate::input::delivery::DeliveryMode::from_args(args)
+        == crate::input::delivery::DeliveryMode::Foreground
+    {
+        return Some(ToolResult::error(
+            "uia_only applies to delivery_mode \"background\"; foreground delivery is real input.",
+        ));
     }
     None
 }
@@ -3552,7 +3520,10 @@ impl Tool for ClickTool {
         use crate::uia::snapshot::SnapshotKind;
         use cua_driver_core::tool_args::ArgsExt;
         let cursor_key = resolve_cursor_key(&args);
-        let uia_only = args.get("uia_only").and_then(Value::as_bool).unwrap_or(false);
+        let uia_only = args
+            .get("uia_only")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         if let Some(refusal) = uia_only_refusal(&args, uia_only) {
             return refusal;
         }
@@ -3898,7 +3869,8 @@ impl Tool for ClickTool {
                         } else {
                             crate::input::send_click_synthesized_mods(
                                 hwnd, tx, ty, count, &btn_fg, &mod_refs,
-                            ).map(|()| None)
+                            )
+                            .map(|()| None)
                         }
                     }
                 })
@@ -3909,12 +3881,15 @@ impl Tool for ClickTool {
                 }
                 let half = if want_expand { "dropdown" } else { "press" };
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(
+                        ToolResult::text(format!(
                         "✅ Performed SendInput click on MSAA [{idx}] {half} half at ({tx},{ty})."
                     ))
-                    .with_structured(
-                        json!({ "path": "msaa", "verified": false, "effect": "unverifiable" }),
-                    ), after),
+                        .with_structured(
+                            json!({ "path": "msaa", "verified": false, "effect": "unverifiable" }),
+                        ),
+                        after,
+                    ),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
@@ -4286,7 +4261,11 @@ impl Tool for ClickTool {
                     return background_element_click_result(message, transport, failed_calls);
                 }
                 BackgroundElementClick::NoPattern { failed_calls } => {
-                    let tried = failed_calls.iter().map(|call| format!("{call:?}")).collect::<Vec<_>>().join(", ");
+                    let tried = failed_calls
+                        .iter()
+                        .map(|call| format!("{call:?}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
                     return crate::input::delivery::background_unavailable_error_with_cause(
                         hwnd,
                         EventKind::MouseClick,
@@ -4433,17 +4412,20 @@ impl Tool for ClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after({
-                        let click_word = match count {
-                            2 => "double-click",
-                            3 => "triple-click",
-                            _ => "click",
-                        };
-                        ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(
+                        {
+                            let click_word = match count {
+                                2 => "double-click",
+                                3 => "triple-click",
+                                _ => "click",
+                            };
+                            ToolResult::text(format!(
                             "✅ Sent {click_word} via SendInput to pid {pid} at ({sx},{sy}) (delivery_mode:foreground)."
                         ))
                         .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" }))
-                    }, after),
+                        },
+                        after,
+                    ),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
@@ -6550,7 +6532,10 @@ impl Tool for ScrollTool {
     async fn invoke(&self, args: Value) -> ToolResult {
         use crate::input::delivery::{DeliveryMode, EventKind};
         use cua_driver_core::tool_args::ArgsExt;
-        let uia_only = args.get("uia_only").and_then(Value::as_bool).unwrap_or(false);
+        let uia_only = args
+            .get("uia_only")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         if let Some(refusal) = uia_only_refusal(&args, uia_only) {
             return refusal;
         }
@@ -8192,7 +8177,8 @@ impl Tool for DragTool {
                 duration_ms,
                 steps,
             );
-            let (native_drag, ()) = tokio::join!(native_drag, visual_drag);
+            let native_drag =
+                crate::activity::alongside_presentation(native_drag, visual_drag).await;
             return match native_drag {
                 Ok(Ok(())) => ToolResult::text(format!(
                     "Dragged from ({from_x}, {from_y}) to ({to_x}, {to_y}) (scope:desktop)."
@@ -8372,7 +8358,7 @@ impl Tool for DragTool {
                 duration_ms,
                 steps,
             );
-            let (inj, ()) = tokio::join!(inj, visual_drag);
+            let inj = crate::activity::alongside_presentation(inj, visual_drag).await;
             return match inj {
                 Ok(Ok(())) => ToolResult::text(format!(
                     "✅ Sent drag via synthetic-pen injection on pid {raw_pid} \
@@ -8415,7 +8401,8 @@ impl Tool for DragTool {
                 duration_ms,
                 steps,
             );
-            let (send_result, ()) = tokio::join!(send_result, visual_drag);
+            let send_result =
+                crate::activity::alongside_presentation(send_result, visual_drag).await;
             let button_suffix = if button == "left" {
                 String::new()
             } else {
@@ -8500,7 +8487,7 @@ impl Tool for DragTool {
             duration_ms,
             steps,
         );
-        let (result, ()) = tokio::join!(result, visual_drag);
+        let result = crate::activity::alongside_presentation(result, visual_drag).await;
 
         match result {
             Ok(Ok(())) => {
@@ -8839,15 +8826,24 @@ impl Tool for MoveCursorTool {
         // End pointing upper-left (45°) — matches Swift's
         // `AgentCursor.animateAndWait(endAngleDegrees: 45)` convention so
         // the cursor settles to the natural macOS-style pose.
-        // Use the acknowledged animation path so a first-ever move seeds and
-        // displays the session cursor just as reliably as a coordinate click.
-        crate::overlay::animate_cursor_to(cursor_key.clone(), x, y).await;
+        // The cursor is presentation only; a producer never waits for its glide.
+        crate::overlay::send_command(
+            cursor_key.clone(),
+            cursor_overlay::OverlayCommand::MoveTo {
+                x,
+                y,
+                end_heading_radians: std::f64::consts::FRAC_PI_4,
+                target: None,
+            },
+        );
         let shown = if cursor_key.is_empty() {
             "default"
         } else {
             cursor_key.as_str()
         };
-        ToolResult::text(format!("Agent cursor '{shown}' moved to ({x:.1}, {y:.1})."))
+        ToolResult::text(format!(
+            "Agent cursor '{shown}' movement queued to ({x:.1}, {y:.1})."
+        ))
     }
 }
 
@@ -10764,12 +10760,16 @@ fn window_crop(
     }
     let region: cua_driver_core::image_utils::PixelRegion = serde_json::from_value(value.clone())
         .map_err(|error| {
-            ToolResult::error(format!("crop needs integer x, y, width and height: {error}"))
-                .with_structured(json!({"code": "invalid_arguments"}))
-        })?;
+        ToolResult::error(format!(
+            "crop needs integer x, y, width and height: {error}"
+        ))
+        .with_structured(json!({"code": "invalid_arguments"}))
+    })?;
     if region.width == 0 || region.height == 0 {
-        return Err(ToolResult::error("crop width and height must be at least 1.")
-            .with_structured(json!({"code": "invalid_arguments"})));
+        return Err(
+            ToolResult::error("crop width and height must be at least 1.")
+                .with_structured(json!({"code": "invalid_arguments"})),
+        );
     }
     Ok(Some(region))
 }
@@ -11036,6 +11036,8 @@ pub fn build_registry_with_provider(
         state: state.clone(),
     }));
     r.register(Box::new(SetAgentCursorMotionV2Tool));
+    r.register(Box::new(activity::SetAgentVisualsTool));
+    r.register(Box::new(activity::PresentAgentActivityTool));
     r.register(Box::new(GetAgentCursorStateV2Tool {
         state: state.clone(),
     }));

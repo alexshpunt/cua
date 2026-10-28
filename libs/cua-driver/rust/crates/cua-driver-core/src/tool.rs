@@ -829,6 +829,8 @@ pub fn default_capabilities_for(tool_name: &str) -> Vec<String> {
         "set_agent_cursor_motion" => &["agent_cursor.set_motion"],
         "set_agent_cursor_theme" => &["agent_cursor.set_theme"],
         "get_agent_cursor_state" => &["agent_cursor.state"],
+        "set_agent_visuals" => &["agent_visuals.configure"],
+        "present_agent_activity" => &["agent_visuals.present"],
 
         // ── recording / replay ───────────────────────────────────────
         "start_recording" => &["recording.start"],
@@ -2262,6 +2264,8 @@ impl ToolRegistry {
                     | "run_script"
                     | "start_session"
                     | "end_session"
+                    | "set_agent_visuals"
+                    | "present_agent_activity"
             );
         let private_consent_turn = is_existing_profile_prepare(resolved_name, &args);
         let _desktop_action = if requires_desktop_coordination(
@@ -6315,6 +6319,10 @@ fn is_existing_profile_prepare(tool_name: &str, args: &Value) -> bool {
 }
 
 fn recording_args_for(tool_name: &str, args: &Value) -> Value {
+    // Presentation images are transient, even when an explicit recording is active.
+    if matches!(tool_name, "present_agent_activity" | "set_agent_visuals") {
+        return serde_json::json!({});
+    }
     let mut redacted = args.clone();
     if let Some(arguments) = redacted.as_object_mut() {
         match tool_name {
@@ -6361,6 +6369,21 @@ fn recording_args_for(tool_name: &str, args: &Value) -> Value {
     redacted
 }
 
+#[cfg(test)]
+mod native_presentation_privacy_tests {
+    #[test]
+    fn recording_has_no_presentation_payload_even_if_the_caller_supplies_image_bytes() {
+        let args = serde_json::json!({"generation":1,"kind":"overview","image":{"data":"private-preview-bytes","mime_type":"image/png"}});
+        assert_eq!(
+            super::recording_args_for("present_agent_activity", &args),
+            serde_json::json!({})
+        );
+        assert_eq!(
+            super::recording_args_for("set_agent_visuals", &args),
+            serde_json::json!({})
+        );
+    }
+}
 impl Default for ToolRegistry {
     fn default() -> Self {
         Self::new()

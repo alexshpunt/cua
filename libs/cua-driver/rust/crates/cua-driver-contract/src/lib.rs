@@ -14,6 +14,7 @@ use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
+mod agent_visuals;
 pub mod compatibility;
 pub mod cursor;
 mod cursor_tools;
@@ -252,6 +253,7 @@ pub fn manifest() -> ContractManifest {
     tools.extend(window_management::contracts());
     tools.extend(scroll::contracts());
     tools.extend(cursor_tools::contracts());
+    tools.extend(agent_visuals::contracts());
     tools.extend(verification::contracts());
     tools.extend(visual::contracts());
     tools.sort_by(|left, right| left.name.cmp(&right.name));
