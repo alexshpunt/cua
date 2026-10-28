@@ -97,9 +97,7 @@ impl WinScreen {
 
 type RenderMap = cursor_overlay::RenderMap<RenderState, WinScreen>;
 
-/// Drain one message into the shared map, releasing a removed session's
-/// arrival waiter. Returns the commanded key (also recorded as the map's
-/// `last_active`).
+/// Drain a filtered message into the shared map. Returns its commanded session key.
 fn apply_msg(map: &mut RenderMap, msg: OverlayMsg) -> Option<CursorKey> {
     if let OverlayMsg::Cmd(command) = &msg {
         if !crate::activity::allows_cursor(&command.key, &command.cmd) {
@@ -266,6 +264,7 @@ pub fn revive_cursor(key: CursorKey) {
     if key.is_empty() {
         return;
     }
+    crate::activity::revive(&key);
     if let Some(tx) = CMD_TX.get() {
         let _ = tx.try_send(OverlayMsg::Revive(key));
         wake_overlay();

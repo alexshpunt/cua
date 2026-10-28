@@ -12,6 +12,24 @@ struct Session {
     settings: VisualSettings,
     generation: u64,
     pending: Option<ActivityEvent>,
+    ended: bool,
+}
+impl Session {
+    fn advance(&mut self, generation: u64) -> bool {
+        if self.ended || generation <= self.generation {
+            return false;
+        }
+        self.generation = generation;
+        true
+    }
+    fn end(&mut self) {
+        self.pending = None;
+        self.generation = self.generation.saturating_add(1);
+        self.ended = true;
+    }
+    fn revive(&mut self) {
+        self.ended = false;
+    }
 }
 #[derive(Default)]
 struct State {
@@ -152,10 +170,12 @@ pub fn present(key: &str, event: ActivityEvent) -> Result<&'static str, &'static
         .filter(|s| s.pending.is_some())
         .count();
     let session = state.sessions.entry(key.to_owned()).or_default();
-    if event.generation <= session.generation {
+    if session.ended {
+        return Err("visual_session_ended");
+    }
+    if !session.advance(event.generation) {
         return Ok("stale");
     }
-    session.generation = event.generation;
     if event.kind == ActivityKind::Clear || !session.settings.enabled() {
         session.pending = None;
         drop(state);
@@ -190,12 +210,17 @@ pub fn present(key: &str, event: ActivityEvent) -> Result<&'static str, &'static
 pub fn remove(key: &str) {
     if let Ok(mut state) = state().lock() {
         if let Some(session) = state.sessions.get_mut(key) {
-            session.generation = u64::MAX;
-            session.pending = None;
-            session.settings.preset = "off".into();
+            session.end();
         }
     }
     wake();
+}
+pub fn revive(key: &str) {
+    if let Ok(mut state) = state().lock() {
+        if let Some(session) = state.sessions.get_mut(key) {
+            session.revive();
+        }
+    }
 }
 #[cfg(target_os = "windows")]
 static WAKE: OnceLock<std::sync::mpsc::SyncSender<()>> = OnceLock::new();
@@ -224,6 +249,19 @@ mod native;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn generations_reject_late_events_and_survive_session_revival() {
+        let mut session = Session::default();
+        assert!(session.advance(7));
+        assert!(!session.advance(7));
+        assert!(!session.advance(6));
+        session.end();
+        assert!(!session.advance(9));
+        session.revive();
+        assert!(!session.advance(8));
+        assert!(session.advance(9));
+        assert!(session.settings.enabled());
+    }
     #[test]
     fn off_clears_pending_without_starting_a_worker() {
         let key = "activity-off-test";
