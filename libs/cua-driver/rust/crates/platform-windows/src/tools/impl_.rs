@@ -5440,6 +5440,17 @@ fn focused_document_tool_result(
 
     match outcome {
         FocusedDocumentTypeOutcome::NotApplicable => None,
+        FocusedDocumentTypeOutcome::HumanTakeover => Some(
+            ToolResult::error("human_takeover: foreground Document typing paused before writing.")
+                .with_structured(json!({
+                    "status": "refused",
+                    "code": "human_takeover",
+                    "effect": "refused",
+                    "path": "ax",
+                    "attempted": false,
+                    "characters": 0,
+                })),
+        ),
         FocusedDocumentTypeOutcome::Confirmed => Some(
             ToolResult::text(format!(
                 "Wrote and verified {text_len} character(s) in the focused Document; caret is at the document end."
@@ -5491,6 +5502,18 @@ mod focused_document_result_tests {
         record
             .public_result()
             .expect("focused-document action result normalizes")
+    }
+
+    #[test]
+    fn focused_document_human_takeover_is_a_terminal_refusal_without_fallback() {
+        let result = focused_document_tool_result(FocusedDocumentTypeOutcome::HumanTakeover, 12)
+            .expect("takeover must not select the fallback input route");
+        assert_eq!(result.is_error, Some(true));
+        let structured = result.structured_content.unwrap();
+        assert_eq!(structured["code"], "human_takeover");
+        assert_eq!(structured["effect"], "refused");
+        assert_eq!(structured["attempted"], false);
+        assert_eq!(structured["characters"], 0);
     }
 
     #[test]

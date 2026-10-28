@@ -1,9 +1,10 @@
 //! Conservative text insertion for the exact currently focused UIA Document.
 //!
 //! This is a capability probe for no-element foreground typing. It never
-//! activates a window or selects a target. Before the write, every failed
-//! predicate leaves the existing input route available. Once SetValue starts,
-//! failures are unverifiable and must not be retried through another route.
+//! activates a window or selects a target. Unsupported UIA eligibility leaves
+//! the existing input route available. Foreground admission refusal is terminal
+//! before writing. Once SetValue starts, failures are unverifiable and must not
+//! be retried through another route.
 
 use std::sync::{
     atomic::{AtomicBool, AtomicU8, Ordering},
@@ -26,6 +27,7 @@ use super::windows_enum::{run_focused_document_uia, UiaDeadlineError};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FocusedDocumentTypeOutcome {
     NotApplicable,
+    HumanTakeover,
     Confirmed,
     Unknown(&'static str),
 }
@@ -182,97 +184,112 @@ fn try_type_focused_document_append_unbounded(
         {
             return not_applicable("document_changed_before_write");
         }
-        // If the UIA deadline fired during pre-write checks, do not start a
-        // write after the caller has already returned an unknown result.
-        PENDING_WRITE.store(true, Ordering::Release);
-        if cancelled.load(Ordering::Acquire)
-            || state
-                .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
-                .is_err()
-        {
-            return not_applicable("cancelled_before_write");
-        }
-
+        // Allocate the write value before the final foreground admission check.
         let expected_value = text.to_owned();
-        let write_result = (|| -> Result<(), &'static str> {
-            let value = BSTR::from(expected_value.as_str());
-            unsafe { value_pattern.SetValue(&value) }
-                .map_err(|_| "ValuePattern.SetValue failed after dispatch")?;
-            let actual_value = unsafe { value_pattern.CurrentValue() }
-                .map_err(|_| "ValuePattern read-back failed after dispatch")?;
-            if !normalized_text_matches(&expected_value, &actual_value.to_string()) {
-                return Err("ValuePattern read-back did not match after dispatch");
+        let value = BSTR::from(expected_value.as_str());
+        guarded_foreground_document_write(crate::human_input::check(), || {
+            // If the UIA deadline fired during pre-write checks, do not start a
+            // write after the caller has already returned an unknown result.
+            PENDING_WRITE.store(true, Ordering::Release);
+            if cancelled.load(Ordering::Acquire)
+                || state
+                    .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+                    .is_err()
+            {
+                return not_applicable("cancelled_before_write");
             }
 
-            let document_range = unsafe { text_pattern.DocumentRange() }
-                .map_err(|_| "TextPattern DocumentRange failed after dispatch")?;
-            let caret_range = unsafe { document_range.Clone() }
-                .map_err(|_| "TextPattern range clone failed after dispatch")?;
-            unsafe {
-                caret_range.MoveEndpointByRange(
-                    TextPatternRangeEndpoint_Start,
-                    &document_range,
-                    TextPatternRangeEndpoint_End,
-                )
-            }
-            .map_err(|_| "TextPattern caret collapse failed after dispatch")?;
-            unsafe { caret_range.Select() }
-                .map_err(|_| "TextPattern caret placement failed after dispatch")?;
+            let write_result = (|| -> Result<(), &'static str> {
+                unsafe { value_pattern.SetValue(&value) }
+                    .map_err(|_| "ValuePattern.SetValue failed after dispatch")?;
+                let actual_value = unsafe { value_pattern.CurrentValue() }
+                    .map_err(|_| "ValuePattern read-back failed after dispatch")?;
+                if !normalized_text_matches(&expected_value, &actual_value.to_string()) {
+                    return Err("ValuePattern read-back did not match after dispatch");
+                }
 
-            let fresh_document_range = unsafe { text_pattern.DocumentRange() }
-                .map_err(|_| "TextPattern verification range failed after dispatch")?;
-            let selections = unsafe { text_pattern.GetSelection() }
-                .map_err(|_| "TextPattern selection read-back failed after dispatch")?;
-            if unsafe { selections.Length() }
-                .map_err(|_| "TextPattern selection count failed after dispatch")?
-                != 1
-            {
-                return Err("TextPattern did not report exactly one caret after dispatch");
-            }
-            let selection = unsafe { selections.GetElement(0) }
-                .map_err(|_| "TextPattern caret read-back failed after dispatch")?;
-            let start_at_end = unsafe {
-                selection.CompareEndpoints(
-                    TextPatternRangeEndpoint_Start,
-                    &fresh_document_range,
-                    TextPatternRangeEndpoint_End,
-                )
-            }
-            .map_err(|_| "TextPattern caret start comparison failed after dispatch")?;
-            let end_at_end = unsafe {
-                selection.CompareEndpoints(
-                    TextPatternRangeEndpoint_End,
-                    &fresh_document_range,
-                    TextPatternRangeEndpoint_End,
-                )
-            }
-            .map_err(|_| "TextPattern caret end comparison failed after dispatch")?;
-            if start_at_end != 0 || end_at_end != 0 {
-                return Err("TextPattern caret was not at the document end after dispatch");
-            }
-            let final_value = unsafe { value_pattern.CurrentValue() }
-                .map_err(|_| "Final ValuePattern read-back failed after dispatch")?;
-            if !normalized_text_matches(&expected_value, &final_value.to_string()) {
-                return Err("ValuePattern changed during caret placement");
-            }
-            if !exact_foreground_target(target, Some(target_pid)) {
-                return Err("Foreground identity changed after dispatch");
-            }
-            let focused_after = unsafe { uia.GetFocusedElement() }
-                .map_err(|_| "Focused element read-back failed after dispatch")?;
-            let same_element = unsafe { uia.CompareElements(&focused, &focused_after) }
-                .map_err(|_| "Focused element identity comparison failed after dispatch")?;
-            if !same_element.as_bool()
-                || !focused_document_matches_target(&focused_after, target, target_pid)
-            {
-                return Err("Focused Document target changed after dispatch");
-            }
-            Ok(())
-        })();
-        classify_focused_document_write(true, write_result)
+                let document_range = unsafe { text_pattern.DocumentRange() }
+                    .map_err(|_| "TextPattern DocumentRange failed after dispatch")?;
+                let caret_range = unsafe { document_range.Clone() }
+                    .map_err(|_| "TextPattern range clone failed after dispatch")?;
+                unsafe {
+                    caret_range.MoveEndpointByRange(
+                        TextPatternRangeEndpoint_Start,
+                        &document_range,
+                        TextPatternRangeEndpoint_End,
+                    )
+                }
+                .map_err(|_| "TextPattern caret collapse failed after dispatch")?;
+                unsafe { caret_range.Select() }
+                    .map_err(|_| "TextPattern caret placement failed after dispatch")?;
+
+                let fresh_document_range = unsafe { text_pattern.DocumentRange() }
+                    .map_err(|_| "TextPattern verification range failed after dispatch")?;
+                let selections = unsafe { text_pattern.GetSelection() }
+                    .map_err(|_| "TextPattern selection read-back failed after dispatch")?;
+                if unsafe { selections.Length() }
+                    .map_err(|_| "TextPattern selection count failed after dispatch")?
+                    != 1
+                {
+                    return Err("TextPattern did not report exactly one caret after dispatch");
+                }
+                let selection = unsafe { selections.GetElement(0) }
+                    .map_err(|_| "TextPattern caret read-back failed after dispatch")?;
+                let start_at_end = unsafe {
+                    selection.CompareEndpoints(
+                        TextPatternRangeEndpoint_Start,
+                        &fresh_document_range,
+                        TextPatternRangeEndpoint_End,
+                    )
+                }
+                .map_err(|_| "TextPattern caret start comparison failed after dispatch")?;
+                let end_at_end = unsafe {
+                    selection.CompareEndpoints(
+                        TextPatternRangeEndpoint_End,
+                        &fresh_document_range,
+                        TextPatternRangeEndpoint_End,
+                    )
+                }
+                .map_err(|_| "TextPattern caret end comparison failed after dispatch")?;
+                if start_at_end != 0 || end_at_end != 0 {
+                    return Err("TextPattern caret was not at the document end after dispatch");
+                }
+                let final_value = unsafe { value_pattern.CurrentValue() }
+                    .map_err(|_| "Final ValuePattern read-back failed after dispatch")?;
+                if !normalized_text_matches(&expected_value, &final_value.to_string()) {
+                    return Err("ValuePattern changed during caret placement");
+                }
+                if !exact_foreground_target(target, Some(target_pid)) {
+                    return Err("Foreground identity changed after dispatch");
+                }
+                let focused_after = unsafe { uia.GetFocusedElement() }
+                    .map_err(|_| "Focused element read-back failed after dispatch")?;
+                let same_element = unsafe { uia.CompareElements(&focused, &focused_after) }
+                    .map_err(|_| "Focused element identity comparison failed after dispatch")?;
+                if !same_element.as_bool()
+                    || !focused_document_matches_target(&focused_after, target, target_pid)
+                {
+                    return Err("Focused Document target changed after dispatch");
+                }
+                Ok(())
+            })();
+            classify_focused_document_write(true, write_result)
+        })
     })();
 
     outcome
+}
+
+/// Admit the foreground-only write after UIA preparation. A refusal is terminal:
+/// it must never select the fallback input route or enter the write closure.
+fn guarded_foreground_document_write(
+    admission: Result<(), String>,
+    write: impl FnOnce() -> FocusedDocumentTypeOutcome,
+) -> FocusedDocumentTypeOutcome {
+    if admission.is_err() {
+        return FocusedDocumentTypeOutcome::HumanTakeover;
+    }
+    write()
 }
 
 struct ComApartment;
@@ -385,9 +402,37 @@ fn focused_document_worker_error(
 mod tests {
     use super::{
         classify_focused_document_write, focused_document_eligible, focused_document_worker_error,
-        normalize_document_line_endings, normalized_text_matches, FocusedDocumentTypeOutcome,
+        guarded_foreground_document_write, normalize_document_line_endings,
+        normalized_text_matches, FocusedDocumentTypeOutcome,
     };
     use crate::uia::windows_enum::UiaDeadlineError;
+
+    #[test]
+    fn human_takeover_refuses_before_the_foreground_document_write() {
+        let writes = std::cell::Cell::new(0);
+        let outcome = guarded_foreground_document_write(Err("human_takeover".into()), || {
+            writes.set(writes.get() + 1);
+            FocusedDocumentTypeOutcome::Confirmed
+        });
+        assert_eq!(outcome, FocusedDocumentTypeOutcome::HumanTakeover);
+        assert_eq!(writes.get(), 0);
+    }
+
+    #[test]
+    fn admitted_foreground_document_write_runs_once_and_preserves_its_outcome() {
+        for expected in [
+            FocusedDocumentTypeOutcome::Confirmed,
+            FocusedDocumentTypeOutcome::Unknown("verification unavailable"),
+        ] {
+            let writes = std::cell::Cell::new(0);
+            let outcome = guarded_foreground_document_write(Ok(()), || {
+                writes.set(writes.get() + 1);
+                expected
+            });
+            assert_eq!(outcome, expected);
+            assert_eq!(writes.get(), 1);
+        }
+    }
 
     #[test]
     fn focused_document_requires_exact_target_and_safe_value_selection() {
