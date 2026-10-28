@@ -140,6 +140,11 @@ type RenderMap = cursor_overlay::RenderMap<RenderState, WinScreen>;
 /// arrival waiter. Returns the commanded key (also recorded as the map's
 /// `last_active`).
 fn apply_msg(map: &mut RenderMap, msg: OverlayMsg) -> Option<CursorKey> {
+    if let OverlayMsg::Cmd(command) = &msg {
+        if !crate::activity::allows_cursor(&command.key, &command.cmd) {
+            return None;
+        }
+    }
     let outcome = map.apply_msg(msg);
     if let MsgOutcome::Removed { key, .. } = &outcome {
         arrival_cancel(key);
@@ -224,7 +229,7 @@ pub(crate) fn draws_cursor(key: &str) -> bool {
 /// Empty key = anonymous (no session declared) → no cursor; the command is
 /// dropped so a cursor-less run never paints. See `tools::resolve_cursor_key`.
 pub fn send_command(key: CursorKey, cmd: OverlayCommand) {
-    if !draws_cursor(&key) {
+    if !draws_cursor(&key) || !crate::activity::allows_cursor(&key, &cmd) {
         return;
     }
     if let Some(tx) = CMD_TX.get() {
@@ -284,6 +289,7 @@ pub fn remove_cursor(key: CursorKey) {
     if key.is_empty() {
         return;
     }
+    crate::activity::remove(&key);
     if let Some(tx) = CMD_TX.get() {
         let _ = tx.try_send(OverlayMsg::Remove(key));
         wake_overlay();
@@ -304,6 +310,35 @@ pub fn revive_cursor(key: CursorKey) {
 
 /// Returns true if the cursor for `key` is currently enabled/visible. A session
 /// with no own cursor yet falls back to the seeded `"default"` cursor.
+pub(crate) fn available() -> bool {
+    CMD_TX.get().is_some()
+}
+/// Clear queued and currently displayed effects without disabling the next authorized action.
+pub(crate) fn clear_presentation(key: &str) {
+    if let Ok(mut render) = RENDER.lock() {
+        if let Some(map) = render.as_mut() {
+            #[cfg(target_os = "windows")]
+            if let Ok(receiver) = CMD_RX_WIN.lock() {
+                if let Some(receiver) = receiver.as_ref() {
+                    while let Ok(message) = receiver.try_recv() {
+                        if !matches!(&message,OverlayMsg::Cmd(command) if command.key==key) {
+                            apply_msg(map, message);
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(entry) = render.as_mut().and_then(|m| m.cursors.get_mut(key)) {
+            let mut config = entry.core.cfg.clone();
+            config.motion = entry.core.motion.clone();
+            let label = entry.core.session_label.clone();
+            *entry = RenderState::from_config(config);
+            entry.core.session_label = label;
+        }
+    }
+    arrival_cancel(&key.to_owned());
+    wake_overlay();
+}
 pub fn is_enabled(key: &str) -> bool {
     RENDER
         .lock()
@@ -484,12 +519,16 @@ pub fn run_on_thread() {
 
 struct RenderState {
     core: RenderStateCore,
+    playback: cursor_overlay::playback::Playback<OverlayCommand>,
+    clock: Instant,
 }
 
 impl RenderEntry for RenderState {
     fn from_config(cfg: CursorConfig) -> Self {
         RenderState {
             core: RenderStateCore::new(cfg),
+            playback: cursor_overlay::playback::Playback::default(),
+            clock: Instant::now(),
         }
     }
 
@@ -502,13 +541,64 @@ impl RenderEntry for RenderState {
     }
 
     fn apply_command(&mut self, cmd: OverlayCommand) -> bool {
-        // Windows uses the non-sentinel-snap behaviour for both MoveTo and
-        // ClickPulse: every command updates `self.pos` unconditionally.
-        // `ShowFocusRect` is not rendered on Windows — `apply_command_base`
-        // returns `false` for it and we silently drop it here.
+        let navigation = matches!(cmd, OverlayCommand::MoveTo { .. });
+        let dwell = match &cmd {
+            OverlayCommand::MoveTo { .. } => Some(180),
+            OverlayCommand::ClickPulse { .. } => Some(80),
+            OverlayCommand::BeginAction {
+                action:
+                    cursor_overlay::CursorAction::Text
+                    | cursor_overlay::CursorAction::Key
+                    | cursor_overlay::CursorAction::Scroll,
+                ..
+            } => Some(120),
+            OverlayCommand::BeginAction { .. }
+            | OverlayCommand::EndAction(_)
+            | OverlayCommand::SetPressed(_)
+            | OverlayCommand::ShowKeyCombo(_) => Some(0),
+            _ => None,
+        };
+        if let Some(dwell) = dwell {
+            self.playback.push(
+                self.clock.elapsed().as_millis() as u64,
+                cmd,
+                dwell,
+                navigation,
+            );
+            return true;
+        }
+        if matches!(cmd, OverlayCommand::SetEnabled(false)) {
+            self.playback.clear();
+        }
         self.core.apply_command_base(cmd, false, false)
     }
 
+    fn tick(&mut self, dt: f64) -> bool {
+        let now = self.clock.elapsed().as_millis() as u64;
+        for _ in 0..8 {
+            let Some(cmd) = self.playback.next(now) else {
+                break;
+            };
+            let motion = self.core.motion.glide_duration_ms;
+            if matches!(cmd, OverlayCommand::MoveTo { .. }) {
+                self.core.motion.glide_duration_ms =
+                    self.playback.remaining(now).clamp(1, 180) as f64;
+            }
+            self.core.apply_command_base(cmd, false, false);
+            self.core.motion.glide_duration_ms = motion;
+        }
+        if self.playback.is_empty() {
+            // A coalesced/dropped release cannot leave a held visual stuck forever.
+            self.core.pressed = false;
+            let action = self.core.visual.resolved_action;
+            self.core
+                .apply_command_base(OverlayCommand::EndAction(action), false, false);
+        }
+        self.core.tick_motion(dt)
+    }
+    fn needs_frame_tick(&self) -> bool {
+        !self.playback.is_empty() || self.core.needs_frame_tick()
+    }
     // `tick` (arrival on path end) and `needs_frame_tick` use the shared
     // defaults. The shared predicate keeps a revealed cursor with resting
     // motion (the float bob) at the ACTIVE cadence, and parks a reduced-motion
@@ -839,8 +929,8 @@ fn effect_dirty_rect(
 }
 
 #[cfg(target_os = "windows")]
-struct WinSurface {
-    pixmap: tiny_skia::Pixmap,
+pub(crate) struct WinSurface {
+    pub(crate) pixmap: tiny_skia::Pixmap,
     /// Memory DC with the DIB selected, stored as isize (HDC is !Send).
     hdc_mem: isize,
     /// The DIB section bitmap handle.
@@ -855,7 +945,7 @@ struct WinSurface {
 
 #[cfg(target_os = "windows")]
 impl WinSurface {
-    unsafe fn create(virt_x: i32, virt_y: i32, w: i32, h: i32) -> Option<WinSurface> {
+    pub(crate) unsafe fn create(virt_x: i32, virt_y: i32, w: i32, h: i32) -> Option<WinSurface> {
         use windows::Win32::Graphics::Gdi::*;
 
         let pixmap = tiny_skia::Pixmap::new(w.max(1) as u32, h.max(1) as u32)?;
@@ -898,6 +988,44 @@ impl WinSurface {
         })
     }
 
+    /// Present a protected source-sized activity surface. Shares the cursor's DIB allocation and swizzle path.
+    pub(crate) unsafe fn present_hud(&mut self, hwnd: windows::Win32::Foundation::HWND) -> bool {
+        use windows::Win32::Foundation::{COLORREF, POINT, SIZE};
+        use windows::Win32::Graphics::Gdi::{GetDC, ReleaseDC, BLENDFUNCTION, HDC};
+        use windows::Win32::UI::WindowsAndMessaging::{UpdateLayeredWindow, ULW_ALPHA};
+        self.swizzle_rect(DirtyRect {
+            x0: 0,
+            y0: 0,
+            x1: self.w,
+            y1: self.h,
+        });
+        let dc = GetDC(None);
+        let result = UpdateLayeredWindow(
+            hwnd,
+            dc,
+            Some(&POINT {
+                x: self.virt_x,
+                y: self.virt_y,
+            }),
+            Some(&SIZE {
+                cx: self.w,
+                cy: self.h,
+            }),
+            HDC(self.hdc_mem as *mut _),
+            Some(&POINT { x: 0, y: 0 }),
+            COLORREF(0),
+            Some(&BLENDFUNCTION {
+                BlendOp: 0,
+                BlendFlags: 0,
+                SourceConstantAlpha: 255,
+                AlphaFormat: 1,
+            }),
+            ULW_ALPHA,
+        )
+        .is_ok();
+        ReleaseDC(None, dc);
+        result
+    }
     /// Zero the pixmap pixels inside `r` (rect must already be clamped).
     fn clear_rect(&mut self, r: DirtyRect) {
         let w = self.w as usize;

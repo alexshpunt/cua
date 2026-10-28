@@ -52,6 +52,18 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 - Input schemas stay inside the JSON Schema subset that Vertex AI accepts.
 - `launch_app` can start a browser with remote debugging when the host sets `CUA_DRIVER_ALLOW_DEBUGGING_LAUNCH=1`. Pi Agent Computer Use sets it only in its YOLO mode and then attaches Playwright to that browser.
 
+## Native activity presentation
+
+The Windows source includes session-owned native activity presentation through `set_agent_visuals` and `present_agent_activity`. This feature requires a runtime built from this source; the release named above predates it.
+
+Input does not wait for cursor animation. Each session has bounded visual playback, with at most 32 pending commands and a 500 ms stale-event budget. Consecutive navigation coalesces and dense activity plays in compressed form. These presentation timings never change actual held input or timeline timing.
+
+Observation frames and operation-output thumbnails use the existing tiny-skia theme palette and typography. They live in separate input-transparent, nonactivating Win32 surfaces. Capture exclusion is permanent and must succeed before showing a surface; the cursor keeps its existing recorder-visibility policy on its own window. Window previews require exact HWND, PID, stamped lifetime property and DWM bounds, rechecked while visible. Display previews require exact current display identity and bounds. Unsupported protection or stale geometry suppresses the visual without changing capture or input.
+
+The default `full` preset enables a short-lived preview; `subtle` omits image previews and `off` clears presentation. Observation, preview, pointer, scroll/drag and keyboard categories are independent. Settings also include HUD opacity, performance/balanced/high cadence and reduced motion. Literal typed text is never part of the activity protocol. Images stay in memory, decode under a 64 MiB allocation limit, shrink to at most 240 by 160 pixels and expire after 1.2 seconds. At most four source surfaces are active, each bounded to 8 Mi physical pixels. No HTTP viewer or image archive is started.
+
+Activity generations reject stale events and invalidate older previews on clear. A queued receipt means admission only; it does not confirm visibility, input delivery or a verified effect. Source validation, image decoding and native rendering run on the presentation worker, outside the input/capture path.
+
 ## Upstream
 
 These changes are made for one consumer and tested on Windows 11 from WSL. Some of them could go upstream; none has been offered as a pull request yet.

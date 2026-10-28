@@ -829,6 +829,8 @@ pub fn default_capabilities_for(tool_name: &str) -> Vec<String> {
         "set_agent_cursor_motion" => &["agent_cursor.set_motion"],
         "set_agent_cursor_theme" => &["agent_cursor.set_theme"],
         "get_agent_cursor_state" => &["agent_cursor.state"],
+        "set_agent_visuals" => &["agent_visuals.configure"],
+        "present_agent_activity" => &["agent_visuals.present"],
 
         // ── recording / replay ───────────────────────────────────────
         "start_recording" => &["recording.start"],

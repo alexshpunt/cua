@@ -243,6 +243,8 @@ fn session_guidance_is_exempt(tool_name: &str) -> bool {
             | "set_agent_cursor_motion"
             | "set_agent_cursor_theme"
             | "get_agent_cursor_state"
+            | "set_agent_visuals"
+            | "present_agent_activity"
     )
 }
 

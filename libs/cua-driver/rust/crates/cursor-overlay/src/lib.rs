@@ -12,6 +12,7 @@
 //! - `SurfaceFit` — keeps each platform's overlay surface fitted to the live
 //!   display geometry, so screen-coordinate cursors stay on the pointer
 
+pub mod activity;
 pub mod badge_glyphs;
 pub mod badge_mode;
 pub mod bezier;
@@ -19,6 +20,7 @@ pub mod capture_exclusion;
 pub mod capture_utils;
 pub mod motion;
 pub mod motion_defaults;
+pub mod playback;
 pub mod render_map;
 pub mod render_state;
 pub mod session_badge;

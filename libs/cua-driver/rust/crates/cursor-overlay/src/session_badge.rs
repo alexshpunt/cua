@@ -77,7 +77,7 @@ pub const fn session_badge_extents() -> BadgeExtents {
     }
 }
 
-fn font() -> Option<&'static fontdue::Font> {
+pub(crate) fn font() -> Option<&'static fontdue::Font> {
     static FONT: OnceLock<Option<fontdue::Font>> = OnceLock::new();
     FONT.get_or_init(|| {
         fontdue::Font::from_bytes(
@@ -207,7 +207,7 @@ fn cap_height(font: &fontdue::Font, font_size: f32) -> f32 {
     metrics.height as f32 + metrics.ymin as f32
 }
 
-fn rounded_rect(rect: Rect, radius: f32) -> Option<Path> {
+pub(crate) fn rounded_rect(rect: Rect, radius: f32) -> Option<Path> {
     const K: f32 = 0.552_284_8;
     let x = rect.x();
     let y = rect.y();
