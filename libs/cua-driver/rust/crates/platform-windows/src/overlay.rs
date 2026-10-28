@@ -439,6 +439,7 @@ struct RenderState {
     core: RenderStateCore,
     playback: cursor_overlay::playback::Playback<OverlayCommand>,
     elapsed_ms: f64,
+    held_until_ms: Option<f64>,
 }
 
 impl RenderEntry for RenderState {
@@ -447,6 +448,7 @@ impl RenderEntry for RenderState {
             core: RenderStateCore::new(cfg),
             playback: cursor_overlay::playback::Playback::default(),
             elapsed_ms: 0.0,
+            held_until_ms: None,
         }
     }
 
@@ -459,6 +461,9 @@ impl RenderEntry for RenderState {
     }
 
     fn apply_command(&mut self, cmd: OverlayCommand) -> bool {
+        if self.core.pressed && matches!(cmd, OverlayCommand::SnapTo { .. }) {
+            self.held_until_ms = Some(self.elapsed_ms + 30_000.0);
+        }
         let navigation = matches!(cmd, OverlayCommand::MoveTo { .. });
         let dwell = match &cmd {
             OverlayCommand::MoveTo { .. } => Some(180),
@@ -503,15 +508,25 @@ impl RenderEntry for RenderState {
                 self.core.motion.glide_duration_ms =
                     self.playback.remaining(now).clamp(1, 180) as f64;
             }
+            match &cmd {
+                // A separate safety lease covers lost releases; queue emptiness says nothing about a real hold.
+                // Native drag/held paths are bounded to 10 seconds and tracking refreshes this lease.
+                OverlayCommand::SetPressed(true) => {
+                    self.held_until_ms = Some(self.elapsed_ms + 30_000.0)
+                }
+                OverlayCommand::SetPressed(false) => self.held_until_ms = None,
+                _ => {}
+            }
             self.core.apply_command_base(cmd, false, false);
             self.core.motion.glide_duration_ms = motion;
         }
-        if self.playback.is_empty() {
-            // A coalesced/dropped release cannot leave a held visual stuck forever.
-            self.core.pressed = false;
-            let action = self.core.visual.resolved_action;
+        if self
+            .held_until_ms
+            .is_some_and(|deadline| self.elapsed_ms >= deadline)
+        {
+            self.held_until_ms = None;
             self.core
-                .apply_command_base(OverlayCommand::EndAction(action), false, false);
+                .apply_command_base(OverlayCommand::SetPressed(false), false, false);
         }
         self.core.tick_motion(dt.clamp(0.0, 0.05))
     }

@@ -1001,7 +1001,7 @@ fn rect_is_valid(rect: RECT) -> bool {
     rect.right > rect.left && rect.bottom > rect.top
 }
 
-fn window_is_cloaked(hwnd: HWND) -> bool {
+pub(crate) fn window_is_cloaked(hwnd: HWND) -> bool {
     let mut cloaked = 0u32;
     unsafe {
         DwmGetWindowAttribute(

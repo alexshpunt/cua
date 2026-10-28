@@ -3,18 +3,48 @@
 use cursor_overlay::activity::{ActivityEvent, ActivityKind, VisualSettings};
 use cursor_overlay::{CursorAction, OverlayCommand};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
+#[cfg(test)]
+use std::time::Duration;
+use std::time::Instant;
 
+// The worker carries one ticket from admission through its final commit.
+struct Work {
+    event: ActivityEvent,
+    admitted: Instant,
+    epoch: u64,
+}
+
+impl Work {
+    fn ready(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.admitted).as_millis() < 250
+    }
+}
 const MAX_SESSIONS: usize = 64;
 const MAX_PENDING_SOURCES: usize = 4;
 #[derive(Default)]
 struct Session {
     settings: VisualSettings,
     generation: u64,
-    pending: Option<ActivityEvent>,
+    epoch: u64,
+    commit: Arc<Mutex<()>>,
+    pending: Option<Work>,
     ended: bool,
 }
 impl Session {
+    fn current(&self, work: &Work, now: Instant) -> bool {
+        !self.ended
+            && self.generation == work.event.generation
+            && self.epoch == work.epoch
+            && now.saturating_duration_since(work.admitted).as_millis()
+                < u128::from(cursor_overlay::activity::TTL_MS)
+            && event_allowed(&self.settings, &work.event)
+    }
+    fn set_settings(&mut self, settings: VisualSettings) {
+        self.epoch = self.epoch.wrapping_add(1);
+        self.settings = settings;
+        self.pending = None;
+    }
     fn advance(&mut self, generation: u64) -> bool {
         if self.ended || generation <= self.generation {
             return false;
@@ -23,6 +53,7 @@ impl Session {
         true
     }
     fn end(&mut self) {
+        self.epoch = self.epoch.wrapping_add(1);
         self.pending = None;
         self.generation = self.generation.saturating_add(1);
         self.ended = true;
@@ -40,6 +71,48 @@ fn state() -> &'static Mutex<State> {
     STATE.get_or_init(|| Mutex::new(State::default()))
 }
 
+fn session_gate(key: &str) -> Result<Arc<Mutex<()>>, &'static str> {
+    let mut state = state().lock().map_err(|_| "visual_state_unavailable")?;
+    if state.sessions.len() >= MAX_SESSIONS && !state.sessions.contains_key(key) {
+        return Err("visual_session_budget");
+    }
+    Ok(state
+        .sessions
+        .entry(key.to_owned())
+        .or_default()
+        .commit
+        .clone())
+}
+
+fn event_allowed(settings: &VisualSettings, event: &ActivityEvent) -> bool {
+    settings.enabled()
+        && if event.kind == ActivityKind::Action {
+            match event.action.as_deref() {
+                Some("type_text" | "type" | "fill" | "press_key" | "hotkey" | "keypress") => {
+                    settings.keyboard
+                }
+                Some("scroll" | "scroll_at" | "drag" | "input_timeline") => settings.scroll_drag,
+                _ => settings.pointer,
+            }
+        } else {
+            settings.observations
+        }
+}
+
+fn with_current<T>(key: &str, work: &Work, commit: impl FnOnce(VisualSettings) -> T) -> Option<T> {
+    let gate = state().lock().ok()?.sessions.get(key)?.commit.clone();
+    let _commit = gate.lock().ok()?;
+    // Never retain STATE while painting or enqueueing: input only reads that short-lived lock.
+    let settings = {
+        let state = state().lock().ok()?;
+        let session = state.sessions.get(key)?;
+        session
+            .current(work, Instant::now())
+            .then(|| session.settings.clone())?
+    };
+    Some(commit(settings))
+}
+
 pub fn settings(key: &str) -> VisualSettings {
     state()
         .lock()
@@ -52,10 +125,9 @@ pub fn configure(key: &str, patch: serde_json::Value) -> Result<VisualSettings, 
     if key.is_empty() || !crate::overlay::draws_cursor(key) {
         return Err("visual_session_unavailable");
     }
+    let gate = session_gate(key)?;
+    let _commit = gate.lock().map_err(|_| "visual_state_unavailable")?;
     let mut state = state().lock().map_err(|_| "visual_state_unavailable")?;
-    if state.sessions.len() >= MAX_SESSIONS && !state.sessions.contains_key(key) {
-        return Err("visual_session_budget");
-    }
     let session = state.sessions.entry(key.to_owned()).or_default();
     let mut value = serde_json::to_value(&session.settings).map_err(|_| "invalid_settings")?;
     let object = patch.as_object().ok_or("invalid_settings")?;
@@ -78,11 +150,9 @@ pub fn configure(key: &str, patch: serde_json::Value) -> Result<VisualSettings, 
     if !settings.validate() {
         return Err("invalid_settings");
     }
-    session.settings = settings.clone();
-    if !settings.enabled() {
-        session.pending = None;
-    }
+    session.set_settings(settings.clone());
     drop(state);
+    let cleared = clear_native(key);
     crate::overlay::send_command(
         key.to_owned(),
         OverlayCommand::SetEnabled(settings.enabled()),
@@ -101,6 +171,7 @@ pub fn configure(key: &str, patch: serde_json::Value) -> Result<VisualSettings, 
         },
     );
     wake();
+    cleared?;
     Ok(settings)
 }
 
@@ -146,24 +217,23 @@ pub fn allows_cursor(key: &str, command: &OverlayCommand) -> bool {
             ..
         }
         | OverlayCommand::EndAction(CursorAction::Observe) => settings.observations,
-        OverlayCommand::MoveTo { .. }
-        | OverlayCommand::SnapTo { .. }
-        | OverlayCommand::ClickPulse { .. }
-        | OverlayCommand::SetPressed(_) => settings.pointer,
+        // Native drag tracking uses immediate positions and a balanced visual press.
+        OverlayCommand::SnapTo { .. } | OverlayCommand::SetPressed(_) => settings.scroll_drag,
+        OverlayCommand::MoveTo { .. } | OverlayCommand::ClickPulse { .. } => settings.pointer,
         _ => true,
     }
 }
 
 /// Admission only. Image decode, native validation and painting happen on the worker.
 pub fn present(key: &str, event: ActivityEvent) -> Result<&'static str, &'static str> {
+    let admitted = Instant::now();
     event.validate()?;
     if !crate::overlay::draws_cursor(key) || !crate::overlay::available() {
         return Err("visual_session_unavailable");
     }
+    let gate = session_gate(key)?;
+    let _commit = gate.lock().map_err(|_| "visual_state_unavailable")?;
     let mut state = state().lock().map_err(|_| "visual_state_unavailable")?;
-    if state.sessions.len() >= MAX_SESSIONS && !state.sessions.contains_key(key) {
-        return Err("visual_session_budget");
-    }
     let count = state
         .sessions
         .values()
@@ -179,11 +249,11 @@ pub fn present(key: &str, event: ActivityEvent) -> Result<&'static str, &'static
     if event.kind == ActivityKind::Clear || !session.settings.enabled() {
         session.pending = None;
         drop(state);
-        crate::overlay::clear_presentation(key);
+        clear_native(key)?;
         wake();
         return Ok("cleared");
     }
-    if !session.settings.observations && event.kind != ActivityKind::Action {
+    if !event_allowed(&session.settings, &event) {
         return Ok("disabled");
     }
     if count >= MAX_PENDING_SOURCES && session.pending.is_none() {
@@ -193,7 +263,11 @@ pub fn present(key: &str, event: ActivityEvent) -> Result<&'static str, &'static
     if !session.settings.previews() {
         event.image = None;
     }
-    session.pending = Some(event);
+    session.pending = Some(Work {
+        event,
+        admitted,
+        epoch: session.epoch,
+    });
     drop(state);
     #[cfg(target_os = "windows")]
     {
@@ -207,19 +281,56 @@ pub fn present(key: &str, event: ActivityEvent) -> Result<&'static str, &'static
     }
 }
 
+/// Called with the session commit gate held, after state invalidation.
+fn clear_native(key: &str) -> Result<(), &'static str> {
+    crate::overlay::clear_presentation(key);
+    #[cfg(target_os = "windows")]
+    native::hide(key)?;
+    Ok(())
+}
 pub fn remove(key: &str) {
+    let Some(gate) = state()
+        .lock()
+        .ok()
+        .and_then(|s| s.sessions.get(key).map(|s| s.commit.clone()))
+    else {
+        return;
+    };
+    let Ok(_commit) = gate.lock() else { return };
     if let Ok(mut state) = state().lock() {
         if let Some(session) = state.sessions.get_mut(key) {
             session.end();
         }
     }
+    if let Err(reason) = clear_native(key) {
+        tracing::warn!(reason, "Native HUD cleanup was unavailable");
+    }
     wake();
 }
 pub fn revive(key: &str) {
+    let Some(gate) = state()
+        .lock()
+        .ok()
+        .and_then(|s| s.sessions.get(key).map(|s| s.commit.clone()))
+    else {
+        return;
+    };
+    let Ok(_commit) = gate.lock() else { return };
     if let Ok(mut state) = state().lock() {
         if let Some(session) = state.sessions.get_mut(key) {
             session.revive();
         }
+    }
+}
+/// The native operation owns completion; presentation has no delivery authority.
+pub(crate) async fn alongside_presentation<T>(
+    operation: impl std::future::Future<Output = T>,
+    presentation: impl std::future::Future<Output = ()>,
+) -> T {
+    tokio::pin!(operation);
+    tokio::select! {
+        result = &mut operation => result,
+        () = presentation => operation.await,
     }
 }
 #[cfg(target_os = "windows")]

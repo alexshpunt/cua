@@ -345,10 +345,9 @@ async fn track_overlay_drag(
     if key.is_empty() || !crate::overlay::is_enabled(&key) {
         return;
     }
-    crate::overlay::send_command(
-        key.clone(),
-        cursor_overlay::OverlayCommand::SetPressed(true),
-    );
+    let _pressed = cursor_overlay::PressedVisualGuard::new(|command| {
+        crate::overlay::send_command(key.clone(), command);
+    });
     let steps = steps.max(1);
     let step_delay = std::time::Duration::from_millis(duration_ms / steps as u64);
     for index in 0..=steps {
@@ -360,7 +359,7 @@ async fn track_overlay_drag(
             tokio::time::sleep(step_delay).await;
         }
     }
-    crate::overlay::send_command(key, cursor_overlay::OverlayCommand::SetPressed(false));
+    // The guard releases artwork on native completion, cancellation or normal end.
 }
 use cua_driver_contract::{
     ClickButton, DragInput, GetCursorPositionInput, GetDesktopStateInput, GetScreenSizeInput,
@@ -8178,7 +8177,8 @@ impl Tool for DragTool {
                 duration_ms,
                 steps,
             );
-            let (native_drag, ()) = tokio::join!(native_drag, visual_drag);
+            let native_drag =
+                crate::activity::alongside_presentation(native_drag, visual_drag).await;
             return match native_drag {
                 Ok(Ok(())) => ToolResult::text(format!(
                     "Dragged from ({from_x}, {from_y}) to ({to_x}, {to_y}) (scope:desktop)."
@@ -8358,7 +8358,7 @@ impl Tool for DragTool {
                 duration_ms,
                 steps,
             );
-            let (inj, ()) = tokio::join!(inj, visual_drag);
+            let inj = crate::activity::alongside_presentation(inj, visual_drag).await;
             return match inj {
                 Ok(Ok(())) => ToolResult::text(format!(
                     "✅ Sent drag via synthetic-pen injection on pid {raw_pid} \
@@ -8401,7 +8401,8 @@ impl Tool for DragTool {
                 duration_ms,
                 steps,
             );
-            let (send_result, ()) = tokio::join!(send_result, visual_drag);
+            let send_result =
+                crate::activity::alongside_presentation(send_result, visual_drag).await;
             let button_suffix = if button == "left" {
                 String::new()
             } else {
@@ -8486,7 +8487,7 @@ impl Tool for DragTool {
             duration_ms,
             steps,
         );
-        let (result, ()) = tokio::join!(result, visual_drag);
+        let result = crate::activity::alongside_presentation(result, visual_drag).await;
 
         match result {
             Ok(Ok(())) => {
@@ -8826,15 +8827,23 @@ impl Tool for MoveCursorTool {
         // `AgentCursor.animateAndWait(endAngleDegrees: 45)` convention so
         // the cursor settles to the natural macOS-style pose.
         // The cursor is presentation only; a producer never waits for its glide.
-        crate::overlay::send_command(cursor_key.clone(), cursor_overlay::OverlayCommand::MoveTo {
-            x, y, end_heading_radians: std::f64::consts::FRAC_PI_4, target: None,
-        });
+        crate::overlay::send_command(
+            cursor_key.clone(),
+            cursor_overlay::OverlayCommand::MoveTo {
+                x,
+                y,
+                end_heading_radians: std::f64::consts::FRAC_PI_4,
+                target: None,
+            },
+        );
         let shown = if cursor_key.is_empty() {
             "default"
         } else {
             cursor_key.as_str()
         };
-        ToolResult::text(format!("Agent cursor '{shown}' movement queued to ({x:.1}, {y:.1})."))
+        ToolResult::text(format!(
+            "Agent cursor '{shown}' movement queued to ({x:.1}, {y:.1})."
+        ))
     }
 }
 

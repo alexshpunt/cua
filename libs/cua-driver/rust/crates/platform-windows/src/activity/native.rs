@@ -1,4 +1,4 @@
-//! Protected native HUD surfaces. Each is owned and destroyed on this one worker thread.
+//! Protected HUD windows are created/destroyed on one thread; decode runs separately.
 
 use super::*;
 use crate::overlay::{WinSurface, WinZOrderEnforcer};
@@ -15,15 +15,51 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::*;
 
 const MAX_SURFACE_PIXELS: u64 = 8 * 1024 * 1024;
+// This lock protects HWND lifetime, not input or pixel preparation. Invalidation
+// revokes a surface's global alpha; destruction stays on the owner thread.
+static HUDS: OnceLock<Mutex<HashMap<String, isize>>> = OnceLock::new();
+fn huds() -> &'static Mutex<HashMap<String, isize>> {
+    HUDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+pub(super) fn hide(key: &str) -> Result<(), &'static str> {
+    let Some(registry) = HUDS.get() else {
+        return Ok(());
+    };
+    let registry = registry.lock().map_err(|_| "visual_state_unavailable")?;
+    let Some(&raw) = registry.get(key) else {
+        return Ok(());
+    };
+    unsafe {
+        // A revoked surface is never uploaded again. Windows deliberately rejects
+        // later UpdateLayeredWindow calls after this global-alpha operation.
+        SetLayeredWindowAttributes(
+            HWND(raw as *mut _),
+            windows::Win32::Foundation::COLORREF(0),
+            0,
+            LWA_ALPHA,
+        )
+        .map_err(|_| "native_hud_clear_failed")?;
+        DwmFlush().map_err(|_| "native_hud_clear_failed")?;
+    }
+    Ok(())
+}
 struct Active {
+    key: String,
     hwnd: HWND,
     surface: WinSurface,
-    event: ActivityEvent,
+    work: Work,
     preview: Option<tiny_skia::Pixmap>,
-    born: Instant,
+    cued: bool,
 }
 impl Drop for Active {
     fn drop(&mut self) {
+        // Recovery keeps cleanup possible if another cleanup operation panicked.
+        let mut registry = huds()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if registry.get(&self.key) == Some(&(self.hwnd.0 as isize)) {
+            registry.remove(&self.key);
+        }
         unsafe {
             let _ = ShowWindow(self.hwnd, SW_HIDE);
             let _ = DestroyWindow(self.hwnd);
@@ -58,6 +94,7 @@ fn source_valid(source: &ActivitySource) -> bool {
             if !IsWindow(hwnd).as_bool()
                 || !IsWindowVisible(hwnd).as_bool()
                 || IsIconic(hwnd).as_bool()
+                || crate::uia::windows_enum::window_is_cloaked(hwnd)
             {
                 return false;
             }
@@ -106,8 +143,42 @@ unsafe extern "system" fn procedure(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) 
         _ => DefWindowProcW(hwnd, msg, w, l),
     }
 }
-fn create(class: &[u16], event: ActivityEvent, settings: &VisualSettings) -> Option<Active> {
-    let source = event.source.as_ref()?;
+struct Prepared {
+    key: String,
+    work: Work,
+    preview: Option<tiny_skia::Pixmap>,
+}
+fn prepare(key: String, mut work: Work, settings: VisualSettings) -> Option<Prepared> {
+    if !work.ready(Instant::now())
+        || with_current(&key, &work, |_| ()).is_none()
+        || !source_valid(work.event.source.as_ref()?)
+    {
+        return None;
+    }
+    let bounds = work.event.source.as_ref()?.bounds();
+    if u64::from(bounds.width) * u64::from(bounds.height) > MAX_SURFACE_PIXELS {
+        return None;
+    }
+    if !work.ready(Instant::now()) {
+        return None;
+    }
+    let preview = if settings.previews() {
+        work.event.image.as_ref().and_then(decode_preview)
+    } else {
+        None
+    };
+    work.event.image = None;
+    if !work.ready(Instant::now()) || with_current(&key, &work, |_| ()).is_none() {
+        return None;
+    }
+    Some(Prepared { key, work, preview })
+}
+fn create(class: &[u16], prepared: Prepared) -> Option<Active> {
+    let Prepared { key, work, preview } = prepared;
+    if !work.ready(Instant::now()) {
+        return None;
+    }
+    let source = work.event.source.as_ref()?;
     if !source_valid(source) {
         return None;
     }
@@ -115,14 +186,6 @@ fn create(class: &[u16], event: ActivityEvent, settings: &VisualSettings) -> Opt
     if u64::from(b.width) * u64::from(b.height) > MAX_SURFACE_PIXELS {
         return None;
     }
-    // Sensitive image decode occurs only after trusted source validation and never on the tool thread.
-    let preview = if settings.previews() {
-        event.image.as_ref().and_then(decode_preview)
-    } else {
-        None
-    };
-    let mut event = event;
-    event.image = None;
     unsafe {
         let instance = GetModuleHandleW(PCWSTR::null()).ok()?;
         let hwnd = CreateWindowExW(
@@ -159,12 +222,17 @@ fn create(class: &[u16], event: ActivityEvent, settings: &VisualSettings) -> Opt
                 return None;
             }
         };
+        huds()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(key.clone(), hwnd.0 as isize);
         Some(Active {
+            key,
             hwnd,
             surface,
-            event,
+            work,
             preview,
-            born: Instant::now(),
+            cued: false,
         })
     }
 }
@@ -190,8 +258,9 @@ fn cue(key: &str, event: &ActivityEvent) {
         },
     );
     if let Some(p) = event.point {
-        crate::overlay::send_command(
-            key.to_owned(),
+        let command = if matches!(action, CursorAction::Scroll | CursorAction::Drag) {
+            cursor_overlay::track_pointer_command(f64::from(p.x), f64::from(p.y))
+        } else {
             OverlayCommand::MoveTo {
                 x: f64::from(p.x),
                 y: f64::from(p.y),
@@ -204,8 +273,9 @@ fn cue(key: &str, event: &ActivityEvent) {
                         f64::from(r.height),
                     ]
                 }),
-            },
-        );
+            }
+        };
+        crate::overlay::send_command(key.to_owned(), command);
         if action == CursorAction::Click {
             crate::overlay::send_command(
                 key.to_owned(),
@@ -245,12 +315,15 @@ pub(super) fn run(rx: Receiver<()>) {
         RegisterClassExW(&window_class);
     }
     let mut active: HashMap<String, Active> = HashMap::new();
+    // At most one bounded image decode is in flight. It must never monopolize
+    // the window-owner loop that expires and destroys already-visible surfaces.
+    let mut preparing: Option<std::thread::JoinHandle<Option<Prepared>>> = None;
     loop {
         let interval = active
             .keys()
             .map(|key| settings(key).frame_ms())
             .min()
-            .unwrap_or(250);
+            .unwrap_or(if preparing.is_some() { 16 } else { 250 });
         match rx.recv_timeout(Duration::from_millis(interval)) {
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
             _ => {}
@@ -262,120 +335,160 @@ pub(super) fn run(rx: Receiver<()>) {
                 DispatchMessageW(&message);
             }
         }
-        let pending = {
-            let Ok(mut state) = state().lock() else {
-                return;
-            };
-            active.retain(|key, item| {
-                state.sessions.get(key).is_some_and(|s| {
-                    s.generation == item.event.generation
-                        && s.settings.enabled()
-                        && (s.settings.observations || item.event.kind == ActivityKind::Action)
-                }) && item.born.elapsed().as_millis() < u128::from(TTL_MS)
-            });
-            state
-                .sessions
-                .iter_mut()
-                .filter_map(|(key, s)| {
-                    s.pending
-                        .take()
-                        .map(|event| (key.clone(), event, s.settings.clone()))
-                })
-                .collect::<Vec<_>>()
-        };
-        for (key, event, settings) in pending {
-            // Replace only this session's previous image. A failed/stale replacement must not retain it.
-            active.remove(&key);
-            if !settings.enabled() {
-                continue;
-            }
-            if active.len() >= MAX_PENDING_SOURCES {
-                if let Some(oldest) = active
-                    .iter()
-                    .min_by_key(|(_, v)| v.born)
-                    .map(|(k, _)| k.clone())
+        active.retain(|key, item| with_current(key, &item.work, |_| ()).is_some());
+        if preparing.as_ref().is_some_and(|job| job.is_finished()) {
+            if let Some(Ok(Some(prepared))) = preparing.take().map(|job| job.join()) {
+                let key = prepared.key.clone();
+                if prepared.work.ready(Instant::now())
+                    && with_current(&key, &prepared.work, |_| ()).is_some()
                 {
-                    active.remove(&oldest);
-                }
-            }
-            if let Some(item) = create(&class, event, &settings) {
-                let current = state().lock().ok().is_some_and(|s| {
-                    s.sessions.get(&key).is_some_and(|s| {
-                        s.generation == item.event.generation && s.settings.enabled()
-                    })
-                });
-                if current {
-                    cue(&key, &item.event);
-                    active.insert(key, item);
+                    active.remove(&key);
+                    if active.len() >= MAX_PENDING_SOURCES {
+                        if let Some(oldest) = active
+                            .iter()
+                            .min_by_key(|(_, v)| v.work.admitted)
+                            .map(|(k, _)| k.clone())
+                        {
+                            active.remove(&oldest);
+                        }
+                    }
+                    if let Some(item) = create(&class, prepared) {
+                        active.insert(key, item);
+                    }
                 }
             }
         }
-        active.retain(|key, item| {
-            let Some(source) = item.event.source.as_ref() else {
-                return false;
+        if preparing.is_none() {
+            let next = {
+                let Ok(mut state) = state().lock() else {
+                    return;
+                };
+                let now = Instant::now();
+                for session in state.sessions.values_mut() {
+                    if session
+                        .pending
+                        .as_ref()
+                        .is_some_and(|work| !work.ready(now) || !session.current(work, now))
+                    {
+                        session.pending = None;
+                    }
+                }
+                let key = state
+                    .sessions
+                    .iter()
+                    .filter_map(|(key, session)| {
+                        session
+                            .pending
+                            .as_ref()
+                            .map(|work| (key.clone(), work.admitted))
+                    })
+                    .max_by_key(|(_, admitted)| *admitted)
+                    .map(|(key, _)| key);
+                key.and_then(|key| {
+                    let session = state.sessions.get_mut(&key)?;
+                    Some((key, session.pending.take()?, session.settings.clone()))
+                })
             };
-            if !source_valid(source) {
-                return false;
-            }
-            let settings = settings(key);
-            if !settings.enabled()
-                || (!settings.observations && item.event.kind != ActivityKind::Action)
-            {
-                return false;
-            }
-            if item.event.kind == ActivityKind::Action {
-                let allowed = match item.event.action.as_deref() {
-                    Some("type_text" | "type" | "fill" | "press_key" | "hotkey" | "keypress") => {
-                        settings.keyboard
+            if let Some((key, work, settings)) = next {
+                preparing = match std::thread::Builder::new()
+                    .name("cua-preview-prepare".into())
+                    .spawn(move || prepare(key, work, settings))
+                {
+                    Ok(job) => Some(job),
+                    Err(error) => {
+                        tracing::warn!(%error, "Native preview preparation was unavailable");
+                        None
                     }
-                    Some("scroll" | "scroll_at" | "drag" | "input_timeline") => {
-                        settings.scroll_drag
-                    }
-                    _ => settings.pointer,
                 };
-                if !allowed {
-                    return false;
-                }
             }
-            if !settings.previews() {
-                item.preview = None;
-            }
-            item.surface.pixmap.fill(tiny_skia::Color::TRANSPARENT);
-            paint_activity(
-                &mut item.surface.pixmap,
-                &item.event,
-                item.preview.as_ref(),
-                &settings,
-                item.born.elapsed().as_millis() as u64,
-                cursor_overlay::session_fill_rgba(key),
-            );
-            unsafe {
-                if !item.surface.present_hud(item.hwnd) {
+        }
+        active.retain(|key, item| {
+            let Active {
+                hwnd,
+                surface,
+                work,
+                preview,
+                cued,
+                ..
+            } = item;
+            // This barrier spans the final check, pixels and cursor cues. Invalidation
+            // waits for this commit, then clears any effects it enqueued.
+            with_current(key, work, |settings| {
+                let Some(source) = work.event.source.as_ref() else {
                     return false;
-                }
-                let previous = GetForegroundWindow();
-                let target = match source {
-                    ActivitySource::Window { window_id, .. } => {
-                        let root = GetAncestor(HWND(*window_id as *mut _), GA_ROOT);
-                        Some(if root.0.is_null() {
-                            *window_id
-                        } else {
-                            root.0 as u64
-                        })
-                    }
-                    _ => None,
                 };
-                // Reuse the cursor's nonactivating z-order policy, including
-                // topmost demotion and stable self-sibling handling.
-                WinZOrderEnforcer {
-                    hwnd_isize: item.hwnd.0 as isize,
-                }
-                .reassert(target);
-                if GetForegroundWindow() != previous {
+                if !source_valid(source) {
                     return false;
                 }
-            }
-            true
+                if !settings.previews() {
+                    *preview = None;
+                }
+                surface.pixmap.fill(tiny_skia::Color::TRANSPARENT);
+                paint_activity(
+                    &mut surface.pixmap,
+                    &work.event,
+                    preview.as_ref(),
+                    &settings,
+                    work.admitted.elapsed().as_millis() as u64,
+                    cursor_overlay::session_fill_rgba(key),
+                );
+                let now = Instant::now();
+                if (!*cued && !work.ready(now))
+                    || now.saturating_duration_since(work.admitted).as_millis()
+                        >= u128::from(TTL_MS)
+                {
+                    return false;
+                }
+                unsafe {
+                    if !surface.present_hud(*hwnd) {
+                        return false;
+                    }
+                    let previous = GetForegroundWindow();
+                    let target = match source {
+                        ActivitySource::Window { window_id, .. } => {
+                            let root = GetAncestor(HWND(*window_id as *mut _), GA_ROOT);
+                            Some(if root.0.is_null() {
+                                *window_id
+                            } else {
+                                root.0 as u64
+                            })
+                        }
+                        _ => None,
+                    };
+                    // Upload/swizzle may be expensive. Revalidate immediately
+                    // before showing the hidden surface or claiming a cursor cue.
+                    if !source_valid(source) {
+                        return false;
+                    }
+                    let now = Instant::now();
+                    if (!*cued && !work.ready(now))
+                        || now.saturating_duration_since(work.admitted).as_millis()
+                            >= u128::from(TTL_MS)
+                    {
+                        return false;
+                    }
+                    WinZOrderEnforcer {
+                        hwnd_isize: hwnd.0 as isize,
+                    }
+                    .reassert(target);
+                    if GetForegroundWindow() != previous {
+                        return false;
+                    }
+                }
+                let now = Instant::now();
+                if (!*cued && !work.ready(now))
+                    || now.saturating_duration_since(work.admitted).as_millis()
+                        >= u128::from(TTL_MS)
+                {
+                    return false;
+                }
+                if !*cued {
+                    cue(key, &work.event);
+                    *cued = true;
+                }
+                true
+            })
+            .unwrap_or(false)
         });
     }
 }
