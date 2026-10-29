@@ -318,6 +318,9 @@ pub enum RefusalCode {
     BrowserActionUnavailable,
     ModifiedPointerUnavailable,
     WindowMinimized,
+    ElementNotVisible,
+    ForegroundUnavailable,
+    PointerTargetOccluded,
 }
 
 impl RefusalCode {
@@ -344,6 +347,9 @@ impl RefusalCode {
             "browser_action_unavailable" => Some(Self::BrowserActionUnavailable),
             "modified_pointer_unavailable" => Some(Self::ModifiedPointerUnavailable),
             "window_minimized" => Some(Self::WindowMinimized),
+            "element_not_visible" => Some(Self::ElementNotVisible),
+            "foreground_unavailable" => Some(Self::ForegroundUnavailable),
+            "pointer_target_occluded" => Some(Self::PointerTargetOccluded),
             _ => None,
         }
     }
@@ -589,28 +595,38 @@ impl CaseSpec {
             let desktop_modifier_refusal = self.delivery == Delivery::Foreground
                 && self.scope == Scope::Desktop
                 && allowed_codes == &[RefusalCode::ModifiedPointerUnavailable];
+            // A coordinate-routed foreground pointer action whose target cannot
+            // be brought over a covering window must refuse before dispatch.
+            // The covering window's journal proves nothing leaked into it.
+            let covered_target_refusal = self.delivery == Delivery::Foreground
+                && self.scope == Scope::Window
+                && self.driver_route == DriverRoute::WindowsSendInput
+                && (allowed_codes == &[RefusalCode::ForegroundUnavailable]
+                    || allowed_codes == &[RefusalCode::PointerTargetOccluded]);
             if self.delivery != Delivery::Background
                 && !exact_activation_refusal
                 && !desktop_modifier_refusal
+                && !covered_target_refusal
             {
                 return Err(format!(
-                    "{}: only background delivery, exact-window activation, or a desktop modified-pointer limitation may declare refusal",
+                    "{}: only background delivery, exact-window activation, a covered foreground target, or a desktop modified-pointer limitation may declare refusal",
                     self.cell_id
                 ));
             }
             if allowed_codes.is_empty() {
                 return Err(format!("{}: refusal has no allowed code", self.cell_id));
             }
-            let required_oracles: &[OracleKind] =
-                if exact_activation_refusal || desktop_modifier_refusal {
-                    &[OracleKind::FixtureState]
-                } else {
-                    &[
-                        OracleKind::Focus,
-                        OracleKind::ZOrder,
-                        OracleKind::NoLeakedInput,
-                    ]
-                };
+            let required_oracles: &[OracleKind] = if covered_target_refusal {
+                &[OracleKind::FixtureState, OracleKind::NoLeakedInput]
+            } else if exact_activation_refusal || desktop_modifier_refusal {
+                &[OracleKind::FixtureState]
+            } else {
+                &[
+                    OracleKind::Focus,
+                    OracleKind::ZOrder,
+                    OracleKind::NoLeakedInput,
+                ]
+            };
             for required in required_oracles {
                 if !self.oracles.contains(required) {
                     return Err(format!(
@@ -2357,6 +2373,67 @@ mod tests {
             Some(RefusalCode::BackgroundUnavailable)
         );
         assert_eq!(RefusalCode::from_driver_code("background_timeout"), None);
+    }
+
+    #[test]
+    fn covered_pointer_refusal_requires_exact_code_and_both_side_effect_oracles() {
+        let code = RefusalCode::from_driver_code("pointer_target_occluded")
+            .expect("the pointer occlusion refusal must be classified");
+        assert_eq!(
+            serde_json::to_value(code).unwrap(),
+            "pointer_target_occluded"
+        );
+        let mut case = native_foreground_case(
+            "wpf",
+            "slider_drag_topmost_cover",
+            Targeting::Px,
+            DriverRoute::WindowsSendInput,
+        )
+        .expecting_refusal(vec![code]);
+        case.oracles = vec![OracleKind::FixtureState, OracleKind::NoLeakedInput];
+        case.validate().unwrap();
+        let observation =
+            |code, oracles| Observation::refused(code, oracles, "", Evidence::default());
+        let evaluate = |case, code, oracles| {
+            CaseResult::evaluate(case, observation(code, oracles), Duration::from_millis(1))
+        };
+        assert_eq!(
+            evaluate(case.clone(), code, case.oracles.clone()).test_status,
+            TestStatus::Pass
+        );
+        assert_eq!(
+            evaluate(
+                case.clone(),
+                RefusalCode::ForegroundUnavailable,
+                case.oracles.clone(),
+            )
+            .test_status,
+            TestStatus::Fail
+        );
+        for missing in [OracleKind::FixtureState, OracleKind::NoLeakedInput] {
+            let oracles = case
+                .oracles
+                .iter()
+                .copied()
+                .filter(|o| *o != missing)
+                .collect();
+            assert_eq!(
+                evaluate(case.clone(), code, oracles).test_status,
+                TestStatus::Fail
+            );
+            let mut invalid = case.clone();
+            invalid.oracles.retain(|o| *o != missing);
+            assert!(invalid.validate().is_err());
+        }
+        for (scope, route) in [
+            (Scope::Desktop, DriverRoute::WindowsSendInput),
+            (Scope::Window, DriverRoute::WindowState),
+        ] {
+            let mut invalid = case.clone();
+            invalid.scope = scope;
+            invalid.driver_route = route;
+            assert!(invalid.validate().is_err());
+        }
     }
 
     #[test]

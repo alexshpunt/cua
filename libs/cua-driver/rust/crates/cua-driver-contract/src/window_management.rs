@@ -76,6 +76,7 @@ fn size_schema(_: &mut SchemaGenerator) -> Schema {
 /// Explicit native desktop pixels, unrelated to overview or CSS coordinates.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(uniffi::Enum)]
 pub enum WindowManagementSpace {
     WindowsDesktopPixels,
 }
@@ -154,6 +155,7 @@ impl WindowControlSample {
 /// Read exact-window metadata and issue one management admission without capture or activation.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[derive(uniffi::Record)]
 pub struct WindowControlStateInput {
     /// Process that owns the exact sampled window.
     #[schemars(schema_with = "pid_schema")]
@@ -177,6 +179,7 @@ impl ToolInput for WindowControlStateInput {
 /// One native window mutation. Restore remains a separate existing operation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(uniffi::Enum)]
 pub enum WindowManagementOperation {
     Move,
     Resize,
@@ -188,6 +191,7 @@ pub enum WindowManagementOperation {
 /// A source-bound one-use operation, with no input-event, delivery-mode or sequence fields.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[derive(uniffi::Record)]
 pub struct WindowManagementInput {
     /// Process that owns the admitted exact window.
     #[schemars(schema_with = "pid_schema")]

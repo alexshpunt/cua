@@ -5498,6 +5498,30 @@
           "kind"
         ],
         "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "generation": {
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "status": {
+            "enum": [
+              "queued",
+              "stale",
+              "cleared",
+              "disabled"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "generation"
+        ],
+        "type": "object"
       }
     },
     {
@@ -6953,6 +6977,78 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "settings": {
+            "additionalProperties": false,
+            "properties": {
+              "keyboard": {
+                "type": "boolean"
+              },
+              "observations": {
+                "type": "boolean"
+              },
+              "opacity": {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              "pointer": {
+                "type": "boolean"
+              },
+              "preset": {
+                "enum": [
+                  "off",
+                  "subtle",
+                  "full"
+                ],
+                "type": "string"
+              },
+              "previews": {
+                "type": "boolean"
+              },
+              "quality": {
+                "enum": [
+                  "performance",
+                  "balanced",
+                  "high"
+                ],
+                "type": "string"
+              },
+              "reduced_motion": {
+                "type": "boolean"
+              },
+              "scroll_drag": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "preset",
+              "observations",
+              "previews",
+              "pointer",
+              "scroll_drag",
+              "keyboard",
+              "opacity",
+              "quality",
+              "reduced_motion"
+            ],
+            "type": "object"
+          },
+          "status": {
+            "enum": [
+              "configured"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "settings"
+        ],
         "type": "object"
       }
     },

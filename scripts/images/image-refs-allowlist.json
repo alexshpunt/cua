@@ -3,17 +3,16 @@
   "exclude": [
     "libs/fleet/**",
     "blog/**",
-    "changelog/**",
+    "docs/changelog/**",
     "CHANGELOG*",
     "*/CHANGELOG*",
     "*.lock",
     "pnpm-lock.yaml",
     "*/package-lock.json",
-    "evidence/**",
     "*/evidence/**",
     ".github/release-backfill/**",
     "docs/superpowers/**",
-    "rfcs/**"
+    "docs/rfcs/**"
   ],
   "generated": [
     "docs/content/docs/cua-sdk/reference/os-image-catalog.mdx",
@@ -33,7 +32,7 @@
     "libs/cua/typescript/src/native/cua_sdk.ts",
     "libs/cua/typescript/src/native/cua_sdk-ffi.ts",
     "libs/cua/spaces-contract/manifest.json",
-    "samples/openkoalabot-example-swift/Sources/OpenKoalaBotExample/Spaces/SandboxImages.generated.swift",
+    "examples/openkoalabot-example-swift/Sources/OpenKoalaBotExample/Spaces/SandboxImages.generated.swift",
     "libs/cua-bench/cua_bench/images.py"
   ],
   "thirdParty": {
@@ -54,7 +53,8 @@
     "public.ecr.aws/example/*": "placeholder namespace in tests",
     "registry.example.com/*": "placeholder registry in tests",
     "123456789012.dkr.ecr.*": "placeholder AWS account in docs and tests (private ECR)",
-    "ghcr.io/acme-corp/*": "fictional private registry ref in the cua-telemetry privacy test (proves image refs are redacted)"
+    "ghcr.io/acme-corp/*": "fictional private registry ref in the cua-telemetry privacy test (proves image refs are redacted)",
+    "*-docker.pkg.dev/p/*": "placeholder GCP Artifact Registry project in tests (private registry refused without credentials)"
   },
   "refs": {
     "docker.io/trycua/cua-qemu-linux:latest": {

@@ -19,7 +19,7 @@
 //! map's stable insertion (z) order. The lifecycle (lazy create, `session_end`
 //! removal, resurrection tombstone, revival, default guard, sentinel seed) and
 //! the frame-tick predicate live in `cursor_overlay` so every platform behaves
-//! identically; this adapter adds per-key arrival waiters and Win32 plumbing.
+//! identically; this adapter adds per-key presentation playback and Win32 plumbing.
 //!
 //! ## Cross-platform note (2026-05 dedup audit)
 //!
@@ -110,7 +110,7 @@ fn apply_msg(map: &mut RenderMap, msg: OverlayMsg) -> Option<CursorKey> {
     }) = &msg
     {
         let frame = map.platform.frame();
-        map.seed_start_if_sentinel(key, *x, *y, frame);
+        map.seed_start_if_unplaced(key, *x, *y, frame);
     }
     map.apply_msg(msg).applied_key().cloned()
 }
@@ -271,6 +271,11 @@ pub fn revive_cursor(key: CursorKey) {
     }
 }
 
+/// Read the render map, treating a poisoned or uninitialised map as absent.
+fn read_render<T>(f: impl FnOnce(&RenderMap) -> T) -> Option<T> {
+    RENDER.lock().ok()?.as_ref().map(f)
+}
+
 /// Returns true if the cursor for `key` is currently enabled/visible. A session
 /// with no own cursor yet falls back to the seeded `"default"` cursor.
 pub(crate) fn available() -> bool {
@@ -302,74 +307,34 @@ pub(crate) fn clear_presentation(key: &str) {
     wake_overlay();
 }
 pub fn is_enabled(key: &str) -> bool {
-    RENDER
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref()
-                .and_then(|m| m.cursor_or_default(key).map(|rs| rs.core.visible))
-        })
-        .unwrap_or(false)
+    read_render(|map| map.is_enabled(key)).unwrap_or(false)
 }
 
 /// Truthful render acknowledgement for lifecycle inspection. Unlike
 /// [`is_enabled`], this checks the exact session key and never falls back to
 /// the seeded default cursor.
 pub fn is_visible_for_session(key: &str) -> bool {
-    RENDER
-        .lock()
-        .ok()
-        .and_then(|guard| {
-            guard
-                .as_ref()
-                .and_then(|map| map.cursors.get(key))
-                .map(|rs| rs.core.cfg.enabled && rs.core.is_revealed())
-        })
-        .unwrap_or(false)
+    read_render(|map| {
+        map.cursors
+            .get(key)
+            .is_some_and(|rs| rs.core.cfg.enabled && rs.core.is_revealed())
+    })
+    .unwrap_or(false)
 }
 
 /// Snapshot the current motion config for `key`, falling back to the
 /// `"default"` cursor's motion when that key has no own entry yet.
 pub fn current_motion(key: &str) -> MotionConfig {
-    RENDER
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref()
-                .and_then(|m| m.cursor_or_default(key).map(|rs| rs.core.motion.clone()))
-        })
-        .unwrap_or_default()
+    read_render(|map| map.motion(key)).unwrap_or_default()
 }
 
-pub fn current_theme_state(
-    key: &str,
-) -> Option<(
-    String,
-    String,
-    String,
-    Option<String>,
-    cursor_overlay::CursorVisualState,
-)> {
-    let guard = RENDER.lock().ok()?;
-    let map = guard.as_ref()?;
-    let state = map.cursor_or_default(key)?;
-    let (id, version, profile, fallback) = state.core.active_theme_metadata();
-    Some((id, version, profile, fallback, state.core.visual.clone()))
+pub fn current_theme_state(key: &str) -> Option<cursor_overlay::CursorThemeState> {
+    read_render(|map| map.theme_state(key)).flatten()
 }
 
-/// Current screen position of the cursor for `key` (the off-screen sentinel
-/// `(-200, -200)` if it has never been placed). A session with no own cursor
-/// yet reports the sentinel so the click path treats it as first-placement.
-pub fn current_position(key: &str) -> (f64, f64) {
-    RENDER
-        .lock()
-        .ok()
-        .and_then(|g| {
-            g.as_ref()
-                .and_then(|m| m.cursors.get(key))
-                .map(|rs| rs.core.pos)
-        })
-        .unwrap_or(cursor_overlay::render_state::UNPLACED_POS)
+/// Current screen position, or `None` for an absent or unplaced cursor.
+pub fn current_position(key: &str) -> Option<(f64, f64)> {
+    read_render(|map| map.placed_position(key)).flatten()
 }
 
 /// Queue a visual movement without waiting for the presentation timeline.
@@ -553,7 +518,7 @@ impl RenderState {
             && self.core.click_age.is_none()
             && self.core.motion.idle_hide_ms > 0.0
             && self.core.visible
-            && cursor_overlay::render_state::is_placed(self.core.pos)
+            && self.core.placed
             && self.core.idle_alpha >= 1.0
     }
 }
@@ -1770,6 +1735,7 @@ mod tests {
         map.platform.virt_h = 1080;
         let core = &mut map.cursors.get_mut("default").unwrap().core;
         core.pos = (-1000.0, 500.0);
+        core.placed = true;
         let (vx, vy, w, h) = (-1920, 0, 3840, 1080);
 
         let cursor_only = cursor_dirty_rect(core, vx, vy, w, h).unwrap();
@@ -1821,7 +1787,7 @@ mod tests {
         map.platform.virt_w = 3840;
         map.platform.virt_h = 1080;
         let frame = map.platform.frame();
-        assert!(map.seed_start_if_sentinel("sessA", -1800.0, 500.0, frame));
+        assert!(map.seed_start_if_unplaced("sessA", -1800.0, 500.0, frame));
         assert_eq!(map.cursors["sessA"].core.pos, (-1918.0, 360.0));
 
         map.platform.virt_w = 0;
@@ -1884,7 +1850,7 @@ mod tests {
     #[test]
     fn resting_cursor_keeps_the_active_cadence_for_its_bob() {
         let mut map = empty_map();
-        map.seed_start_if_sentinel("sessA", 60.0, 60.0, map.platform.frame());
+        map.seed_start_if_unplaced("sessA", 60.0, 60.0, map.platform.frame());
         apply_msg(&mut map, move_msg("sessA", 10.0, 10.0));
         settle(&mut map);
         let rs = &map.cursors["sessA"];
@@ -1897,7 +1863,7 @@ mod tests {
     #[test]
     fn reduced_motion_countdown_parks_at_idle_cadence_but_fade_ticks() {
         let mut map = empty_map();
-        map.seed_start_if_sentinel("sessA", 60.0, 60.0, map.platform.frame());
+        map.seed_start_if_unplaced("sessA", 60.0, 60.0, map.platform.frame());
         map.cursors
             .get_mut("sessA")
             .unwrap()
@@ -1920,6 +1886,12 @@ mod tests {
         assert_eq!(rs.core.idle_alpha, 1.0);
         assert!(!map.needs_frame_tick());
         assert!(rs.in_idle_countdown());
+        let rs = map.cursors.get_mut("sessA").unwrap();
+        rs.core.pos = (-200.0, -200.0);
+        assert!(rs.in_idle_countdown());
+        rs.core.placed = false;
+        assert!(!rs.in_idle_countdown());
+        rs.core.placed = true;
 
         // The fade animates pixels, so frame ticks return until alpha ~0.
         let rs = map.cursors.get_mut("sessA").unwrap();

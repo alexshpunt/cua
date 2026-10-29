@@ -15,7 +15,17 @@ async fn portable_inputs_match_the_in_process_native_registry() {
     let driver = CuaDriver::create(None).unwrap();
     let live: Value = serde_json::from_str(&driver.list_tools_json().await.unwrap()).unwrap();
     let tools = live["tools"].as_array().expect("native tools list");
+    let platform = current_contract_platform();
     for contract in cua_driver_contract::manifest().tools {
+        let advertised = tools.iter().find(|tool| tool["name"] == contract.name);
+        if !contract.platforms.contains(&platform) {
+            assert!(
+                advertised.is_none(),
+                "{} is advertised on an unsupported platform",
+                contract.name
+            );
+            continue;
+        }
         let native = tools
             .iter()
             .find(|tool| tool["name"] == contract.name)

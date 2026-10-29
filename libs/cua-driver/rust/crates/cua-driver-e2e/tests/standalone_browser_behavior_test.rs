@@ -60,10 +60,12 @@ fn standalone_trust_gated_click_html() -> String {
   </span>
 </fieldset>
 <script>
+  let activationEvents = 0;
   document.getElementById('standalone-trust-gated').addEventListener('click', event => {
-    document.getElementById('standalone-trust-gated-state').textContent = event.isTrusted
-      ? 'activation=accepted-trusted'
-      : 'activation=ignored-untrusted';
+    activationEvents += 1;
+    const activation = event.isTrusted ? 'accepted-trusted' : 'ignored-untrusted';
+    document.getElementById('standalone-trust-gated-state').textContent =
+      `activation=${activation};events=${activationEvents}`;
   });
 </script>
 </body>"#,
@@ -834,6 +836,11 @@ fn configure_linux_browser_command(command: &mut Command) {
 }
 
 fn configure_test_browser_sandbox(command: &mut Command) {
+    // A disposable profile must not inherit Windows account sign-in or cloud
+    // sync. Edge can otherwise open a second page before fixture navigation.
+    command
+        .arg("--disable-sync")
+        .arg("--disable-features=msImplicitSignin");
     if std::env::var("CUA_E2E_BROWSER_NO_SANDBOX").as_deref() == Ok("1") {
         command.arg("--no-sandbox");
     }
@@ -1878,7 +1885,19 @@ fn run_roundtrip(spec: &BrowserSpec) {
                     "session": session,
                 }),
             );
+            assert_ne!(
+                click.action_effect(),
+                Some("suspected_noop"),
+                "{}",
+                click.raw
+            );
             assert_eq!(click.action_effect(), Some("unverifiable"), "{}", click.raw);
+            assert_eq!(
+                click.structured()["evidence"][0]["kind"],
+                "value_readback",
+                "{}",
+                click.raw
+            );
             wait_for_text(&fixture.server, "lbl-counter", "counter=1");
 
             let snapshot = fixture.driver.call(
@@ -1954,16 +1973,27 @@ fn run_trust_gated_dom_click(spec: &BrowserSpec) {
                 "{}",
                 click.raw
             );
-            assert!(
-                click.text().contains("application effect not verified")
-                    && click.text().contains("trust-gated controls"),
-                "{}",
-                click.raw
-            );
+            assert!(!click.is_error(), "{}", click.raw);
+            let action: cua_driver_contract::ActionResult =
+                serde_json::from_value(click.structured().clone())
+                    .expect("DOM click must return the public action contract");
+            action.validate_invariants().unwrap();
+            // Readback is bounded and may be unavailable.
+            // Both paths must remain unconfirmed. Never demand invented evidence
+            // or infer application success from successful event dispatch.
+            if let Some(evidence) = action.evidence {
+                assert_eq!(evidence.len(), 1, "{}", click.raw);
+                assert_eq!(
+                    evidence[0].kind,
+                    cua_driver_contract::ActionEvidenceKind::ValueReadback,
+                    "{}",
+                    click.raw
+                );
+            }
             wait_for_text(
                 &fixture.server,
                 "standalone-trust-gated-state",
-                "activation=ignored-untrusted",
+                "activation=ignored-untrusted;events=1",
             );
 
             Observation::delivered(vec![OracleKind::FixtureState], Evidence::default())
@@ -2928,12 +2958,21 @@ fn run_existing_profile_setup(spec: &BrowserSpec) {
                 prepared.structured()["side_effects"]["created_profile"],
                 false
             );
-            let setup_port = devtools_active_port(fixture._profile.path()).unwrap_or_else(|| {
-                panic!(
-                    "existing-profile setup exposed no DevToolsActivePort in {}",
+            // The browser writes DevToolsActivePort when its listener comes up,
+            // which can trail the setup call's return (slow on Windows runners):
+            // poll for it instead of reading the file once.
+            let port_deadline = Instant::now() + Duration::from_secs(15);
+            let setup_port = loop {
+                if let Some(port) = devtools_active_port(fixture._profile.path()) {
+                    break port;
+                }
+                assert!(
+                    Instant::now() < port_deadline,
+                    "existing-profile setup exposed no DevToolsActivePort in {} within 15 s",
                     fixture._profile.path().display()
-                )
-            });
+                );
+                std::thread::sleep(Duration::from_millis(100));
+            };
 
             let public_result = prepared.raw.to_string();
             assert!(!public_result.contains("ws://"), "{}", prepared.raw);
