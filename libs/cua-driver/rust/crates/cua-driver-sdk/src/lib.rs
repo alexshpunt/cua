@@ -8,6 +8,11 @@
 //! Typed methods cover every declared operation. Live discovery follows each
 //! contract's platform list: Windows-only extensions are not advertised by a
 //! Linux or macOS runtime. Callers must discover availability on their target.
+//!
+//! A listed Windows method does not guarantee native presentation availability.
+//! The default embedded constructor does not start the overlay: configuration can
+//! succeed while presentation returns `visual_session_unavailable`. Admission
+//! requires a renderer-owning host; settings alone never prove a visible effect.
 
 use cua_driver_contract::{
     ActionResult, ClickInput, ClipboardReadInput, ClipboardWriteInput, DragInput, EndSessionInput,
