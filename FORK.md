@@ -2,9 +2,9 @@
 
 This fork integrates the full upstream [trycua/cua](https://github.com/trycua/cua) 0.38 history while retaining the Windows Cua Driver extensions used by [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use). Upstream code retains its original authorship and license.
 
-Pi Agent Computer Use ships Windows Cua Driver 0.38.0 built from commit `505d090e1538b9cbe349e579c30006abf1379871`, attached to the [`pi-runtime-0.38.0-505d090e` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.38.0-505d090e). These are unsigned AMD64 binaries, cross-built with a static CRT and qualified on a bounded Windows 11 RDP setup. The package pins and checks the SHA-256 of every file before starting the driver. This does not establish UIAccess deployment, elevated/UWP support or physical display coverage.
+Pi Agent Computer Use ships Windows Cua Driver 0.38.0 built from commit `4b547b547edf415908557829fa723f143f781649`, attached to the [`pi-runtime-0.38.0-4b547b54` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.38.0-4b547b54). These are unsigned AMD64 binaries, cross-built with a static CRT and qualified on one interactive Windows 11 desktop. The package pins and checks the SHA-256 of every file before starting the driver. This does not establish UIAccess deployment, elevated/UWP support or physical display coverage.
 
-The `pi-computer-use` source branch also contains later typed SDK, harness and consumer-lock fixes. Those source-only fixes are not retroactively part of the published `505d090e` binaries. Shared SDK methods use canonical contract platform metadata: Windows-only extensions are absent from Linux/macOS runtime discovery. The native macOS desktop matrix was not rerun for this follow-up.
+This build includes the typed SDK, canonical-success validation, harness and consumer-lock source fixes merged after `505d090e`. The earlier `505d090e` release remains immutable; those fixes are delivered through the new build, not retroactively added to its binaries. Shared SDK methods use canonical contract platform metadata: Windows-only extensions are absent from Linux/macOS runtime discovery. The native macOS desktop matrix was not rerun for this follow-up.
 
 ## Input
 
@@ -55,7 +55,7 @@ The `pi-computer-use` source branch also contains later typed SDK, harness and c
 
 ## Native activity presentation
 
-The published `505d090e` Windows runtime includes session-owned native activity presentation through `set_agent_visuals` and `present_agent_activity`. Later source fixes add their canonical typed Rust SDK and UniFFI methods. The default embedded SDK constructor does not start a native overlay: settings can be configured while presentation returns `visual_session_unavailable`. Admission requires a renderer-owning host, such as the native daemon; configuration alone does not prove that anything was shown.
+The published `4b547b54` Windows runtime includes session-owned native activity presentation through `set_agent_visuals` and `present_agent_activity`, with their canonical typed Rust SDK and UniFFI methods in the matching source. The default embedded SDK constructor does not start a native overlay: settings can be configured while presentation returns `visual_session_unavailable`. Admission requires a renderer-owning host, such as the native daemon; configuration alone does not prove that anything was shown.
 
 Input does not wait for cursor animation. Each session has bounded visual playback, with at most 32 pending commands and a 500 ms stale-event budget. Consecutive navigation coalesces and dense activity plays in compressed form. These presentation timings never change actual held input or timeline timing.
 
