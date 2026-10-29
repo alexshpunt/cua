@@ -6,17 +6,17 @@ use serde_json::{json, Value};
 
 const MAX_ACTIVITY_GENERATION: u64 = 9_007_199_254_740_991;
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
-enum VisualPreset {
+pub enum VisualPreset {
     Off,
     Subtle,
     Full,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, uniffi::Enum)]
 #[serde(rename_all = "snake_case")]
-enum VisualQuality {
+pub enum VisualQuality {
     Performance,
     Balanced,
     High,

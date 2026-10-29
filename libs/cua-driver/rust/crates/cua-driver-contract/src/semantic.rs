@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 /// An exact semantic intent, not an action ladder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
+#[derive(uniffi::Enum)]
 pub enum SemanticOperation {
     Invoke,
     Select,
@@ -16,6 +17,7 @@ pub enum SemanticOperation {
 /// Snapshot-bound Windows UIA operation. Physical and foreground delivery are not accepted.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[derive(uniffi::Record)]
 pub struct SemanticActionInput {
     /// Process that owns the exact top-level target window.
     pub pid: u32,

@@ -41,6 +41,7 @@ pub struct DisplayInfo {
 /// Enumerate connected displays without reading pixels.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[derive(uniffi::Record)]
 pub struct ListDisplaysInput {
     /// For multi-call work, prefer a short public session label and repeat it on every call that
     /// accepts it. Omit it to use the authenticated transport's implicit lifecycle session.
@@ -55,6 +56,7 @@ impl ToolInput for ListDisplaysInput {
 /// Read exactly the enumerated display in this topology; never fall back to primary.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
+#[derive(uniffi::Record)]
 pub struct GetDisplayStateInput {
     /// Exact native display_id returned by list_displays, not an enumeration index or primary alias.
     pub display_id: String,

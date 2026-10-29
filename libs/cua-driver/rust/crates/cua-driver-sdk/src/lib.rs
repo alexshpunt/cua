@@ -4,6 +4,10 @@
 //! [`CuaDriver::connect`] remains a temporary compatibility constructor for the
 //! released daemon-client topology. Both paths expose the same typed operations;
 //! MCP and daemon transports are downstream adapters rather than peer contracts.
+//!
+//! Typed methods cover every declared operation. Live discovery follows each
+//! contract's platform list: Windows-only extensions are not advertised by a
+//! Linux or macOS runtime. Callers must discover availability on their target.
 
 use cua_driver_contract::{
     ActionResult, ClickInput, ClipboardReadInput, ClipboardWriteInput, DragInput, EndSessionInput,
@@ -15,6 +19,11 @@ use cua_driver_contract::{
     SetAgentCursorEnabledInput, SetAgentCursorMotionInput, SetAgentCursorThemeInput,
     SetWindowFrameInput, SnapshotImage, StartSessionInput, StartSessionOutput, ToolInput,
     ToolOutput, TypeTextInput, VerifyStateInput, VerifyStateOutput, WindowStateOutput,
+};
+use cua_driver_contract::{
+    GetDisplayStateInput, ListDisplaysInput, PointerMoveInput, PointerScrollInput,
+    PresentAgentActivityInput, SemanticActionInput, SetAgentVisualsInput, WindowControlStateInput,
+    WindowManagementInput, WindowRestoreInput, WindowStatusInput,
 };
 use cua_driver_core::daemon::{
     is_daemon_listening, request_daemon_metadata, send_request, socket_path_for_namespace,
@@ -694,6 +703,17 @@ macro_rules! desktop_tool_methods {
             set_agent_cursor_motion: SetAgentCursorMotionInput,
             set_agent_cursor_theme: SetAgentCursorThemeInput,
             get_agent_cursor_state: GetAgentCursorStateInput,
+            list_displays: ListDisplaysInput,
+            get_display_state: GetDisplayStateInput,
+            get_window_status: WindowStatusInput,
+            restore_window: WindowRestoreInput,
+            get_window_control_state: WindowControlStateInput,
+            manage_window: WindowManagementInput,
+            move_pointer: PointerMoveInput,
+            scroll_at: PointerScrollInput,
+            semantic_action: SemanticActionInput,
+            set_agent_visuals: SetAgentVisualsInput,
+            present_agent_activity: PresentAgentActivityInput,
         }
     };
 }
@@ -1990,6 +2010,28 @@ fn normalize_result(tool: &str, raw: Value) -> Result<ToolResult, DriverError> {
         .get("isError")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    // Windows-only extensions have closed canonical output DTOs. Preserve
+    // their image/metadata envelope while rejecting a malformed success on
+    // every SDK backend, including authenticated remote carriers.
+    static WINDOWS_TOOL_NAMES: OnceLock<Vec<String>> = OnceLock::new();
+    let windows_tools = WINDOWS_TOOL_NAMES.get_or_init(|| {
+        cua_driver_contract::manifest()
+            .tools
+            .into_iter()
+            .filter(|contract| contract.platforms == [cua_driver_contract::Platform::Windows])
+            .map(|contract| contract.name)
+            .collect()
+    });
+    if !is_error && windows_tools.iter().any(|name| name == tool) {
+        let payload = structured.ok_or_else(|| DriverError::Protocol {
+            reason: format!("{tool} response omitted its canonical output"),
+        })?;
+        cua_driver_contract::validate_success_output(tool, payload.clone()).map_err(|error| {
+            DriverError::Protocol {
+                reason: format!("{tool} returned an invalid canonical output: {error}"),
+            }
+        })?;
+    }
     let action = if !is_error && cua_driver_core::action_record::is_action_tool(tool) {
         let structured = structured.ok_or_else(|| DriverError::Protocol {
             reason: format!("{tool} response omitted ActionResult"),
@@ -2069,6 +2111,7 @@ mod tests {
         }
     }
 
+    mod fork_tools;
     mod native_windows;
     use super::*;
     use cua_driver_contract::{ParseVisualRegionsOutput, VisualParseError};
@@ -2077,6 +2120,15 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::net::UnixListener;
 
+    fn current_contract_platform() -> cua_driver_contract::Platform {
+        if cfg!(target_os = "windows") {
+            cua_driver_contract::Platform::Windows
+        } else if cfg!(target_os = "macos") {
+            cua_driver_contract::Platform::Macos
+        } else {
+            cua_driver_contract::Platform::Linux
+        }
+    }
     #[test]
     fn exported_typed_methods_cover_every_published_contract() {
         let mut expected = cua_driver_contract::manifest()
@@ -2293,8 +2345,14 @@ mod tests {
             .iter()
             .filter_map(|tool| tool["name"].as_str())
             .collect::<std::collections::BTreeSet<_>>();
+        let platform = current_contract_platform();
         for published in EXPORTED_TOOL_NAMES {
-            assert!(names.contains(published), "missing {published}");
+            let contract = cua_driver_contract::tool_contract(published).unwrap();
+            assert_eq!(
+                names.contains(published),
+                contract.platforms.contains(&platform),
+                "{published} availability differs from its declared platforms"
+            );
         }
 
         driver.shutdown().await.unwrap();

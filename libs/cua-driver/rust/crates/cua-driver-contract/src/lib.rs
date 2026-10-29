@@ -15,6 +15,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 mod agent_visuals;
+mod agent_visuals_input;
+pub use agent_visuals::{VisualPreset, VisualQuality};
+pub use agent_visuals_input::*;
 pub mod compatibility;
 pub mod cursor;
 mod cursor_tools;
