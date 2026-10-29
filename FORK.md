@@ -1,10 +1,10 @@
 # What this fork changes
 
-This is a fork of [trycua/cua](https://github.com/trycua/cua). It adds Windows features to Cua Driver that [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use) needs and upstream doesn't have yet. Everything else is upstream's code, under upstream's license.
+This fork integrates the full upstream [trycua/cua](https://github.com/trycua/cua) 0.38 history while retaining the Windows Cua Driver extensions used by [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use). Upstream code retains its original authorship and license.
 
-The `pi-computer-use` branch is the build Pi Agent Computer Use ships: cua-driver 0.37.0 from commit `33c4b82b`. Its binaries are attached to the [`pi-runtime-0.37.0-33c4b82b` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.37.0-33c4b82b) and come from the `windows-fork-build.yml` workflow. They are unsigned. Pi Agent Computer Use pins the SHA-256 of every file and checks it before it starts the driver.
+Pi Agent Computer Use ships Windows Cua Driver 0.38.0 built from commit `505d090e1538b9cbe349e579c30006abf1379871`, attached to the [`pi-runtime-0.38.0-505d090e` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.38.0-505d090e). These are unsigned AMD64 binaries, cross-built with a static CRT and qualified on a bounded Windows 11 RDP setup. The package pins and checks the SHA-256 of every file before starting the driver. This does not establish UIAccess deployment, elevated/UWP support or physical display coverage.
 
-All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux behave like upstream.
+The `pi-computer-use` source branch also contains later typed SDK, harness and consumer-lock fixes. Those source-only fixes are not retroactively part of the published `505d090e` binaries. Shared SDK methods use canonical contract platform metadata: Windows-only extensions are absent from Linux/macOS runtime discovery. The native macOS desktop matrix was not rerun for this follow-up.
 
 ## Input
 
@@ -55,7 +55,7 @@ All changes are in `libs/cua-driver` and only touch Windows. macOS and Linux beh
 
 ## Native activity presentation
 
-The Windows source includes session-owned native activity presentation through `set_agent_visuals` and `present_agent_activity`. This feature requires a runtime built from this source; the release named above predates it.
+The published `505d090e` Windows runtime includes session-owned native activity presentation through `set_agent_visuals` and `present_agent_activity`. Later source fixes add their canonical typed Rust SDK and UniFFI methods. The default embedded SDK constructor does not start a native overlay: settings can be configured while presentation returns `visual_session_unavailable`. Admission requires a renderer-owning host, such as the native daemon; configuration alone does not prove that anything was shown.
 
 Input does not wait for cursor animation. Each session has bounded visual playback, with at most 32 pending commands and a 500 ms stale-event budget. Consecutive navigation coalesces and dense activity plays in compressed form. These presentation timings never change actual held input or timeline timing.
 
