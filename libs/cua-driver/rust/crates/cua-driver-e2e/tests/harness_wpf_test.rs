@@ -1796,7 +1796,7 @@ fn harness_wpf_slider_drag_foreground_under_topmost_cover_refuses_without_leak()
     // A foreground drag is coordinate-routed SendInput, so Windows delivers it
     // to whatever window owns the start point. Cover the harness with an
     // always-on-top sentinel: activating the harness cannot bring it above
-    // that cover, so the drag must refuse with foreground_unavailable before
+    // that cover, so the drag must refuse with pointer_target_occluded before
     // the button goes down. Previously the z-order-only raise could fail and
     // the whole stroke landed in the cover while the tool reported "Sent drag".
     let mut case = native_foreground_case(
@@ -1805,7 +1805,7 @@ fn harness_wpf_slider_drag_foreground_under_topmost_cover_refuses_without_leak()
         Targeting::Px,
         DriverRoute::WindowsSendInput,
     )
-    .expecting_refusal(vec![RefusalCode::ForegroundUnavailable]);
+    .expecting_refusal(vec![RefusalCode::PointerTargetOccluded]);
     case.oracles.push(OracleKind::NoLeakedInput);
     case.oracles.sort();
     case.oracles.dedup();
@@ -1880,7 +1880,7 @@ fn harness_wpf_slider_drag_foreground_under_topmost_cover_refuses_without_leak()
         );
         assert_eq!(
             response.structured()["code"].as_str(),
-            Some("foreground_unavailable"),
+            Some("pointer_target_occluded"),
             "foreground drag under a topmost cover returned the wrong refusal: {}",
             response.text()
         );
@@ -1897,7 +1897,7 @@ fn harness_wpf_slider_drag_foreground_under_topmost_cover_refuses_without_leak()
             passed.push(OracleKind::NoLeakedInput);
         }
         Observation::refused(
-            RefusalCode::ForegroundUnavailable,
+            RefusalCode::PointerTargetOccluded,
             passed,
             response.text(),
             Evidence::default(),
