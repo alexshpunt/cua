@@ -30,5 +30,6 @@ tracing-subscriber = { workspace = true }
 cua-driver-core = { path = "../cua-driver-core" }
 platform-windows = { path = "../platform-windows" }
 
-[target.'cfg(target_os = "windows")'.build-dependencies]
+# A build script runs on the host, so a cross build from Linux needs it there too.
+[build-dependencies]
 embed-manifest = "1.4"

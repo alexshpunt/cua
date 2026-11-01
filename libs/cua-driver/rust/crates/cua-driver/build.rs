@@ -16,8 +16,8 @@ fn main() {
     println!("cargo:rerun-if-env-changed=CUA_DRIVER_REVIEW_EXTENSION_PUBLIC_KEY_BASE64");
     validate_review_trust_root_build();
 
-    #[cfg(target_os = "windows")]
-    {
+    // `cfg(target_os)` in a build script is the host's: check the target, so a cross build embeds it too.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         embed_resource::compile("cua-driver.rc", embed_resource::NONE);
     }
 
