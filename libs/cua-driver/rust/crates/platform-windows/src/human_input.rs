@@ -1,117 +1,181 @@
-//! Human takeover for foreground input.
+//! Triple Escape stops the agent.
 //!
-//! When `CUA_HUMAN_IDLE_MS` holds a positive number at startup, low-level keyboard and mouse hooks record
-//! when the last physical event arrived: one without the injected flag that SendInput, touch and pen
-//! injection always set. Foreground SendInput then refuses until that many milliseconds pass without
-//! physical input, so the agent never fights the person at the mouse and keyboard. Background delivery
-//! (PostMessage, UIA, touch injection) does not move their pointer or focus and is never paused.
-//! Releases of keys and buttons the agent holds always go through.
+//! When `CUA_ESCAPE_STOP=1` is set at startup, a low-level keyboard hook watches for the person at the
+//! machine pressing Escape three times within a second. Only physical presses count: SendInput and
+//! every other injection set the injected flag, so an agent's own Escape never stops it, and a held
+//! key's auto-repeat counts once. The third press calls [`cua_driver_core::human_stop::trigger`]: this
+//! process refuses all further input and running input stops at its next step.
 //!
-//! Without the variable no hook is installed and nothing changes.
+//! Agent input does not wait for the human: it takes the foreground as soon as it runs.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::OnceLock;
+use std::time::Duration;
 
-static IDLE_MS: OnceLock<u64> = OnceLock::new();
-/// `GetTickCount64` of the last physical event; 0 when none was seen.
-static LAST_PHYSICAL: AtomicU64 = AtomicU64::new(0);
+/// Presses within this window, first to last, stop the agent.
+const WINDOW: Duration = Duration::from_millis(1000);
+const PRESSES: usize = 3;
 
-fn idle_ms() -> u64 {
-    *IDLE_MS.get_or_init(|| {
-        std::env::var("CUA_HUMAN_IDLE_MS")
-            .ok()
-            .and_then(|value| value.trim().parse().ok())
-            .unwrap_or(0)
-    })
+/// Counts physical Escape presses; a pure state machine, so it is testable off Windows.
+#[derive(Default)]
+struct Detector {
+    down: bool,
+    presses: [u64; PRESSES],
+    count: usize,
 }
 
-/// Install the hooks on their own message-loop thread when the takeover pause is configured. Idempotent.
+impl Detector {
+    /// Feed one physical Escape transition at `now_ms`; true when this press completes the sequence.
+    fn escape(&mut self, pressed: bool, now_ms: u64) -> bool {
+        if !pressed {
+            self.down = false;
+            return false;
+        }
+        if self.down {
+            // Auto-repeat of a held key.
+            return false;
+        }
+        self.down = true;
+        if self.count == PRESSES {
+            self.presses.rotate_left(1);
+            self.count -= 1;
+        }
+        self.presses[self.count] = now_ms;
+        self.count += 1;
+        if self.count == PRESSES
+            && now_ms.saturating_sub(self.presses[0]) <= WINDOW.as_millis() as u64
+        {
+            self.count = 0;
+            return true;
+        }
+        false
+    }
+
+    /// Any other physical key breaks the sequence.
+    fn other_key(&mut self) {
+        self.count = 0;
+    }
+}
+
+/// Install the hook on its own message-loop thread when the stop is configured. Idempotent.
 pub fn start_from_env() {
-    static STARTED: OnceLock<()> = OnceLock::new();
-    if idle_ms() == 0 {
+    static STARTED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if std::env::var("CUA_ESCAPE_STOP").as_deref() != Ok("1") {
         return;
     }
     STARTED.get_or_init(|| {
         #[cfg(target_os = "windows")]
         if let Err(error) = std::thread::Builder::new()
-            .name("cua-human-input".into())
+            .name("cua-escape-stop".into())
             .spawn(hooks::run)
         {
-            tracing::warn!("human input hooks did not start: {error}");
+            tracing::warn!("escape stop hook did not start: {error}");
         }
     });
 }
 
-/// Milliseconds since the last physical input, when one was seen since startup.
-pub fn physical_idle_ms() -> Option<u64> {
-    let last = LAST_PHYSICAL.load(Ordering::Acquire);
-    (last != 0).then(|| now().saturating_sub(last))
-}
-
-/// Refuse foreground input while the human used the keyboard or mouse within the configured pause.
+/// Refuse input, or stop running input at its next step, once the human pressed Escape three times.
 pub fn check() -> Result<(), String> {
-    let idle = idle_ms();
-    match physical_idle_ms() {
-        Some(age) if idle > 0 && age < idle => Err(format!(
-            "human_takeover: the human used the keyboard or mouse {age} ms ago; foreground input \
-             waits until {idle} ms pass without physical input (retry in {} ms). Background \
-             delivery is not paused.",
-            idle - age
-        )),
-        _ => Ok(()),
-    }
-}
-
-#[cfg(target_os = "windows")]
-fn now() -> u64 {
-    unsafe { windows::Win32::System::SystemInformation::GetTickCount64() }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn now() -> u64 {
-    0
+    cua_driver_core::human_stop::check()
 }
 
 #[cfg(target_os = "windows")]
 mod hooks {
-    use super::{now, LAST_PHYSICAL};
-    use std::sync::atomic::Ordering;
+    use super::Detector;
+    use std::sync::Mutex;
     use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_ESCAPE;
     use windows::Win32::UI::WindowsAndMessaging::{
         CallNextHookEx, GetMessageW, SetWindowsHookExW, HC_ACTION, KBDLLHOOKSTRUCT, LLKHF_INJECTED,
-        LLMHF_INJECTED, MSG, MSLLHOOKSTRUCT, WH_KEYBOARD_LL, WH_MOUSE_LL,
+        LLKHF_UP, MSG, WH_KEYBOARD_LL,
     };
+
+    static DETECTOR: Mutex<Detector> = Mutex::new(Detector {
+        down: false,
+        presses: [0; super::PRESSES],
+        count: 0,
+    });
 
     unsafe extern "system" fn keyboard(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         if code == HC_ACTION as i32 {
             let event = &*(lparam.0 as *const KBDLLHOOKSTRUCT);
             if (event.flags & LLKHF_INJECTED).0 == 0 {
-                LAST_PHYSICAL.store(now(), Ordering::Release);
+                let pressed = (event.flags & LLKHF_UP).0 == 0;
+                if let Ok(mut detector) = DETECTOR.lock() {
+                    if event.vkCode == u32::from(VK_ESCAPE.0) {
+                        // The event's own tick, so a slow hook thread cannot stretch the window.
+                        if detector.escape(pressed, u64::from(event.time)) {
+                            cua_driver_core::human_stop::trigger();
+                        }
+                    } else if pressed {
+                        detector.other_key();
+                    }
+                }
             }
         }
         CallNextHookEx(None, code, wparam, lparam)
     }
 
-    unsafe extern "system" fn mouse(code: i32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-        if code == HC_ACTION as i32 {
-            let event = &*(lparam.0 as *const MSLLHOOKSTRUCT);
-            if event.flags & LLMHF_INJECTED == 0 {
-                LAST_PHYSICAL.store(now(), Ordering::Release);
-            }
-        }
-        CallNextHookEx(None, code, wparam, lparam)
-    }
-
-    /// Low-level hooks run on the installing thread's message loop; the callbacks only store a tick.
+    /// Low-level hooks run on the installing thread's message loop; the callback does no I/O.
     pub(super) fn run() {
         unsafe {
-            let keys = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), None, 0);
-            let pointer = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse), None, 0);
-            if keys.is_err() || pointer.is_err() {
-                tracing::warn!("human input hooks: keyboard {keys:?}, mouse {pointer:?}");
+            if let Err(error) = SetWindowsHookExW(WH_KEYBOARD_LL, Some(keyboard), None, 0) {
+                tracing::warn!("escape stop hook: {error:?}");
+                return;
             }
             let mut message = MSG::default();
             while GetMessageW(&mut message, None, 0, 0).as_bool() {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Detector;
+
+    #[test]
+    fn three_presses_within_a_second_stop() {
+        let mut d = Detector::default();
+        assert!(!d.escape(true, 100));
+        assert!(!d.escape(false, 150));
+        assert!(!d.escape(true, 400));
+        assert!(!d.escape(false, 450));
+        assert!(d.escape(true, 1100));
+    }
+
+    #[test]
+    fn auto_repeat_counts_once() {
+        let mut d = Detector::default();
+        for t in [0, 30, 60, 90, 120] {
+            assert!(!d.escape(true, t));
+        }
+        assert!(!d.escape(false, 200));
+        assert!(!d.escape(true, 300));
+        d.escape(false, 350);
+        assert!(d.escape(true, 400));
+    }
+
+    #[test]
+    fn slow_presses_slide_the_window() {
+        let mut d = Detector::default();
+        for t in [0, 600, 1200] {
+            assert!(!d.escape(true, t));
+            d.escape(false, t + 50);
+        }
+        // 600, 1200 and 1500 fit in one second.
+        assert!(d.escape(true, 1500));
+    }
+
+    #[test]
+    fn another_key_breaks_the_sequence() {
+        let mut d = Detector::default();
+        d.escape(true, 0);
+        d.escape(false, 10);
+        d.escape(true, 100);
+        d.escape(false, 110);
+        d.other_key();
+        assert!(!d.escape(true, 200));
+        d.escape(false, 210);
+        assert!(!d.escape(true, 300));
+        d.escape(false, 310);
+        assert!(d.escape(true, 400));
     }
 }

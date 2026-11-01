@@ -164,6 +164,10 @@ where
     let mut pending = HashSet::new();
     let mut reaper = tokio::time::interval(Duration::from_secs(30));
     let mut session_observed = false;
+    // Seen as changed once, so a stop that came before this transport is still reported.
+    let mut human_stop = cua_driver_core::human_stop::subscribe();
+    human_stop.mark_changed();
+    let mut human_stop_sent = false;
     loop {
         // read_until is cancellation-safe. Keep partial bytes across task and
         // reaper wakeups, and retain the original total line budget.
@@ -177,6 +181,18 @@ where
             }
             _ = reaper.tick() => {
                 service.reap();
+                continue;
+            }
+            changed = human_stop.changed(), if !human_stop_sent => {
+                // The sender is static, so it never closes; the latch only goes from false to true.
+                if changed.is_err() || !*human_stop.borrow_and_update() {
+                    continue;
+                }
+                human_stop_sent = true;
+                write_notification(&writer, HUMAN_STOP_NOTIFICATION, json!({
+                    "code": cua_driver_core::human_stop::CODE,
+                    "message": cua_driver_core::human_stop::message(),
+                })).await?;
                 continue;
             }
         };
@@ -295,6 +311,26 @@ where
     drop(cleanup);
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
+    Ok(())
+}
+
+/// Sent once when the human stops agent input, so the host learns it without waiting for a call.
+pub(crate) const HUMAN_STOP_NOTIFICATION: &str = "notifications/cua/human_stop";
+
+async fn write_notification<W: AsyncWrite + Unpin>(
+    writer: &Arc<tokio::sync::Mutex<W>>,
+    method: &str,
+    params: Value,
+) -> anyhow::Result<()> {
+    let mut bytes =
+        serde_json::to_vec(&json!({ "jsonrpc": "2.0", "method": method, "params": params }))?;
+    bytes.push(b'\n');
+    tokio::time::timeout(Duration::from_secs(10), async {
+        let mut writer = writer.lock().await;
+        writer.write_all(&bytes).await?;
+        writer.flush().await
+    })
+    .await??;
     Ok(())
 }
 

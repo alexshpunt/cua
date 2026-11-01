@@ -547,6 +547,13 @@ pub fn send_text_synthesized_after_focus(
     with_confirmed_foreground(target, "text delivery", focus, |att, ft| unsafe {
         if let Some(att) = att {
             for (k, unit) in units.iter().enumerate() {
+                if let Err(stop) = crate::human_input::check() {
+                    bail!(
+                        "{stop} Stopped after {k} of {n} text units were read; the remaining {} \
+                         were not sent.",
+                        n - k
+                    );
+                }
                 let actual = GetForegroundWindow();
                 if !foreground_matches_target_or_owned_window(ft, actual.0 as usize as u64) {
                     bail!(

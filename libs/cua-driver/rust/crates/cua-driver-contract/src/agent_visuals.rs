@@ -149,7 +149,7 @@ pub fn contracts() -> Vec<ToolContract> {
                     "display":{"type":"string","minLength":1,"maxLength":256},"bounds":rect()},"additionalProperties":false},
                 "region":rect(),"point":{"type":"object","required":["x","y"],"properties":{"x":{"type":"integer"},"y":{"type":"integer"}},"additionalProperties":false},
                 "image":{"type":"object","required":["data","mime_type"],"properties":{"data":{"type":"string","minLength":1,"maxLength":12582912},"mime_type":{"type":"string","enum":["image/png","image/jpeg"]}},"additionalProperties":false},
-                "action":{"type":"string","maxLength":64},"outcome":{"type":"string","enum":["delivered","refused","unknown","verified"]}
+                "action":{"type":"string","maxLength":64},"typed_text":{"type":"string","minLength":1,"maxLength":200},"outcome":{"type":"string","enum":["delivered","refused","unknown","verified"]}
             },"additionalProperties":false})),
     ]
 }
@@ -271,6 +271,9 @@ mod tests {
                 .all(|c| c.starts_with("agent_visuals.")));
             assert!(!contract.annotations.destructive);
             assert!(contract.input_schema["properties"]["text"].is_null());
+            // Typed text is display metadata of an action that already ran through its own tool.
+            let typed = &contract.input_schema["properties"]["typed_text"];
+            assert!(typed.is_null() || typed["maxLength"] == 200);
         }
     }
 }

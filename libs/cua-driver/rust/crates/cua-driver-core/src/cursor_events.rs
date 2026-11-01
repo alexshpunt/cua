@@ -90,11 +90,23 @@ fn explicit_session(args: &Value) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+/// The label the host gave this whole process with `CUA_SESSION_LABEL`, shown under the agent cursor of
+/// sessions that have no public label of their own, such as the implicit one.
+fn process_session_label() -> Option<String> {
+    static LABEL: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    LABEL
+        .get_or_init(|| std::env::var("CUA_SESSION_LABEL").ok())
+        .clone()
+}
+
 pub fn begin_tool(name: &str, args: &Value) -> Option<(String, CursorAction)> {
     let session = explicit_session(args)?;
     if let Some(label) = args
         .get("_public_session_label")
         .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(process_session_label)
+        .as_deref()
         .map(str::trim)
         .filter(|label| !label.is_empty())
     {
