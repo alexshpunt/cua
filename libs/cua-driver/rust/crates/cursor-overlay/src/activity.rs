@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 use tiny_skia::{Paint, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 pub const MAX_IMAGE_BASE64: usize = 12 * 1024 * 1024;
-pub const TTL_MS: u64 = 1200;
+/// How long a card stays when nothing replaces it: shown for about two seconds, then faded out.
+pub const TTL_MS: u64 = 2500;
+/// A new card fades in over this time; one that replaces a visible card starts fully shown.
+pub const FADE_IN_MS: u64 = 120;
+const FADE_OUT_MS: f32 = 500.0;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -342,7 +346,8 @@ pub fn paint_activity(
         * if settings.reduced_motion {
             1.0
         } else {
-            (age / 120.0).min(1.0) * ((TTL_MS as f32 - age) / 320.0).clamp(0.0, 1.0)
+            (age / FADE_IN_MS as f32).min(1.0)
+                * ((TTL_MS as f32 - age) / FADE_OUT_MS).clamp(0.0, 1.0)
         };
     let (r, g, b) = match event.outcome.as_deref() {
         Some("refused" | "unknown") => (244, 178, 66),
