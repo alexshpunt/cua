@@ -23,9 +23,9 @@
 
 use cua_driver_core::tool::ToolRegistry;
 
+pub mod activity;
 pub mod diagnostics;
 pub mod health_report;
-pub mod activity;
 pub mod overlay;
 pub mod pip;
 pub mod recording_hooks;
@@ -131,7 +131,7 @@ pub mod uia;
 #[cfg(target_os = "windows")]
 pub mod msaa;
 
-/// Pause foreground input while the human uses the keyboard or mouse.
+/// Triple Escape by the human stops agent input.
 pub mod human_input;
 #[cfg(target_os = "windows")]
 pub mod input;

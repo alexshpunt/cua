@@ -3,7 +3,8 @@
 use super::*;
 use crate::overlay::{WinSurface, WinZOrderEnforcer};
 use cursor_overlay::activity::{
-    decode_preview, identity_property, paint_activity, ActivityRect, ActivitySource, TTL_MS,
+    decode_preview, identity_property, paint_activity, ActivityRect, ActivitySource, FADE_IN_MS,
+    TTL_MS,
 };
 use cursor_overlay::ZOrderEnforcer;
 use std::sync::mpsc::Receiver;
@@ -50,6 +51,8 @@ struct Active {
     work: Work,
     preview: Option<tiny_skia::Pixmap>,
     cued: bool,
+    /// It replaced a card on screen, so it starts fully shown instead of fading in.
+    continued: bool,
 }
 impl Drop for Active {
     fn drop(&mut self) {
@@ -233,6 +236,7 @@ fn create(class: &[u16], prepared: Prepared) -> Option<Active> {
             work,
             preview,
             cued: false,
+            continued: false,
         })
     }
 }
@@ -335,15 +339,16 @@ pub(super) fn run(rx: Receiver<()>) {
                 DispatchMessageW(&message);
             }
         }
-        active.retain(|key, item| with_current(key, &item.work, |_| ()).is_some());
+        active.retain(|key, item| with_visible(key, &item.work, |_| ()).is_some());
         if preparing.as_ref().is_some_and(|job| job.is_finished()) {
             if let Some(Ok(Some(prepared))) = preparing.take().map(|job| job.join()) {
                 let key = prepared.key.clone();
                 if prepared.work.ready(Instant::now())
                     && with_current(&key, &prepared.work, |_| ()).is_some()
                 {
-                    active.remove(&key);
-                    if active.len() >= MAX_PENDING_SOURCES {
+                    // The shown card stays until its replacement exists, so the two never leave a gap.
+                    let continued = active.contains_key(&key);
+                    if active.len() >= MAX_PENDING_SOURCES && !continued {
                         if let Some(oldest) = active
                             .iter()
                             .min_by_key(|(_, v)| v.work.admitted)
@@ -352,8 +357,11 @@ pub(super) fn run(rx: Receiver<()>) {
                             active.remove(&oldest);
                         }
                     }
-                    if let Some(item) = create(&class, prepared) {
+                    if let Some(mut item) = create(&class, prepared) {
+                        item.continued = continued;
                         active.insert(key, item);
+                    } else {
+                        active.remove(&key);
                     }
                 }
             }
@@ -409,11 +417,12 @@ pub(super) fn run(rx: Receiver<()>) {
                 work,
                 preview,
                 cued,
+                continued,
                 ..
             } = item;
             // This barrier spans the final check, pixels and cursor cues. Invalidation
             // waits for this commit, then clears any effects it enqueued.
-            with_current(key, work, |settings| {
+            with_visible(key, work, |settings| {
                 let Some(source) = work.event.source.as_ref() else {
                     return false;
                 };
@@ -429,7 +438,8 @@ pub(super) fn run(rx: Receiver<()>) {
                     &work.event,
                     preview.as_ref(),
                     &settings,
-                    work.admitted.elapsed().as_millis() as u64,
+                    work.admitted.elapsed().as_millis() as u64
+                        + if *continued { FADE_IN_MS } else { 0 },
                     cursor_overlay::session_fill_rgba(key),
                 );
                 let now = Instant::now();

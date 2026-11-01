@@ -30,11 +30,25 @@ struct Session {
     commit: Arc<Mutex<()>>,
     pending: Option<Work>,
     ended: bool,
+    /// The generation of the last clear: a card shown before it is gone, while a card stays shown
+    /// when a newer one only replaces it.
+    floor: u64,
 }
 impl Session {
     fn current(&self, work: &Work, now: Instant) -> bool {
         !self.ended
             && self.generation == work.event.generation
+            && self.epoch == work.epoch
+            && now.saturating_duration_since(work.admitted).as_millis()
+                < u128::from(cursor_overlay::activity::TTL_MS)
+            && event_allowed(&self.settings, &work.event)
+    }
+    /// A shown card stays until a clear, a settings change, the session's end or its own expiry;
+    /// a newer card replaces it without a gap.
+    fn visible(&self, work: &Work, now: Instant) -> bool {
+        !self.ended
+            && work.event.generation > self.floor
+            && work.event.generation <= self.generation
             && self.epoch == work.epoch
             && now.saturating_duration_since(work.admitted).as_millis()
                 < u128::from(cursor_overlay::activity::TTL_MS)
@@ -56,6 +70,7 @@ impl Session {
         self.epoch = self.epoch.wrapping_add(1);
         self.pending = None;
         self.generation = self.generation.saturating_add(1);
+        self.floor = self.generation;
         self.ended = true;
     }
     fn revive(&mut self) {
@@ -108,6 +123,20 @@ fn with_current<T>(key: &str, work: &Work, commit: impl FnOnce(VisualSettings) -
         let session = state.sessions.get(key)?;
         session
             .current(work, Instant::now())
+            .then(|| session.settings.clone())?
+    };
+    Some(commit(settings))
+}
+
+/// Like [`with_current`] for a card already on screen: a newer admitted card does not hide it.
+fn with_visible<T>(key: &str, work: &Work, commit: impl FnOnce(VisualSettings) -> T) -> Option<T> {
+    let gate = state().lock().ok()?.sessions.get(key)?.commit.clone();
+    let _commit = gate.lock().ok()?;
+    let settings = {
+        let state = state().lock().ok()?;
+        let session = state.sessions.get(key)?;
+        session
+            .visible(work, Instant::now())
             .then(|| session.settings.clone())?
     };
     Some(commit(settings))
@@ -247,6 +276,7 @@ pub fn present(key: &str, event: ActivityEvent) -> Result<&'static str, &'static
         return Ok("stale");
     }
     if event.kind == ActivityKind::Clear || !session.settings.enabled() {
+        session.floor = session.generation;
         session.pending = None;
         drop(state);
         clear_native(key)?;
@@ -424,8 +454,26 @@ mod tests {
         let mut session = Session::default();
         let at = Instant::now();
         let work = work(&mut session, at);
-        assert!(session.current(&work, at + Duration::from_millis(1199)));
-        assert!(!session.current(&work, at + Duration::from_millis(1200)));
+        let ttl = cursor_overlay::activity::TTL_MS;
+        assert!(session.current(&work, at + Duration::from_millis(ttl - 1)));
+        assert!(!session.current(&work, at + Duration::from_millis(ttl)));
+    }
+    #[test]
+    fn a_newer_card_replaces_a_shown_one_while_a_clear_hides_it() {
+        let mut session = Session::default();
+        let at = Instant::now();
+        let shown = work(&mut session, at);
+        assert!(session.advance(2));
+        // Pending work must be the newest; a card already on screen stays until its replacement shows.
+        assert!(!session.current(&shown, at));
+        assert!(session.visible(&shown, at));
+        assert!(session.advance(3));
+        session.floor = session.generation;
+        assert!(!session.visible(&shown, at));
+        let mut fresh = Session::default();
+        let shown = work(&mut fresh, at);
+        fresh.end();
+        assert!(!fresh.visible(&shown, at));
     }
     #[test]
     fn off_then_on_does_not_revive_an_in_progress_frame_or_consume_generation() {

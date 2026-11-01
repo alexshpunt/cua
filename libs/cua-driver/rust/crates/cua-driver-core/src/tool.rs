@@ -1784,6 +1784,10 @@ impl ToolRegistry {
         let Some(tool) = self.tools.get(resolved_name) else {
             return ToolResult::error(format!("Unknown tool: {name}"));
         };
+        // Once the human stopped agent input, only reads still run in this process.
+        if !tool.def().read_only && crate::human_stop::stopped() {
+            return crate::human_stop::refusal();
+        }
 
         // MCP types `arguments` as an object and transports substitute `{}`
         // when it is absent, but a client can still send any JSON value.
@@ -2311,6 +2315,22 @@ impl ToolRegistry {
             }))
         } else {
             None
+        };
+        // Other agents' driver processes on this desktop wait for the same action to finish.
+        let _shared_input = match _desktop_action.as_ref() {
+            Some(_) => match crate::input_lock::acquire().await {
+                Ok(turn) => turn,
+                Err(_) if crate::human_stop::stopped() => return crate::human_stop::refusal(),
+                Err(message) => {
+                    return ToolResult::error(message.clone()).with_structured(serde_json::json!({
+                        "status": "refused",
+                        "effect": "refused",
+                        "code": crate::input_lock::BUSY_CODE,
+                        "refusal": { "code": crate::input_lock::BUSY_CODE, "message": message },
+                    }))
+                }
+            },
+            None => None,
         };
         let pending_turn = should_record
             .then(|| {

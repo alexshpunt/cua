@@ -27,7 +27,7 @@ use super::windows_enum::{run_focused_document_uia, UiaDeadlineError};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FocusedDocumentTypeOutcome {
     NotApplicable,
-    HumanTakeover,
+    HumanStop,
     Confirmed,
     Unknown(&'static str),
 }
@@ -287,7 +287,7 @@ fn guarded_foreground_document_write(
     write: impl FnOnce() -> FocusedDocumentTypeOutcome,
 ) -> FocusedDocumentTypeOutcome {
     if admission.is_err() {
-        return FocusedDocumentTypeOutcome::HumanTakeover;
+        return FocusedDocumentTypeOutcome::HumanStop;
     }
     write()
 }
@@ -408,13 +408,13 @@ mod tests {
     use crate::uia::windows_enum::UiaDeadlineError;
 
     #[test]
-    fn human_takeover_refuses_before_the_foreground_document_write() {
+    fn human_stop_refuses_before_the_foreground_document_write() {
         let writes = std::cell::Cell::new(0);
-        let outcome = guarded_foreground_document_write(Err("human_takeover".into()), || {
+        let outcome = guarded_foreground_document_write(Err("human_stop".into()), || {
             writes.set(writes.get() + 1);
             FocusedDocumentTypeOutcome::Confirmed
         });
-        assert_eq!(outcome, FocusedDocumentTypeOutcome::HumanTakeover);
+        assert_eq!(outcome, FocusedDocumentTypeOutcome::HumanStop);
         assert_eq!(writes.get(), 0);
     }
 

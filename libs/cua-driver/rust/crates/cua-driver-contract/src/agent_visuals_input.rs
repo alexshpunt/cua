@@ -189,6 +189,9 @@ pub struct PresentAgentActivityInput {
     pub action: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome: Option<AgentActivityOutcome>,
+    /// Text an action types, shown to the human beside the action. Only actions carry it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub typed_text: Option<String>,
 }
 impl ToolInput for PresentAgentActivityInput {
     const TOOL_NAME: &'static str = "present_agent_activity";
@@ -245,6 +248,14 @@ impl ToolInput for PresentAgentActivityInput {
             s.len() > 64 || !s.bytes().all(|c| c.is_ascii_lowercase() || c == b'_')
         }) {
             return Err("invalid_action".into());
+        }
+        if let Some(text) = &self.typed_text {
+            if !valid_activity_text(text) {
+                return Err("invalid_typed_text".into());
+            }
+            if self.kind != AgentActivityKind::Action {
+                return Err("text_without_action".into());
+            }
         }
         Ok(())
     }
@@ -318,6 +329,12 @@ mod tests {
             .is_ok());
         }
     }
+}
+
+/// 1..=200 characters without control characters, so one line on the card shows it as typed.
+pub fn valid_activity_text(text: &str) -> bool {
+    let count = text.chars().count();
+    (1..=200).contains(&count) && !text.chars().any(char::is_control)
 }
 
 fn visual_schema(name: &str) -> Value {

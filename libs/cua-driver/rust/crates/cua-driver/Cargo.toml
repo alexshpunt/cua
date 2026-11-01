@@ -88,9 +88,10 @@ portal-input = ["platform-linux/portal-input"]
 portal-capture = ["platform-linux/portal-capture"]
 portal-libei = ["platform-linux/portal-libei"]
 
-[target.'cfg(target_os = "windows")'.build-dependencies]
+[build-dependencies]
 # Embed the Windows manifest for DPI awareness (fixes coordinate mismatches
-# at 125%/150%/200% scaling).
+# at 125%/150%/200% scaling). A build script runs on the host, so a cross
+# build from Linux needs it there too; it is used only for Windows targets.
 embed-resource = "2"
 
 [dev-dependencies]

@@ -5,7 +5,11 @@ use serde::{Deserialize, Serialize};
 use tiny_skia::{Paint, Pixmap, PixmapPaint, Rect, Stroke, Transform};
 
 pub const MAX_IMAGE_BASE64: usize = 12 * 1024 * 1024;
-pub const TTL_MS: u64 = 1200;
+/// How long a card stays when nothing replaces it: shown for about two seconds, then faded out.
+pub const TTL_MS: u64 = 2500;
+/// A new card fades in over this time; one that replaces a visible card starts fully shown.
+pub const FADE_IN_MS: u64 = 120;
+const FADE_OUT_MS: f32 = 500.0;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
@@ -133,6 +137,9 @@ pub struct ActivityEvent {
     pub image: Option<ActivityImage>,
     pub action: Option<String>,
     pub outcome: Option<String>,
+    /// Text the action types; the card shows its end when it is too long.
+    #[serde(default)]
+    pub typed_text: Option<String>,
 }
 impl ActivityEvent {
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -190,6 +197,15 @@ impl ActivityEvent {
             !matches!(s.as_str(), "delivered" | "refused" | "unknown" | "verified")
         }) {
             return Err("invalid_outcome");
+        }
+        if let Some(text) = &self.typed_text {
+            let count = text.chars().count();
+            if count == 0 || count > 200 || text.chars().any(char::is_control) {
+                return Err("invalid_typed_text");
+            }
+            if self.kind != ActivityKind::Action {
+                return Err("text_without_action");
+            }
         }
         Ok(())
     }
@@ -330,7 +346,8 @@ pub fn paint_activity(
         * if settings.reduced_motion {
             1.0
         } else {
-            (age / 120.0).min(1.0) * ((TTL_MS as f32 - age) / 320.0).clamp(0.0, 1.0)
+            (age / FADE_IN_MS as f32).min(1.0)
+                * ((TTL_MS as f32 - age) / FADE_OUT_MS).clamp(0.0, 1.0)
         };
     let (r, g, b) = match event.outcome.as_deref() {
         Some("refused" | "unknown") => (244, 178, 66),
@@ -379,10 +396,21 @@ pub fn paint_activity(
         }
     }
     let image = if settings.previews() { preview } else { None };
-    let card_w = image
-        .map_or(112.0, |p| p.width() as f32 + 16.0)
-        .min(pixmap.width() as f32 - 12.0);
-    let card_h = image.map_or(28.0, |p| p.height() as f32 + 38.0);
+    let typed = event
+        .typed_text
+        .as_deref()
+        .map(|text| tail_to_width(text, TEXT_MAX_WIDTH));
+    let card_w = match (image, &typed) {
+        (Some(p), _) => p.width() as f32 + 16.0,
+        (None, Some((_, width))) => (width + 20.0).max(112.0),
+        (None, None) => 112.0,
+    }
+    .min(pixmap.width() as f32 - 12.0);
+    let card_h = match (image, &typed) {
+        (Some(p), _) => p.height() as f32 + 38.0,
+        (None, Some(_)) => 46.0,
+        (None, None) => 28.0,
+    };
     if card_w < 36.0 || card_h > pixmap.height() as f32 - 12.0 {
         return;
     }
@@ -428,6 +456,39 @@ pub fn paint_activity(
         }
     }
     caption(pixmap, event.caption(), x + 10.0, y + 8.0, alpha);
+    if let (None, Some((text, _))) = (image, &typed) {
+        caption(pixmap, text, x + 10.0, y + 26.0, alpha);
+    }
+}
+
+/// The widest typed text a card shows before it keeps only the end.
+const TEXT_MAX_WIDTH: f32 = 340.0;
+
+fn text_width(text: &str) -> f32 {
+    let Some(font) = font() else {
+        return 0.0;
+    };
+    text.chars()
+        .map(|c| font.metrics(c, 11.0).advance_width.round())
+        .sum()
+}
+
+/// The text, or its end after an ellipsis when it is wider than `max`, with its width.
+fn tail_to_width(text: &str, max: f32) -> (String, f32) {
+    let width = text_width(text);
+    if width <= max {
+        return (text.to_owned(), width);
+    }
+    let mut characters: Vec<char> = text.chars().collect();
+    while !characters.is_empty() {
+        characters.remove(0);
+        let candidate = format!("…{}", characters.iter().collect::<String>());
+        let width = text_width(&candidate);
+        if width <= max {
+            return (candidate, width);
+        }
+    }
+    ("…".to_owned(), text_width("…"))
 }
 
 fn caption(pixmap: &mut Pixmap, text: &str, x: f32, y: f32, alpha: f32) {
@@ -515,6 +576,25 @@ mod tests {
         .unwrap();
         assert_eq!((p.width(), p.height()), (240, 60));
         assert_eq!(p.pixels()[0].red(), 200);
+    }
+    #[test]
+    fn typed_text_belongs_to_actions_and_keeps_its_end() {
+        let mut e = event();
+        e.typed_text = Some("hello".into());
+        assert_eq!(e.validate(), Err("text_without_action"));
+        e.kind = ActivityKind::Action;
+        e.region = None;
+        e.action = Some("type_text".into());
+        assert_eq!(e.validate(), Ok(()));
+        e.typed_text = Some("line\nbreak".into());
+        assert_eq!(e.validate(), Err("invalid_typed_text"));
+        e.typed_text = Some("x".repeat(201));
+        assert_eq!(e.validate(), Err("invalid_typed_text"));
+        let long = format!("start {}end", "word ".repeat(60));
+        let (shown, width) = tail_to_width(&long, TEXT_MAX_WIDTH);
+        assert!(shown.starts_with('…') && shown.ends_with("end"), "{shown}");
+        assert!(width <= TEXT_MAX_WIDTH);
+        assert_eq!(tail_to_width("short", TEXT_MAX_WIDTH).0, "short");
     }
     #[test]
     fn clear_cannot_smuggle_an_image_or_source() {
