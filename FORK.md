@@ -18,7 +18,9 @@ This build includes the typed SDK, canonical-success validation, harness and con
 - Foreground clicks and drags go through `SendInput` and keep the target window active. Clicks on a target's owned popups work.
 - A foreground press checks its point first: a click, the start of a drag or held path, and each button or pen press of an `input_timeline`. When after activation another top-level window still covers the point, the call refuses with `pointer_target_occluded` before pressing, and names that window's id, pid, title and relation (`owned_window`, `same_process` or `other_process`). The target's own captionless popups, such as menus and drop-downs, take the press.
 - A foreground click that closes its target, such as OK in a dialog, succeeds when a visible window of the same process takes the foreground; the result names it as `foreground_after`. The target counts as closed once it is destroyed or hidden. The check after the click waits up to 300 ms for Windows to hand the foreground on. A foreground of another process still fails.
-- Foreground input pauses while the person at the machine uses the keyboard or mouse, and resumes 10 seconds after they stop.
+- Foreground input never waits for the person at the machine: it takes the foreground and runs.
+- With `CUA_ESCAPE_STOP=1`, three physical Escape presses within a second stop all input of the driver process. Injected Escape, including the agent's own, does not count, and auto-repeat counts once. Every tool that is not read-only then refuses with `human_stop`, running typing, held paths, timelines and pointer moves stop at their next step, and the envelope transport sends `notifications/cua/human_stop` at once. The stop lasts until the process exits.
+- With `CUA_SHARED_INPUT_LOCK=1`, each desktop action holds an exclusive lock on `cua-driver-shared-input.lock` in the user's temporary directory, so agents in separate driver processes on one desktop never interleave inside an action. A call waits up to 60 s for another process's action, then refuses with `input_busy`. Windows releases the lock when a process exits.
 - Text is typed as keystrokes when the target's keyboard layout has the character.
 - Strict UI Automation actions: `invoke`, `select` and `set_value` on an element, without falling back to mouse or keyboard, and without moving the human's focus or switching virtual desktops.
 - `click` and `scroll` take `uia_only`: an element is pressed or scrolled only through its UI Automation patterns, and when none carries the action the call refuses with the cause before sending anything. Upstream falls back to posted window messages, which some apps (Windows Terminal, XAML islands) drop while the call still reports success.
@@ -26,7 +28,7 @@ This build includes the typed SDK, canonical-success validation, harness and con
 ## Windows and displays
 
 - Restore a minimized window, and move, resize, minimize, maximize or focus an exact window, with a receipt of what actually changed. A resize may land up to 2 px away in width or height and still counts as done: Windows keeps a window that is not DPI aware in whole logical pixels on a scaled display, so some sizes are unreachable. Position and every other operation stay exact.
-- Focus activates a window while another app holds the foreground the same way input does, with a no-op key event that gives the driver foreground rights; it waits while the human uses the keyboard or mouse.
+- Focus activates a window while another app holds the foreground the same way input does, with a no-op key event that gives the driver foreground rights.
 - Read a selected display with its native topology, not only the primary one.
 - Report which virtual desktop a window belongs to.
 - Confirm that a window hasn't changed from its frame size instead of capturing it again before each capture-bound action.
@@ -56,6 +58,8 @@ This build includes the typed SDK, canonical-success validation, harness and con
 ## Native activity presentation
 
 The published `4b547b54` Windows runtime includes session-owned native activity presentation through `set_agent_visuals` and `present_agent_activity`, with their canonical typed Rust SDK and UniFFI methods in the matching source. The default embedded SDK constructor does not start a native overlay: settings can be configured while presentation returns `visual_session_unavailable`. Admission requires a renderer-owning host, such as the native daemon; configuration alone does not prove that anything was shown.
+
+`CUA_SESSION_LABEL` names the agent cursor of every session in the process that has no public label of its own. `present_agent_activity` takes `typed_text`, at most 200 characters without control characters, and only on an action: the card shows its end. A card stays until the next one replaces it, so consecutive actions do not blink; a card nothing replaces stays about two seconds and fades out over 500 ms.
 
 Input does not wait for cursor animation. Each session has bounded visual playback, with at most 32 pending commands and a 500 ms stale-event budget. Consecutive navigation coalesces and dense activity plays in compressed form. These presentation timings never change actual held input or timeline timing.
 
