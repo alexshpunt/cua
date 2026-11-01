@@ -55,7 +55,7 @@ This build includes the typed SDK, canonical-success validation, harness and con
 
 ## Native activity presentation
 
-The published `4b547b54` Windows runtime includes session-owned native activity presentation through `set_agent_visuals` and `present_agent_activity`, with their canonical typed Rust SDK and UniFFI methods in the matching source. The default embedded SDK constructor does not start a native overlay: settings can be configured while presentation returns `visual_session_unavailable`. Admission requires a renderer-owning host, such as the native daemon; configuration alone does not prove that anything was shown.
+The published `3e69266e` Windows runtime includes session-owned native activity presentation through `set_agent_visuals` and `present_agent_activity`, with their canonical typed Rust SDK and UniFFI methods in the matching source. The default embedded SDK constructor does not start a native overlay: settings can be configured while presentation returns `visual_session_unavailable`. Admission requires a renderer-owning host, such as the native daemon; configuration alone does not prove that anything was shown.
 
 Input does not wait for cursor animation. Each session has bounded visual playback, with at most 32 pending commands and a 500 ms stale-event budget. Consecutive navigation coalesces and dense activity plays in compressed form. These presentation timings never change actual held input or timeline timing.
 
