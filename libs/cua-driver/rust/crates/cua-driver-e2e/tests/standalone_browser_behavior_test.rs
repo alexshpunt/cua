@@ -138,8 +138,7 @@ fn standalone_browser_completeness_html() -> String {
 fn standalone_browser_permission_prompt_html() -> String {
     standalone_fixture_html().replace(
         "</body>",
-        r#"<button style="position:fixed;right:8px;bottom:8px;width:100px;height:30px;z-index:10001">Focus page</button>
-<fieldset style="position:fixed;left:16px;top:120px;z-index:10000;background:white">
+        r#"<fieldset style="position:fixed;left:16px;top:120px;z-index:10000;background:white">
   <legend>browser-owned permission</legend>
   <button id="standalone-browser-permission" data-cua-id="standalone-browser-permission"
           aria-label="Request browser permission">Request browser permission</button>
@@ -4017,41 +4016,6 @@ fn run_browser_owned_permission_prompt(spec: &BrowserSpec) {
             format!("standalone-browser-permission-window-after-{}", fixture.pid);
         let browser_session = format!("standalone-browser-permission-page-{}", fixture.pid);
         let bounds = browser_window_bounds(&mut fixture.driver, fixture.pid, fixture.window_id);
-        if cfg!(target_os = "windows") && spec.name == "edge" {
-            // Start with focus in the page, as a user would. Otherwise Edge
-            // shifts the selected address text when it adds its quiet icon.
-            let state = fixture.driver.call(
-                "get_window_state",
-                serde_json::json!({
-                    "pid": fixture.pid as i64,
-                    "window_id": fixture.window_id,
-                    "session": window_session,
-                }),
-            );
-            assert!(!state.is_error(), "focus setup capture: {}", state.raw);
-            let width = state.structured()["screenshot_width"]
-                .as_f64()
-                .expect("width");
-            let height = state.structured()["screenshot_height"]
-                .as_f64()
-                .expect("height");
-            let capture_id = state.structured()["capture_id"]
-                .as_str()
-                .expect("capture_id");
-            let focused = fixture.driver.call(
-                "click",
-                serde_json::json!({
-                    "session": window_session,
-                    "pid": fixture.pid as i64,
-                    "window_id": fixture.window_id,
-                    "x": width - 50.0,
-                    "y": height - 23.0,
-                    "capture_id": capture_id,
-                    "delivery_mode": "foreground",
-                }),
-            );
-            assert!(!focused.is_error(), "focus setup click: {}", focused.raw);
-        }
         let before = fixture.driver.call(
             "get_window_state",
             serde_json::json!({
