@@ -27,12 +27,12 @@ pub(crate) fn privileged_file_user(driver: &str) -> String {
     }
 }
 
-/// The user each sandbox's cua-spacesd runs as, by sandbox id.
+/// The guest agent's execution and filesystem mode, by sandbox id.
 #[derive(Default)]
 pub struct Drivers(Mutex<HashMap<String, String>>);
 
 impl Drivers {
-    /// The user `c`'s cua-spacesd runs as (`id -un`; cached per sandbox).
+    /// The execution mode or guest username, cached per sandbox.
     pub async fn of(&self, id: &str, c: &SpacesdClient) -> String {
         if let Some(u) = self.0.lock().await.get(id) {
             return u.clone();

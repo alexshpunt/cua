@@ -134,12 +134,10 @@ enum Sink {
 const CHUNK: usize = 1 << 20;
 
 impl<'a> Writer<'a> {
-    /// A file at `path` written for `user`, through a cua-spacesd running as
-    /// `driver`: written directly when the driver is that user; written
-    /// and then given to `user` when the driver is root; otherwise staged
-    /// in `/tmp` and moved into place with root's rights (`sudo -n`), then
-    /// given to `user` with the directories it made, as the providers'
-    /// own agents (running as root) do.
+    /// Writes a file for `user` with the provider agent's root semantics.
+    /// A privileged filesystem writes directly; otherwise the data is staged
+    /// in `/tmp` and copied as root. New files and directories are given to
+    /// `user`.
     pub async fn begin(
         c: &'a cua_spacesd_client::SpacesdClient,
         path: &str,
