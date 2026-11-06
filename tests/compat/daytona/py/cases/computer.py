@@ -6,6 +6,7 @@ Derived from daytona 0.225.0 `_sync/computer_use.py`, `common/computer_use.py`
 and the toolbox client's `computer_use_api.py` and models."""
 
 import base64
+import os
 
 from harness import case, err_obs
 
@@ -32,9 +33,9 @@ async def processes(c):
     assert (await c.w(cu.get_process_logs("x11vnc"))).process_name == "x11vnc"
     assert (await c.w(cu.get_process_errors("xfce4"))).errors == ""
     stopped = await c.w(cu.stop())
-    assert all(
-        s.running for s in stopped.status.values()
-    ), "the desktop belongs to the Space and keeps running"
+    assert all(s.running for s in stopped.status.values()), (
+        "the desktop belongs to the Space and keeps running"
+    )
     e = await c.raises(lambda: cu.get_process_status("no-such-process"))
     assert e and e["type"] == "DaytonaProcessNotFoundError" and e["status_code"] == 404, e
     return {"processes": names, "status": "active", "stopKeepsRunning": True, "unknown": err_obs(e)}
@@ -130,21 +131,41 @@ async def display(c):
 @case("computer.accessibility", needs="mock", ref="_sync/computer_use.py Accessibility")
 async def accessibility(c):
     sb = await c.main()
-    a = sb.computer_use.accessibility
-    tree = await c.w(a.get_tree())
-    assert tree.root is not None, tree
-    found = await c.w(a.find_nodes(role="button"))
-    assert found.matches is not None
-    if found.matches:
-        nid = found.matches[0].id
-        await c.w(a.focus_node(nid))
-        await c.w(a.invoke_node(nid))
-        await c.w(a.invoke_node(nid, action="press"))
-    gone = await c.raises(lambda: a.focus_node("no-such:node"))
-    assert gone and gone["status_code"] in (404, 503), gone
-    bad_re = await c.raises(lambda: a.find_nodes(name="(", name_match="regex"))
-    assert bad_re and bad_re["status_code"] == 400, bad_re
-    return {"treeRoot": True, "unknownNode": gone["status_code"], "badRegex": err_obs(bad_re)}
+    real = os.environ.get("COMPAT_REAL_GUEST") == "1"
+    try:
+        if real:
+            # The API defaults to the focused window. Start a known accessible
+            # fixture rather than relying on a preceding input case's focus.
+            setup = await c.w(
+                sb.process.exec(
+                    "sudo -n -u cua /usr/local/bin/cua-fixtures start form && "
+                    "sudo -n -u cua /usr/local/bin/desktop-env wmctrl -a 'CUA Fixture Form'"
+                )
+            )
+            assert setup.exit_code == 0, setup.result
+        a = sb.computer_use.accessibility
+        tree = await c.w(a.get_tree())
+        assert tree.root is not None, tree
+        found = await c.w(a.find_nodes(role="button", **({"name": "Submit"} if real else {})))
+        assert found.matches is not None
+        if real:
+            assert found.matches, "the accessible form's Submit button was not found"
+        if found.matches:
+            nid = found.matches[0].id
+            await c.w(a.focus_node(nid))
+            await c.w(a.invoke_node(nid))
+            await c.w(a.invoke_node(nid, action="press"))
+        gone = await c.raises(lambda: a.focus_node("no-such:node"))
+        assert gone and gone["status_code"] in (404, 503), gone
+        bad_re = await c.raises(lambda: a.find_nodes(name="(", name_match="regex"))
+        assert bad_re and bad_re["status_code"] == 400, bad_re
+        return {"treeRoot": True, "unknownNode": gone["status_code"], "badRegex": err_obs(bad_re)}
+    finally:
+        if real:
+            stopped = await c.w(
+                sb.process.exec("sudo -n -u cua /usr/local/bin/cua-fixtures stop form")
+            )
+            assert stopped.exit_code == 0, stopped.result
 
 
 @case(
