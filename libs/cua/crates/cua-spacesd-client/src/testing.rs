@@ -938,6 +938,9 @@ impl SystemService for Svc {
                     } else {
                         String::new()
                     },
+                    // The in-memory filesystem accepts every listed guest
+                    // identity, including root.
+                    attributes: [("privilege".into(), "root".into())].into(),
                     ..Default::default()
                 },
                 // How the mock agent switches users (see `run_as_mode`).
