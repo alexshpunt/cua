@@ -3,7 +3,7 @@ name: "E2E: Cua Driver release gate"
 # Runs the Linux, Windows and standalone browser E2E lanes without publishing.
 # The fork does not run the upstream macOS lane.
 #
-#   nightly   06:00 UTC against main's HEAD. Failures (and flaky cases) open or
+#   nightly   06:00 UTC against the default branch. Failures (and flaky cases) open or
 #             update ONE tracking issue; the failed run also reaches #releases
 #             through the GitHub Slack app workflow-run subscription.
 #   PR        runs when the `e2e-gate` label is present, when the PR touches the

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import yaml
 from pathlib import Path
 
 
@@ -28,38 +29,36 @@ def test_driver_stable_publish_gate_and_workflow_name_are_frozen():
     assert 'workflows: ["CD: Cua Driver (cross-platform)"]' in sdk
 
 
-def test_driver_nightly_publishes_only_after_the_desktop_e2e_gate():
-    nightly = source("nightly-cua-driver.yml")
-    driver = source("cd-rust-cua-driver.yml")
-    # The builder's E2E gate jobs need actions: read from the nightly caller.
-    assert "permissions:\n  # actions: read" in nightly
-    assert "\n  actions: read\n" in nightly
-    # The builder's tag-only `staging-gate` job asks for statuses: read. The
-    # caller must grant it or the run ends as startup_failure (20 to 24 Oct).
-    assert "\n  statuses: read\n" in nightly
-    # Nightly builds run the same suites as the stable tag push, against the
-    # exact nightly source rather than the caller's workflow revision.
-    build = nightly.split("\n  build:\n", 1)[1].split("\n\n", 1)[0]
-    assert "      channel: nightly\n" in build
-    assert "      source_ref: ${{ inputs.source_sha || github.sha }}\n" in build
-    gate_sha = "${{ inputs.channel == 'nightly' && inputs.source_ref || github.sha }}"
-    for job, sha_input in (
-        ("e2e-linux", "ref"),
-        ("e2e-windows", "ref"),
-        ("e2e-macos", "source_sha"),
-        ("e2e-standalone-browsers", "ref"),
+def test_driver_release_jobs_are_disabled_outside_upstream():
+    jobs = yaml.safe_load(source("cd-rust-cua-driver.yml"))["jobs"]
+    roots = {name for name, job in jobs.items() if "needs" not in job}
+    assert roots == {"release-attribution-preflight", "request-staging-smoke", "staging-gate"}
+    for name in roots:
+        assert "github.repository == 'trycua/cua'" in jobs[name]["if"]
+    for name, job in jobs.items():
+        if name not in roots:
+            assert "always()" not in job.get("if", "")
+
+
+def test_driver_sdk_release_is_disabled_outside_upstream():
+    jobs = yaml.safe_load(source("cd-py-cua-driver.yml"))["jobs"]
+    assert {name for name, job in jobs.items() if "needs" not in job} == {"get-version"}
+    assert "github.repository == 'trycua/cua'" in jobs["get-version"]["if"]
+    assert all("always()" not in job.get("if", "") for job in jobs.values())
+
+
+def test_fork_driver_nightly_runs_desktop_lanes_without_publishing():
+    nightly = yaml.safe_load(source("nightly-cua-driver.yml"))
+    assert nightly["permissions"] == {"actions": "read", "contents": "read"}
+    assert set(nightly["jobs"]) == {"linux", "windows", "browsers"}
+    for job, called in (
+        ("linux", "e2e-rust-linux.yml"),
+        ("windows", "e2e-rust-windows.yml"),
+        ("browsers", "e2e-rust-standalone-browsers.yml"),
     ):
-        block = driver.split(f"\n  {job}:\n", 1)[1].split("\n\n", 1)[0]
-        assert f"    if: ({TAG_PUSH}) || inputs.channel == 'nightly'\n" in block
-        assert f"\n      {sha_input}: {gate_sha}" in block
-    # A failed suite fails the reusable build, and publish requires a
-    # successful build with no status-function bypass.
-    publish = nightly.split("\n  publish:\n", 1)[1].split("    steps:\n", 1)[0]
-    assert "    needs: [plan, build]\n" in publish
-    assert "needs.build.result == 'success'" in publish
-    for override in ("always()", "failure()", "cancelled()", "continue-on-error"):
-        assert override not in publish
-        assert override not in build
+        lane = nightly["jobs"][job]
+        assert lane["uses"] == f"./.github/workflows/{called}"
+        assert lane["with"]["ref"] == "${{ github.sha }}"
 
 
 def test_lume_stable_publish_gate_remains_tag_only():
@@ -67,27 +66,6 @@ def test_lume_stable_publish_gate_remains_tag_only():
     assert "if: startsWith(github.ref, 'refs/tags/lume-v')" in lume
     assert (
         "BUNDLE_VERSION: ${{ inputs.bundle_version || steps.set_version.outputs.version }}" in lume
-    )
-
-
-def test_driver_nightly_reuses_builder_without_stable_state_mutation():
-    nightly = source("nightly-cua-driver.yml")
-    assert "uses: ./.github/workflows/cd-rust-cua-driver.yml" in nightly
-    assert "channel: nightly" in nightly
-    assert "--create-if-missing" in nightly
-    assert "--prerelease" in nightly
-    assert "--make-latest" not in nightly
-    assert "update_cua_driver_installer_version.py" not in nightly
-    assert ".github/release-state" not in nightly
-    assert "Collect PR-first attribution and render nightly body" in nightly
-    assert "GH_TOKEN: ${{ github.token }}" in nightly
-    assert "needs.plan.outputs.attribution_base_tag" in nightly
-    assert "issues: write" in nightly
-    assert "pull-requests: read" in nightly
-    assert "release_channels.py apply-version" not in nightly
-    assert "release_channels.py stage-versioned-tree" in nightly
-    assert nightly.index("stage-versioned-tree") < nightly.index(
-        "Collect PR-first attribution and render nightly body"
     )
 
 
@@ -131,7 +109,10 @@ def test_planner_requires_main_ancestry_and_preserves_immutable_evidence():
     assert "needs.plan.outputs.attribution_issues != '[]'" in planner
     assert "GITHUB_STEP_SUMMARY" in planner
     # One rolling issue; a failed report must never fail the reusable planner.
-    assert "name: Refresh the rolling unresolved-attribution issue\n        continue-on-error: true" in planner
+    assert (
+        "name: Refresh the rolling unresolved-attribution issue\n        continue-on-error: true"
+        in planner
+    )
     assert "release_attribution.py report-unresolved" in planner
     assert "cancel-in-progress: false" in source("nightly-cua-driver.yml")
     assert "cancel-in-progress: false" in source("nightly-lume.yml")
