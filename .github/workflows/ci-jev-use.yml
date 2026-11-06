@@ -345,6 +345,8 @@ jobs:
   # silently tests an older release. The candidate-source build above stays
   # Linux-only.
   released-driver-macos:
+    # macOS checks are disabled in the fork.
+    if: ${{ github.repository == 'trycua/cua' }}
     name: macOS released Driver mock E2E
     runs-on: macos-26
     timeout-minutes: 45
@@ -461,6 +463,8 @@ jobs:
   # mock provider. verify_native.py launches a fresh harness per run and reads
   # the harness's own state file as the independent oracle.
   native-appkit-macos:
+    # macOS checks are disabled in the fork.
+    if: ${{ github.repository == 'trycua/cua' }}
     name: macOS native AppKit mock E2E
     runs-on: macos-26
     timeout-minutes: 45

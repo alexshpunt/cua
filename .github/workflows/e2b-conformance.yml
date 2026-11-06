@@ -16,9 +16,6 @@ name: "e2b conformance (cua-e2b)"
 # - live-e2b: with the E2B_API_KEY secret, the conformance suite runs against
 #   E2B through the latest e2b release and is compared with the committed
 #   behaviour golden: a changed return shape or error fails (weekly).
-# - live-cua: on a runner that can boot Linux VMs (`vars.CUA_E2B_VM_RUNNER`,
-#   a self-hosted macOS label), the same suite runs through cua-e2b against
-#   real Linux `vm` Spaces (weekly and on demand).
 
 on:
   pull_request:
@@ -157,47 +154,3 @@ jobs:
               print("DRIFT:", d)
           sys.exit(1 if diffs else 0)
           EOF
-
-  live-cua:
-    name: Behaviour golden (cua-e2b on Linux vm Spaces)
-    if: github.event_name != 'pull_request' && vars.CUA_E2B_VM_RUNNER != ''
-    runs-on: ${{ fromJSON(format('["self-hosted","macOS","ARM64","{0}"]', vars.CUA_E2B_VM_RUNNER)) }}
-    timeout-minutes: 90
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-      - name: Build the SDK wheel
-        working-directory: libs/cua
-        run: |
-          cargo build --locked --release -p cua-sdk -p cua-cli
-          node scripts/stage-uniffi-library.mjs --only=python
-          cd python && uv run --no-project --python 3.12 --with build python build_wheel.py --cli ../target/release/cua --out-dir dist
-      - name: Run the suite through cua-e2b and compare
-        working-directory: libs/python/cua-e2b/tests
-        run: |
-          export CUA_HOME="$RUNNER_TEMP/cua-home" CUA_E2B_ON=local CONFORMANCE_SCHEME=http
-          WHEEL=$(ls ../../../cua/python/dist/cua-[0-9]*.whl); CLI_WHEEL=$(ls ../../../cua/python/dist/cua_cli-*.whl)
-          uv run --no-project --isolated --python 3.12 --with "$WHEEL" --with "$CLI_WHEEL" --with-editable .. \
-            python -m conformance.suite > "$RUNNER_TEMP/cua.json"
-          uv run --no-project --python 3.12 python - <<'EOF'
-          import json, os, sys
-          from conformance import suite
-          got = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "cua.json")))
-          diffs = []
-          for version, allow in (("2.56.0", ()), ("2.42.0", suite.SINCE_2_56)):
-              golden = json.load(open(f"conformance/golden/e2b-{version}-behavior.json"))["results"]
-              skip = set(got["results"]) - set(golden)  # a release without the case
-              diffs += [f"[e2b {version}] {d}" for d in suite.compare(golden, got["results"], skip=skip, allow=allow)]
-          for d in diffs:
-              print("DRIFT:", d)
-          print("timings:", got["timings"])
-          sys.exit(1 if diffs else 0)
-          EOF
-      - name: Delete what the run left
-        if: always()
-        run: |
-          export CUA_HOME="$RUNNER_TEMP/cua-home"
-          for s in $(libs/cua/target/release/cua spaces ls --json 2>/dev/null | python3 -c 'import json,sys; print(" ".join(x["id"] for x in json.load(sys.stdin) if x["name"].startswith("e2b-")))' 2>/dev/null); do
-            libs/cua/target/release/cua spaces delete "$s" --force || true
-          done
-          libs/cua/target/release/cua daemon stop || true

@@ -50,21 +50,6 @@ env:
   DO_NOT_TRACK: "1"
 
 jobs:
-  swift:
-    # Not on main pushes: those exist to keep the rust lane's cache warm.
-    if: ${{ github.event_name != 'push' && !startsWith(github.head_ref, 'release-please--branches--') }}
-    name: swift blocks
-    runs-on: macos-14
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-      - name: Compile the Swift blocks
-        env:
-          CUA_E2E_RESULTS: ${{ runner.temp }}/docs-swift
-        run: python3 tests/e2e/cua-sdk/docs/compile_lane.py --lane swift
-
   kotlin:
     # Not on main pushes: those exist to keep the rust lane's cache warm.
     if: ${{ github.event_name != 'push' && !startsWith(github.head_ref, 'release-please--branches--') }}

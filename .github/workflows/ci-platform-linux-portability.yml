@@ -47,6 +47,8 @@ env:
 
 jobs:
   platform-linux-off-linux:
+    # macOS checks are disabled in the fork.
+    if: ${{ github.repository == 'trycua/cua' }}
     name: platform-linux compiles on macOS
     runs-on: macos-latest
     timeout-minutes: 20

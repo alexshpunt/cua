@@ -145,7 +145,7 @@ jobs:
 
   swift:
     needs: changes
-    if: ${{ needs.changes.outputs.run == 'true' && !startsWith(github.head_ref, 'release-please--branches--') }}
+    if: ${{ github.repository == 'trycua/cua' && needs.changes.outputs.run == 'true' && !startsWith(github.head_ref, 'release-please--branches--') }}
     name: openkoalabot-example-swift (swift test)
     runs-on: macos-26-xlarge
     timeout-minutes: 60

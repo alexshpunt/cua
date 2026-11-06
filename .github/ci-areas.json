@@ -178,7 +178,6 @@
     "ci-pi-durable-crash.yml",
     "ci-spdx-headers.yml",
     "ci-test-python.yml",
-    "ci-vm-density.yml",
     "docs-compile-lanes.yml",
     "docs-nightly.yml",
     "docs-page-tests.yml",

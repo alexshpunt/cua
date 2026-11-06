@@ -127,7 +127,8 @@ jobs:
   # each compiling it (the checks that need the Rust toolchain compile only
   # the small bindgen tools).
   ffi:
-    if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
+    # macOS checks are disabled in the fork.
+    if: ${{ github.repository == 'trycua/cua' && !startsWith(github.head_ref, 'release-please--branches--') }}
     name: Cua Spaces app library (built once)
     runs-on: macos-26-xlarge
     env:

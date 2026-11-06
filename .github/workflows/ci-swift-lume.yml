@@ -21,6 +21,8 @@ permissions:
 
 jobs:
   test:
+    # macOS checks are disabled in the fork.
+    if: ${{ github.repository == 'trycua/cua' }}
     name: Test
     runs-on: macos-15
     steps:
@@ -30,6 +32,8 @@ jobs:
       - run: swift test
         working-directory: ./libs/lume
   build:
+    # macOS checks are disabled in the fork.
+    if: ${{ github.repository == 'trycua/cua' }}
     name: Release build
     runs-on: macos-15
     steps:
