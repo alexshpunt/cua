@@ -3946,6 +3946,58 @@ fn browser_chrome_changed_pixel_center(
     })
 }
 
+/// Edge exposes its quiet permission indicator as a native UI Automation
+/// button, even when the window screenshot omits the permission surface.
+fn edge_permission_indicator(elements: &serde_json::Value) -> Option<(f64, f64)> {
+    let mut matches = elements.as_array()?.iter().filter(|element| {
+        element["class_name"] == "PermissionDashboardView"
+            && element["role"] == "Button"
+            && element["enabled"] == true
+            && element["offscreen"] == false
+    });
+    let element = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    let frame = &element["frame"];
+    let (x, y, width, height) = (
+        frame["x"].as_f64()?,
+        frame["y"].as_f64()?,
+        frame["w"].as_f64()?,
+        frame["h"].as_f64()?,
+    );
+    (width > 0.0 && height > 0.0).then_some((x + width / 2.0, y + height / 2.0))
+}
+
+#[test]
+fn edge_permission_indicator_requires_one_visible_button_with_bounds() {
+    let indicator = serde_json::json!({
+        "class_name": "PermissionDashboardView",
+        "role": "Button",
+        "enabled": true,
+        "offscreen": false,
+        "frame": {"x": 128, "y": 88, "w": 24, "h": 24},
+    });
+    assert_eq!(
+        edge_permission_indicator(&serde_json::json!([indicator.clone()])),
+        Some((140.0, 100.0))
+    );
+    assert_eq!(edge_permission_indicator(&serde_json::json!([])), None);
+    assert_eq!(
+        edge_permission_indicator(&serde_json::json!([indicator.clone(), indicator.clone()])),
+        None
+    );
+    let mut hidden = indicator.clone();
+    hidden["offscreen"] = true.into();
+    assert_eq!(
+        edge_permission_indicator(&serde_json::json!([hidden])),
+        None
+    );
+    let mut empty = indicator;
+    empty["frame"]["w"] = 0.into();
+    assert_eq!(edge_permission_indicator(&serde_json::json!([empty])), None);
+}
+
 /// Screen-point center of the pixels that changed in the top browser chrome of
 /// two captures of the same window. Window captures exclude other processes'
 /// windows, so a system notification banner over the toolbar cannot move the
@@ -4194,16 +4246,25 @@ fn run_browser_owned_permission_prompt(spec: &BrowserSpec) {
         let quiet_indicator = if spec.name != "edge" {
             None
         } else if cfg!(target_os = "windows")
-            && initial_desktop_changed_pixels < minimum_prompt_pixels
+            && (initial_desktop_changed_pixels < minimum_prompt_pixels
+                || initial_desktop_changed_pixels
+                    <= changed_pixel_count(&window_before, &window_after).saturating_mul(2))
         {
-            let full_desktop_before = load_capture(&desktop_before_path);
-            let full_desktop_after = load_capture(&desktop_after_path);
-            Some(browser_chrome_changed_pixel_center(
-                &full_desktop_before,
-                &full_desktop_after,
-                &desktop,
-                bounds,
-            ))
+            let indicator = edge_permission_indicator(&window.structured()["elements"]);
+            if indicator.is_some() {
+                Some(indicator)
+            } else if initial_desktop_changed_pixels < minimum_prompt_pixels {
+                let full_desktop_before = load_capture(&desktop_before_path);
+                let full_desktop_after = load_capture(&desktop_after_path);
+                Some(browser_chrome_changed_pixel_center(
+                    &full_desktop_before,
+                    &full_desktop_after,
+                    &desktop,
+                    bounds,
+                ))
+            } else {
+                None
+            }
         } else if cfg!(target_os = "macos")
             && changed_pixel_count(&window_before, &window_after) < minimum_prompt_pixels
         {
