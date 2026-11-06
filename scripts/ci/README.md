@@ -170,17 +170,16 @@ subsequent change in the PR review record.
 
 ### Automatic release gate
 
-Stable Cua Driver releases need no manual E2E or publish dispatch. The
-`cua-driver-rs-v*` tag that Release Please creates starts
-`.github/workflows/cd-rust-cua-driver.yml`, which calls the Linux, Windows,
-hosted macOS, and standalone-browser E2E workflows through `workflow_call`
-against the exact tag SHA. The draft release is published only when those
-suites, the builds, and the release artifact checks pass. Nightly builds run
-the same four suites against the nightly source SHA whenever the nightly plan
-builds. A failed suite fails the nightly run and its prerelease is not
-published. The logged-in macOS Lume matrix is not part of the automatic gate;
-it remains pre-merge evidence. Manual dispatch of the same workflows stays the
-way to certify a pull request candidate.
+The fork does not run the Cua Driver release and SDK publishing workflows.
+The upstream `trycua/cua` release workflow keeps its Linux, Windows, hosted
+macOS, and standalone-browser E2E gates on the exact release tag SHA, along
+with its artifact and signing checks. The logged-in macOS Lume matrix remains
+pre-merge evidence.
+
+In the fork, `nightly-cua-driver.yml` runs the Linux, Windows, and
+standalone-browser workflows against the scheduled default-branch SHA. It
+does not build or publish release artifacts. The reusable macOS E2E workflow
+remains available for manual dispatch.
 
 ### Quick development feedback
 
@@ -416,12 +415,12 @@ Use this runbook when the canary issue opens, or when users report that default 
 
 ## Cua Driver release gate before merge and nightly
 
-The stable tag run certifies the exact tag commit with the desktop E2E lanes. `E2E: Cua Driver release gate` (`.github/workflows/e2e-cua-driver-release-gate.yml`) runs the same lanes earlier, without publishing:
+In the fork, `E2E: Cua Driver release gate` (`.github/workflows/e2e-cua-driver-release-gate.yml`) runs Linux, Windows, and standalone-browser lanes without publishing:
 
 | Trigger | When | Result |
 | --- | --- | --- |
-| Nightly, 06:00 UTC | main's HEAD | A failure opens or updates one issue, "Cua Driver release gate failing on main (nightly)". The failed run also posts to #releases through the GitHub Slack app workflow-run subscription. The first fully clean nightly closes the issue. |
-| Pull request | The `e2e-gate` label is present, or the PR touches the cursor overlay, focus, background input or browser routing paths (globs in `.github/scripts/cua_driver_e2e_gate_paths.py`). release-please PRs skip the lanes (the tag gate runs them on the release commit) unless labelled | The four lanes run on the PR merge commit. |
+| Nightly, 06:00 UTC | Default branch HEAD | A failure or flaky case opens or updates one issue named for the branch. The first fully clean nightly closes it. |
+| Pull request | The `e2e-gate` label is present, or the PR touches the cursor overlay, focus, background input or browser routing paths (globs in `.github/scripts/cua_driver_e2e_gate_paths.py`). Release Please PRs skip the lanes unless labelled. | The three lanes run on the PR merge commit. |
 | Other pull requests | Everything else | The lanes are skipped and `E2E gate / result` passes at once. |
 
 **Retry once.** Inside each lane a failed case is rerun once (`lib/e2e-retry-once.sh`, and `Invoke-CargoTest` in the Windows runner). A pass on the retry is flaky: it is listed under "Flaky cases" in the job summary and in the tracking issue, and does not fail the gate. Two failures are a real failure. The first attempt's rows, videos and log are kept under `retried-attempts/` in the lane artifact.
