@@ -37,7 +37,7 @@ jobs:
       - name: Install pinned Rust toolchain
         uses: dtolnay/rust-toolchain@1.97.1
         with:
-          targets: wasm32-unknown-unknown
+          targets: wasm32-unknown-unknown,x86_64-unknown-linux-musl
       - uses: ./.github/actions/rust-cache
         with:
           workspaces: |
@@ -49,8 +49,8 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: "22"
-      - name: Install ffmpeg (recordings)
-        run: sudo apt-get install -y -q ffmpeg
+      - name: Install ffmpeg and musl toolchain
+        run: sudo apt-get install -y -q ffmpeg musl-tools
       - name: Build cua (Cua Spaces build) and the reference images
         run: |
           tests/e2e/cua-sdk/ci-setup.sh --images --disks
@@ -58,6 +58,13 @@ jobs:
           echo "CUA=$PWD/libs/cua/target/debug/cua" >>"$GITHUB_ENV"
           arch=$(uname -m); case "$arch" in aarch64|arm64) a=arm64;; *) a=amd64;; esac
           echo "LINUX_DISK=$HOME/.cache/cua-images-e2e/linux/$a/disk.img" >>"$GITHUB_ENV"
+      - name: Build the static guest for image-build cases
+        working-directory: libs/cua-spacesd
+        run: |
+          cargo build --locked --profile static --target x86_64-unknown-linux-musl -p cua-spacesd --bin cua-spacesd
+          binary=target/x86_64-unknown-linux-musl/static/cua-spacesd
+          bash packaging/release/check-static-binary.sh "$binary"
+          install -m 0755 "$binary" ../cua/target/debug/cua-spacesd-linux-x86_64
       - name: Start the daemon
         run: |
           "$CUA" daemon start --foreground >"$RUNNER_TEMP/daemon.log" 2>&1 &
