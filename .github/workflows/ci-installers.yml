@@ -96,19 +96,6 @@ jobs:
             CUA_INSTALL_BASE_URL=http://127.0.0.1:8765 sh /w/install.sh --dry-run --pair K7QM-4XPB-2RHD | grep -q "host setup --pair K7QM-4XPB-2RHD"
           '
 
-  installer-smoke-macos:
-    if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
-    name: installer smoke (macOS, temp prefix + dmg mount + pkg)
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-      - name: install.sh test suite (includes the .dmg mount into --prefix)
-        run: sh scripts/install/tests/run.sh
-      - name: uninstall.sh tests under macOS's /bin/sh (a throwaway HOME, no real Keychain or services)
-        run: python3 -m unittest discover -s scripts/install/tests -p 'test_uninstall.py' -v
-      - name: .pkg build + expand + postinstall against a temp volume
-        run: sh apps/cua-spaces/tests/installer/pkg.test.sh
-
   installer-smoke-windows:
     if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
     name: installer smoke (Windows, install.ps1)

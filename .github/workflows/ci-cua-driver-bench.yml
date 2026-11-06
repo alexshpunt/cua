@@ -20,30 +20,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  harness:
-    if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
-    name: Harness tests (no GUI, no model)
-    runs-on: macos-26
-    timeout-minutes: 20
-    steps:
-      - name: Check out Cua
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
-
-      - name: Build BenchLab and BenchSentinel
-        working-directory: libs/cua-driver-bench/automated-eval/macos_bench
-        run: swift/build.sh "$RUNNER_TEMP/bench-build"
-
-      - name: Run harness, checker and sentinel tests
-        working-directory: libs/cua-driver-bench/automated-eval/macos_bench
-        env:
-          CDB_BENCH_WORK: ${{ runner.temp }}/cdb-bench-work
-        run: >-
-          uv run --no-project --python 3.12 --with pytest==8.4.2
-          python -m pytest -q tests probes/tests swift/tests
-
   linux-desktop:
     name: Linux headless desktop contracts (no model)
     runs-on: ubuntu-latest

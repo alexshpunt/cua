@@ -105,7 +105,7 @@ jobs:
             --subset "pr_subset=rust (ubuntu-latest)|rust lint (ubuntu-latest)|rust lint (windows-latest)|crates.io dry run|spaces e2e (ubuntu-latest)|bindings drift (ubuntu-latest)|kotlin compile|build SDK (linux, release)|build test fixtures (linux)|build cua and cua-spaces CLIs (linux)|python smoke (ubuntu-latest)|node smoke (ubuntu-latest)|browser (wasm32) build + smoke"
 
   rust-lint:
-    if: ${{ !cancelled() && !startsWith(github.head_ref, 'release-please--branches--') }}
+    if: ${{ !cancelled() && !startsWith(github.head_ref, 'release-please--branches--') && needs.reuse.outputs.pr_subset != 'true' }}
     name: rust lint (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: reuse
@@ -115,7 +115,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26"]' || '["ubuntu-latest","macos-26","windows-latest"]') || '["ubuntu-latest","windows-latest"]') }}
+        os: [ubuntu-latest, windows-latest]
     defaults:
       run:
         working-directory: libs/cua
@@ -196,7 +196,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26","windows-latest"]' || '["ubuntu-latest","macos-26","windows-latest"]') || '["ubuntu-latest"]') }}
+        os: ${{ fromJSON((github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["windows-latest"]' || '["ubuntu-latest","windows-latest"]') || '["ubuntu-latest"]') }}
     defaults:
       run:
         working-directory: libs/cua
@@ -301,7 +301,7 @@ jobs:
   # cua-spacesd server core in process. A standalone workspace so libs/cua
   # never depends on the driver workspace (see the boundary check above).
   spaces-e2e:
-    if: ${{ !cancelled() && !startsWith(github.head_ref, 'release-please--branches--') }}
+    if: ${{ !cancelled() && !startsWith(github.head_ref, 'release-please--branches--') && needs.reuse.outputs.pr_subset != 'true' }}
     name: spaces e2e (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: reuse
@@ -309,7 +309,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26"]' || '["ubuntu-latest","macos-26"]') || '["ubuntu-latest"]') }}
+        os: [ubuntu-latest]
     defaults:
       run:
         working-directory: libs/cua-spacesd/tests/spaces-e2e
@@ -341,7 +341,7 @@ jobs:
           RUST_MIN_STACK: "8388608"
 
   bindings:
-    if: ${{ !cancelled() && !startsWith(github.head_ref, 'release-please--branches--') }}
+    if: ${{ !cancelled() && !startsWith(github.head_ref, 'release-please--branches--') && needs.reuse.outputs.pr_subset != 'true' }}
     name: bindings drift (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: reuse
@@ -349,7 +349,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26"]' || '["ubuntu-latest","macos-26"]') || '["ubuntu-latest"]') }}
+        os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: ./.github/actions/linux-rust-prep
@@ -498,7 +498,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26","windows-latest"]' || '["ubuntu-latest","macos-26","windows-latest"]') || '["ubuntu-latest"]') }}
+        os: ${{ fromJSON((github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["windows-latest"]' || '["ubuntu-latest","windows-latest"]') || '["ubuntu-latest"]') }}
     defaults:
       run:
         shell: bash
@@ -565,7 +565,7 @@ jobs:
     if: ${{ !cancelled() && !startsWith(github.head_ref, 'release-please--branches--')
       && needs.build-sdk.result != 'failure' && needs.build-sdk.result != 'cancelled'
       && needs.build-fixtures.result != 'failure' && needs.build-fixtures.result != 'cancelled'
-      && needs.build-cli.result != 'failure' && needs.build-cli.result != 'cancelled' }}
+      && needs.build-cli.result != 'failure' && needs.build-cli.result != 'cancelled' && needs.reuse.outputs.pr_subset != 'true' }}
     name: node smoke (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     needs: [reuse, build-sdk, build-fixtures, build-cli]
@@ -575,7 +575,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON((github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') || contains(github.event.pull_request.labels.*.name, 'ci:full')) && (needs.reuse.outputs.pr_subset == 'true' && '["macos-26"]' || '["ubuntu-latest","macos-26"]') || '["ubuntu-latest"]') }}
+        os: [ubuntu-latest]
     defaults:
       run:
         working-directory: libs/cua
@@ -667,39 +667,3 @@ jobs:
           tar -C target -xf "$RUNNER_TEMP/sdk/fixtures-linux.tar"
           chmod +x target/debug/cua-test-fixtures
           cd typescript && node --test test/browser.test.mjs
-
-  swift:
-    name: swift smoke (macOS)
-    if: ${{ !startsWith(github.head_ref, 'release-please--branches--') && (github.event_name != 'pull_request' || startsWith(github.head_ref, 'release-please--') || contains(github.event.pull_request.labels.*.name, 'ci:full')) }}
-    runs-on: macos-26
-    # Cold, the release cua-sdk build alone nears 45 minutes on macos-26.
-    timeout-minutes: 90
-    defaults:
-      run:
-        working-directory: libs/cua
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - name: Install protoc
-        uses: ./.github/actions/setup-protoc
-      - uses: dtolnay/rust-toolchain@1.97.1
-      - uses: ./.github/actions/rust-cache
-        with:
-          workspaces: libs/cua
-          key: cua-sdk-swift
-      - name: Dev dylib
-        run: |
-          cargo build --locked --release -p cua-sdk
-          scripts/build-test-fixtures.sh
-          node scripts/stage-uniffi-library.mjs --only=swift
-          swift/scripts/test.sh
-      - name: spaces-sdk-swift (the CuaSpaces overlay, against the fixtures)
-        working-directory: libs/spaces-sdk-swift
-        env:
-          CUA_REQUIRE_FIXTURES: "1"
-        run: |
-          ../cua/swift/scripts/fresh-abi.sh . debug
-          swift test
-      - name: XCFramework (static) binary target
-        run: |
-          swift/scripts/build-xcframework.sh
-          cd swift && rm -rf .build && CUA_SWIFT_XCFRAMEWORK=build/CuaSDKFFI.xcframework scripts/test.sh

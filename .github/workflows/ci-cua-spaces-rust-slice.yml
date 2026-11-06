@@ -52,6 +52,8 @@ env:
 
 jobs:
   slice:
+    # macOS checks are disabled in the fork.
+    if: ${{ github.repository == 'trycua/cua' }}
     name: SwiftUI Rust (${{ matrix.arch }})
     runs-on: macos-26
     timeout-minutes: 120

@@ -80,30 +80,3 @@ jobs:
           CUA_BUILD_E2E_BASE: linux
           CUA_IMAGE_LINUX: ${{ runner.temp }}/disk/disk/disk.img
         run: cargo test -p cua-daemon --test build_qemu -- --nocapture --test-threads=1
-
-  macos-hvf:
-    name: macos-hvf (self-hosted)
-    if: vars.CUA_E2E_LUME_RUNNER != '' && github.event_name != 'pull_request'
-    runs-on: ["self-hosted", "macOS", "${{ vars.CUA_E2E_LUME_RUNNER }}"]
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-        with:
-          persist-credentials: false
-      - name: QEMU and crane
-        run: |
-          command -v qemu-system-aarch64 >/dev/null || brew install qemu
-          command -v crane >/dev/null || brew install crane
-          command -v protoc >/dev/null || brew install protobuf
-      - name: Fetch the Linux disk
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/disk"
-          crane export --platform linux/arm64 "$BUILD_DISK_REF" - | tar -x -C "$RUNNER_TEMP/disk" disk/disk.img
-      - name: Build, cache, fork, fail
-        working-directory: libs/cua
-        env:
-          CUA_BUILD_E2E: "1"
-          CUA_BUILD_E2E_BASE: linux
-          CUA_IMAGE_LINUX: ${{ runner.temp }}/disk/disk/disk.img
-        run: cargo test -p cua-daemon --test build_qemu -- --nocapture --test-threads=1

@@ -43,6 +43,8 @@ env:
 
 jobs:
   swift:
+    # macOS checks are disabled in the fork.
+    if: ${{ github.repository == 'trycua/cua' }}
     name: swift tests (macOS)
     runs-on: macos-26-xlarge
     # Cold, the release cua-sdk build alone nears 45 minutes on macos-26.
