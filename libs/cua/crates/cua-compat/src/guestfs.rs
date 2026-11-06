@@ -622,6 +622,29 @@ where
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn capable_agent_writes_privileged_files_as_root() {
+        use cua_spacesd_client::testing::{MockAuth, MockServer};
+
+        let server = MockServer::start(MockAuth::default()).await;
+        let client = cua_spacesd_client::SpacesdClient::connect_url(
+            &format!("http://{}", server.addr),
+            None,
+        )
+        .await
+        .unwrap();
+        let driver = crate::guest::Drivers::default().of("space", &client).await;
+        let mut writer = Writer::begin(&client, "/tmp/root-file", "root", &driver)
+            .await
+            .unwrap();
+        writer.write(Bytes::from_static(b"content")).await.unwrap();
+        writer.finish().await.unwrap();
+        assert_eq!(
+            server.state.file_owner("/tmp/root-file").as_deref(),
+            Some("root")
+        );
+    }
+
     async fn parse(body: &[u8], split: usize) -> Vec<(Option<String>, Vec<u8>)> {
         let chunks: Vec<Result<Bytes, std::io::Error>> = body
             .chunks(split)
