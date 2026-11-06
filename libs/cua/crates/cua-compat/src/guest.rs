@@ -388,6 +388,8 @@ mod run_as_tests {
             native_driver(&[feature("process.run_as", true, "capabilities")]),
             Some(NATIVE_CAPABILITIES)
         );
+        assert!(!privileged_files(NATIVE_CAPABILITIES));
+        assert_eq!(privileged_file_user(NATIVE_CAPABILITIES), "");
         for mode in ["sudo", "none"] {
             assert_eq!(
                 native_driver(&[feature("process.run_as", true, mode)]),
