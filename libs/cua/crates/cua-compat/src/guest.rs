@@ -68,10 +68,14 @@ fn native_driver(features: &[cua_spacesd_client::pb::Feature]) -> Option<&'stati
         match f.attributes.get("mode").map(String::as_str) {
             Some("root") => Some("root"),
             Some("capabilities") => Some(
-                if features
-                    .iter()
-                    .any(|f| f.name == "fs.run_as" && f.supported)
-                {
+                if features.iter().any(|f| {
+                    f.name == "fs.run_as"
+                        && f.supported
+                        && matches!(
+                            f.attributes.get("privilege").map(String::as_str),
+                            Some("root" | "capabilities" | "sudo")
+                        )
+                }) {
                     NATIVE_FILESYSTEM
                 } else {
                     NATIVE_CAPABILITIES
@@ -387,6 +391,17 @@ mod run_as_tests {
         assert_eq!(
             native_driver(&[feature("process.run_as", true, "capabilities")]),
             Some(NATIVE_CAPABILITIES)
+        );
+        let mut fs = feature("fs.run_as", true, "");
+        fs.attributes = [("privilege".into(), "none: unavailable".into())].into();
+        assert_eq!(
+            native_driver(&[feature("process.run_as", true, "capabilities"), fs.clone()]),
+            Some(NATIVE_CAPABILITIES)
+        );
+        fs.attributes = [("privilege".into(), "capabilities".into())].into();
+        assert_eq!(
+            native_driver(&[feature("process.run_as", true, "capabilities"), fs]),
+            Some(NATIVE_FILESYSTEM)
         );
         assert!(!privileged_files(NATIVE_CAPABILITIES));
         assert_eq!(privileged_file_user(NATIVE_CAPABILITIES), "");
