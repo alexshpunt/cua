@@ -1,9 +1,8 @@
 name: "CD: Cua Driver SDK packages"
 
 # Triggered after a Cua Driver release to publish version-locked Python wheels
-# and the TypeScript SDK plus its platform-native npm packages. Only trycua/cua
-# publishes to PyPI and npm; any other repository (trycua/cua-staging) runs
-# `twine check` and `npm publish --dry-run` instead.
+# and the TypeScript SDK plus its platform-native npm packages. The fork does
+# not run the Driver release pipeline.
 
 on:
   workflow_dispatch:
@@ -34,8 +33,9 @@ jobs:
   get-version:
     runs-on: ubuntu-latest
     if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      github.repository == 'trycua/cua' &&
+      (github.event_name == 'workflow_dispatch' ||
+       github.event.workflow_run.conclusion == 'success')
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}

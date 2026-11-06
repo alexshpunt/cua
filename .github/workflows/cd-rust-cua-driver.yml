@@ -94,9 +94,10 @@ env:
 
 jobs:
   # Certify PR-first attribution from the exact immutable candidate before
-  # starting any platform build. Manual build-only dispatches intentionally
-  # remain available for iteration and skip this check.
+  # starting any platform build. Only upstream runs this release pipeline.
+  # Manual build-only dispatches skip attribution checks.
   release-attribution-preflight:
+    if: github.repository == 'trycua/cua'
     name: release attribution preflight
     runs-on: ubuntu-latest
     outputs:
@@ -1249,7 +1250,7 @@ jobs:
   # the gate times out and the smoke is started by hand as before.
   request-staging-smoke:
     name: Request the staging smoke
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/cua-driver-rs-v')
+    if: github.repository == 'trycua/cua' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/cua-driver-rs-v')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1279,7 +1280,7 @@ jobs:
   # release job runs on a tag push only, so there is no manual-run bypass.
   staging-gate:
     name: staging smoke is green
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/cua-driver-rs-v')
+    if: github.repository == 'trycua/cua' && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/cua-driver-rs-v')
     runs-on: ubuntu-latest
     # Waits up to 30 minutes for the smoke that request-staging-smoke starts.
     timeout-minutes: 40
