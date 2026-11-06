@@ -67,11 +67,16 @@ pub fn as_user(
     command: String,
     args: Vec<String>,
 ) -> (String, Vec<String>, String) {
-    if user.is_empty() || user == driver {
+    if user.is_empty() {
         return (command, args, String::new());
     }
+    // `root` also represents a non-root agent with native run-as
+    // capabilities. Always request the target user explicitly in that mode.
     if driver == "root" {
         return (command, args, user.to_string());
+    }
+    if user == driver {
+        return (command, args, String::new());
     }
     let mut a = vec![
         "-n".to_string(),
