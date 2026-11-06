@@ -8,6 +8,10 @@ use cua_spacesd_client::{Command, SpacesdClient};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 
+// The agent is not root, but can switch process users without sudo. The NUL
+// prevents this internal marker from being confused with a guest username.
+const NATIVE_CAPABILITIES: &str = "\0native-capabilities";
+
 /// The user each sandbox's cua-spacesd runs as, by sandbox id.
 #[derive(Default)]
 pub struct Drivers(Mutex<HashMap<String, String>>);
@@ -18,12 +22,13 @@ impl Drivers {
         if let Some(u) = self.0.lock().await.get(id) {
             return u.clone();
         }
-        // An agent that switches users itself (`process.run_as` mode `root`
-        // or `capabilities`, which also covers gVisor where `sudo` cannot
-        // work) is as good as root: no `sudo` anywhere.
-        if native_run_as(c).await {
-            self.0.lock().await.insert(id.to_string(), "root".into());
-            return "root".into();
+        // A capability-backed agent switches process users natively, but its
+        // default filesystem identity remains its own non-root account.
+        if let Ok(caps) = c.capabilities().await
+            && let Some(driver) = native_driver(&caps.features)
+        {
+            self.0.lock().await.insert(id.to_string(), driver.into());
+            return driver.into();
         }
         let user = match c.run(Command::new("id").arg("-un")).await {
             Ok(o) if o.success() => String::from_utf8_lossy(&o.stdout).trim().to_string(),
@@ -38,24 +43,18 @@ impl Drivers {
     }
 }
 
-/// Whether the guest agent switches users itself (feature `process.run_as`,
-/// attribute `mode` = `root` | `capabilities`); older agents have no such
-/// feature and get the `sudo` path.
-pub async fn native_run_as(c: &SpacesdClient) -> bool {
-    match c.capabilities().await {
-        Ok(caps) => run_as_is_native(&caps.features),
-        Err(_) => false,
-    }
-}
-
-fn run_as_is_native(features: &[cua_spacesd_client::pb::Feature]) -> bool {
-    features.iter().any(|f| {
-        f.name == "process.run_as"
-            && f.supported
-            && matches!(
-                f.attributes.get("mode").map(String::as_str),
-                Some("root" | "capabilities")
-            )
+/// The two native modes need different file paths: only a root agent can use
+/// its default identity for privileged file operations.
+fn native_driver(features: &[cua_spacesd_client::pb::Feature]) -> Option<&'static str> {
+    features.iter().find_map(|f| {
+        if f.name != "process.run_as" || !f.supported {
+            return None;
+        }
+        match f.attributes.get("mode").map(String::as_str) {
+            Some("root") => Some("root"),
+            Some("capabilities") => Some(NATIVE_CAPABILITIES),
+            _ => None,
+        }
     })
 }
 
@@ -70,9 +69,9 @@ pub fn as_user(
     if user.is_empty() {
         return (command, args, String::new());
     }
-    // `root` also represents a non-root agent with native run-as
-    // capabilities. Always request the target user explicitly in that mode.
-    if driver == "root" {
+    // Both native modes can switch users; the capability-backed agent is
+    // not itself root, so always request the desired user explicitly.
+    if driver == "root" || driver == NATIVE_CAPABILITIES {
         return (command, args, user.to_string());
     }
     if user == driver {
@@ -101,7 +100,7 @@ pub fn as_user_in(
     args: Vec<String>,
     cwd: String,
 ) -> (String, Vec<String>, String, String) {
-    if user.is_empty() || user == driver || driver == "root" {
+    if user.is_empty() || user == driver || driver == "root" || driver == NATIVE_CAPABILITIES {
         let (c, a, u) = as_user(driver, user, command, args);
         return (c, a, u, cwd);
     }
@@ -249,7 +248,10 @@ mod tests {
             .await
             .unwrap();
         let driver = Drivers::default().of("space", &client).await;
-        assert_ne!(driver, "root", "the agent's default filesystem user is not root");
+        assert_ne!(
+            driver, "root",
+            "the agent's default filesystem user is not root"
+        );
         let (command, _, user) = as_user(&driver, "root", "/bin/sh".into(), vec![]);
         assert_eq!((command.as_str(), user.as_str()), ("/bin/sh", "root"));
         let (_, _, user, cwd) = as_user_in(&driver, "daytona", "id".into(), vec![], "/".into());
@@ -347,27 +349,26 @@ mod run_as_tests {
     }
 
     #[test]
-    fn native_modes_skip_sudo() {
-        for mode in ["root", "capabilities"] {
-            assert!(run_as_is_native(&[feature("process.run_as", true, mode)]));
+    fn native_modes_distinguish_root_from_capabilities() {
+        assert_eq!(
+            native_driver(&[feature("process.run_as", true, "root")]),
+            Some("root")
+        );
+        assert_eq!(
+            native_driver(&[feature("process.run_as", true, "capabilities")]),
+            Some(NATIVE_CAPABILITIES)
+        );
+        for mode in ["sudo", "none"] {
+            assert_eq!(
+                native_driver(&[feature("process.run_as", true, mode)]),
+                None
+            );
         }
-        // sudo, none, unsupported, another feature, an older agent (no feature).
-        assert!(!run_as_is_native(&[feature(
-            "process.run_as",
-            true,
-            "sudo"
-        )]));
-        assert!(!run_as_is_native(&[feature(
-            "process.run_as",
-            true,
-            "none"
-        )]));
-        assert!(!run_as_is_native(&[feature(
-            "process.run_as",
-            false,
-            "root"
-        )]));
-        assert!(!run_as_is_native(&[feature("fs.run_as", true, "root")]));
-        assert!(!run_as_is_native(&[]));
+        assert_eq!(
+            native_driver(&[feature("process.run_as", false, "root")]),
+            None
+        );
+        assert_eq!(native_driver(&[feature("fs.run_as", true, "root")]), None);
+        assert_eq!(native_driver(&[]), None);
     }
 }
