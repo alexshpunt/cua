@@ -41,13 +41,19 @@ pub fn status_of(s: &tonic::Status) -> StatusCode {
 
 /// The top-most ancestor of `path` (or `path` itself) that does not exist
 /// yet, i.e. what a write with parents will create. `None`: it exists.
-pub async fn first_missing(c: &cua_spacesd_client::SpacesdClient, path: &str) -> Option<String> {
+pub async fn first_missing(
+    c: &cua_spacesd_client::SpacesdClient,
+    path: &str,
+    driver: &str,
+) -> Option<String> {
     let exists = |p: String| async move {
         !matches!(
             c.filesystem()
                 .stat(pb::StatRequest {
                     path: p,
-                    no_follow_symlinks: true, ..Default::default()
+                    no_follow_symlinks: true,
+                    run_as: crate::guest::privileged_file_user(driver),
+                    ..Default::default()
                 })
                 .await,
             Err(ref s) if s.code() == tonic::Code::NotFound
@@ -140,9 +146,9 @@ impl<'a> Writer<'a> {
         user: &str,
         driver: &str,
     ) -> Result<Writer<'a>, FsError> {
-        let staged = driver != "root";
-        let created_from = if driver == "root" && !user.is_empty() && user != "root" {
-            first_missing(c, path).await
+        let staged = !crate::guest::privileged_files(driver);
+        let created_from = if !staged && !user.is_empty() && user != "root" {
+            first_missing(c, path, driver).await
         } else {
             None
         };
@@ -158,6 +164,7 @@ impl<'a> Writer<'a> {
             create_parents: true,
             expected_size: 0,
             expected_sha256: String::new(),
+            run_as: crate::guest::privileged_file_user(driver),
             ..Default::default()
         };
         let sink = if c.transport() == Transport::Native {

@@ -1847,9 +1847,9 @@ pub(super) async fn guest_bytes(
     }
 }
 
-/// Whether file operations for `user` must go through `sudo`.
+/// Whether file operations need a user-switched guest command.
 fn switched(driver: &str, user: &str) -> bool {
-    driver != "root" && user != driver
+    !crate::guest::privileged_files(driver) && user != driver
 }
 
 async fn create_folder(
@@ -1881,8 +1881,8 @@ async fn create_folder(
             Err(e) => e,
         };
     }
-    let from = if driver == "root" && user != "root" {
-        crate::guestfs::first_missing(&c, &path).await
+    let from = if crate::guest::privileged_files(&driver) && user != "root" {
+        crate::guestfs::first_missing(&c, &path, &driver).await
     } else {
         None
     };
@@ -1892,6 +1892,7 @@ async fn create_folder(
             path: path.clone(),
             parents: true,
             mode,
+            run_as: crate::guest::privileged_file_user(&driver),
             ..Default::default()
         })
         .await
@@ -1942,6 +1943,7 @@ async fn delete_file(
             path,
             recursive: q.recursive.unwrap_or(false),
             missing_ok: false,
+            run_as: crate::guest::privileged_file_user(&driver),
             ..Default::default()
         })
         .await
@@ -1975,6 +1977,7 @@ async fn move_file(
         .stat(pb::StatRequest {
             path: target.clone(),
             no_follow_symlinks: true,
+            run_as: crate::guest::privileged_file_user(&driver),
             ..Default::default()
         })
         .await
@@ -1999,6 +2002,7 @@ async fn move_file(
             destination: resolve_path(dst, &home),
             overwrite: true,
             create_parents: false,
+            run_as: crate::guest::privileged_file_user(&driver),
             ..Default::default()
         })
         .await

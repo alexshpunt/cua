@@ -11,6 +11,21 @@ use tokio::sync::Mutex;
 // The agent is not root, but can switch process users without sudo. The NUL
 // prevents this internal marker from being confused with a guest username.
 const NATIVE_CAPABILITIES: &str = "\0native-capabilities";
+const NATIVE_FILESYSTEM: &str = "\0native-filesystem";
+
+/// Whether privileged file calls can run directly through the guest agent.
+pub(crate) fn privileged_files(driver: &str) -> bool {
+    driver == "root" || driver == NATIVE_FILESYSTEM
+}
+
+/// The explicit file identity required by a non-root native agent.
+pub(crate) fn privileged_file_user(driver: &str) -> String {
+    if driver == NATIVE_FILESYSTEM {
+        "root".into()
+    } else {
+        String::new()
+    }
+}
 
 /// The user each sandbox's cua-spacesd runs as, by sandbox id.
 #[derive(Default)]
@@ -52,7 +67,16 @@ fn native_driver(features: &[cua_spacesd_client::pb::Feature]) -> Option<&'stati
         }
         match f.attributes.get("mode").map(String::as_str) {
             Some("root") => Some("root"),
-            Some("capabilities") => Some(NATIVE_CAPABILITIES),
+            Some("capabilities") => Some(
+                if features
+                    .iter()
+                    .any(|f| f.name == "fs.run_as" && f.supported)
+                {
+                    NATIVE_FILESYSTEM
+                } else {
+                    NATIVE_CAPABILITIES
+                },
+            ),
             _ => None,
         }
     })
@@ -71,7 +95,7 @@ pub fn as_user(
     }
     // Both native modes can switch users; the capability-backed agent is
     // not itself root, so always request the desired user explicitly.
-    if driver == "root" || driver == NATIVE_CAPABILITIES {
+    if privileged_files(driver) || driver == NATIVE_CAPABILITIES {
         return (command, args, user.to_string());
     }
     if user == driver {
@@ -100,7 +124,11 @@ pub fn as_user_in(
     args: Vec<String>,
     cwd: String,
 ) -> (String, Vec<String>, String, String) {
-    if user.is_empty() || user == driver || driver == "root" || driver == NATIVE_CAPABILITIES {
+    if user.is_empty()
+        || user == driver
+        || privileged_files(driver)
+        || driver == NATIVE_CAPABILITIES
+    {
         let (c, a, u) = as_user(driver, user, command, args);
         return (c, a, u, cwd);
     }
@@ -252,6 +280,8 @@ mod tests {
             driver, "root",
             "the agent's default filesystem user is not root"
         );
+        assert!(privileged_files(&driver));
+        assert_eq!(privileged_file_user(&driver), "root");
         let (command, _, user) = as_user(&driver, "root", "/bin/sh".into(), vec![]);
         assert_eq!((command.as_str(), user.as_str()), ("/bin/sh", "root"));
         let (_, _, user, cwd) = as_user_in(&driver, "daytona", "id".into(), vec![], "/".into());
