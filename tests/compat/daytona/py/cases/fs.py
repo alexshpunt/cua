@@ -299,6 +299,7 @@ async def permissions(c):
     f = await c.w(sb.fs.get_file_info("/tmp/fsperm/f.txt"))
     assert f.permissions.endswith("640"), f.permissions
     assert f.owner == "daytona", f.owner
+    assert await c.w(sb.fs.download_file("/tmp/fsperm/f.txt")) == b"x"
     return {"dir": "700", "file": "640", "owner": f.owner}
 
 
