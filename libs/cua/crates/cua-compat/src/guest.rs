@@ -253,6 +253,10 @@ mod tests {
             ]
         );
         assert_eq!(u, "");
+        // A capability-backed agent may run as a non-root UID even though it
+        // can switch users itself. Root must be requested explicitly.
+        let (c, _, u) = as_user("root", "root", "/bin/bash".into(), vec![]);
+        assert_eq!((c.as_str(), u.as_str()), ("/bin/bash", "root"));
         let (c, _, u) = as_user("root", "user", "/bin/bash".into(), vec![]);
         assert_eq!((c.as_str(), u.as_str()), ("/bin/bash", "user"));
         let (c, _, u) = as_user("cua", "cua", "/bin/bash".into(), vec![]);
