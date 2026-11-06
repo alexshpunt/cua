@@ -2158,7 +2158,9 @@ async fn read_as(
 ) -> Result<Vec<u8>, FsError> {
     match read_all(c, path).await {
         Ok(b) => Ok(b),
-        Err(s) if s.code() == tonic::Code::PermissionDenied && switched(driver, user) => {
+        Err(s)
+            if s.code() == tonic::Code::PermissionDenied && driver != "root" && user != driver =>
+        {
             guest_bytes(c, driver, user, &["cat", "--", path])
                 .await
                 .map_err(|_| FsError(StatusCode::FORBIDDEN, format!("permission denied: {path}")))
