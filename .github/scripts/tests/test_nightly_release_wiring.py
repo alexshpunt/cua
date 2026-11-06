@@ -29,6 +29,24 @@ def test_driver_stable_publish_gate_and_workflow_name_are_frozen():
     assert 'workflows: ["CD: Cua Driver (cross-platform)"]' in sdk
 
 
+def test_driver_release_jobs_are_disabled_outside_upstream():
+    jobs = yaml.safe_load(source("cd-rust-cua-driver.yml"))["jobs"]
+    roots = {name for name, job in jobs.items() if "needs" not in job}
+    assert roots == {"release-attribution-preflight", "request-staging-smoke", "staging-gate"}
+    for name in roots:
+        assert "github.repository == 'trycua/cua'" in jobs[name]["if"]
+    for name, job in jobs.items():
+        if name not in roots:
+            assert "always()" not in job.get("if", "")
+
+
+def test_driver_sdk_release_is_disabled_outside_upstream():
+    jobs = yaml.safe_load(source("cd-py-cua-driver.yml"))["jobs"]
+    assert {name for name, job in jobs.items() if "needs" not in job} == {"get-version"}
+    assert "github.repository == 'trycua/cua'" in jobs["get-version"]["if"]
+    assert all("always()" not in job.get("if", "") for job in jobs.values())
+
+
 def test_fork_driver_nightly_runs_desktop_lanes_without_publishing():
     nightly = yaml.safe_load(source("nightly-cua-driver.yml"))
     assert nightly["permissions"] == {"actions": "read", "contents": "read"}
