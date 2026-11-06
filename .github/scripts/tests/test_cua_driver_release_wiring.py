@@ -8,6 +8,7 @@ import subprocess
 import tempfile
 import textwrap
 import unittest
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -1145,7 +1146,8 @@ fi
 
         self.assertIn("workflow_call:\n", workflow)
         self.assertIn("Installer compatibility summary", workflow)
-        self.assertIn("ubuntu-latest, macos-26, windows-latest", workflow)
+        matrix = yaml.safe_load(workflow)["jobs"]["install"]["strategy"]["matrix"]
+        self.assertEqual(matrix["os"], ["ubuntu-latest", "windows-latest"])
         # Versions come from the repository the installers download from.
         self.assertIn("RELEASE_REPOSITORY: trycua/cua", workflow)
         self.assertIn("repos/$RELEASE_REPOSITORY/releases?per_page=100", workflow)
