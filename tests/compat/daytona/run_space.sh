@@ -45,14 +45,21 @@ wid=$(printf '%s' "$warm" | python3 -c 'import json,sys; print(json.load(sys.std
 venv="${CUA_COMPAT_VENVS:-$WORK}/venv-$PINNED"
 [ -x "$venv/bin/python" ] || python3 -m venv "$venv"
 "$venv/bin/pip" install -q "daytona==$PINNED" hypothesis
+# Read all diagnostics before limiting the display: `head` closes the pipe
+# early, which makes grep fail under pipefail and aborts the remaining modes.
+show_failures() {
+    local rc=0
+    grep -E '^FAIL' -A8 "$1" | sed -n '1,60p' || rc=$?
+    [ "$rc" -le 1 ]
+}
 runs=(); status=0
 for mode in sync async; do
-    "$venv/bin/python" "$HERE/py/harness.py" --mode "$mode" --env "$WORK/env.json" --out "$OUT/py-$mode.json" 2>"$OUT/py-$mode.err" || { grep -E "^FAIL" -A8 "$OUT/py-$mode.err" | head -60; status=1; }
+    "$venv/bin/python" "$HERE/py/harness.py" --mode "$mode" --env "$WORK/env.json" --out "$OUT/py-$mode.json" 2>"$OUT/py-$mode.err" || { status=1; show_failures "$OUT/py-$mode.err"; }
     runs+=("$OUT/py-$mode.json")
 done
 tsdir="${CUA_COMPAT_VENVS:-$WORK}/ts-$PINNED"
 if [ ! -d "$tsdir/node_modules" ]; then mkdir -p "$tsdir" && cp "$HERE/ts/package.json" "$HERE/ts/package-lock.json" "$tsdir/" && (cd "$tsdir" && npm ci --no-audit --no-fund -q); fi
-(cd "$tsdir" && cp "$HERE"/ts/*.ts "$HERE/ts/tsconfig.json" . && rm -rf cases && cp -r "$HERE/ts/cases" cases && npx tsx runner.ts --env "$WORK/env.json" --out "$OUT/ts.json" 2>"$OUT/ts.err") || { grep -E "^FAIL" -A8 "$OUT/ts.err" | head -60; status=1; }
+(cd "$tsdir" && cp "$HERE"/ts/*.ts "$HERE/ts/tsconfig.json" . && rm -rf cases && cp -r "$HERE/ts/cases" cases && npx tsx runner.ts --env "$WORK/env.json" --out "$OUT/ts.json" 2>"$OUT/ts.err") || { status=1; show_failures "$OUT/ts.err"; }
 runs+=("$OUT/ts.json")
 python3 "$HERE/compare.py" "$HERE/fixtures/daytona-$PINNED.json" "${runs[@]}" --catalogue "$HERE/cases.json" || status=1
 [ "$status" = 0 ] || { echo "--- gateway log"; tail -40 "$OUT/gateway.log"; }
