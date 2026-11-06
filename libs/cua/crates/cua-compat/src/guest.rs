@@ -240,6 +240,22 @@ pub async fn get_metadata(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn capability_agent_is_not_treated_as_root_for_file_operations() {
+        use cua_spacesd_client::testing::{MockAuth, MockServer};
+
+        let server = MockServer::start(MockAuth::default()).await;
+        let client = SpacesdClient::connect_url(&format!("http://{}", server.addr), None)
+            .await
+            .unwrap();
+        let driver = Drivers::default().of("space", &client).await;
+        assert_ne!(driver, "root", "the agent's default filesystem user is not root");
+        let (command, _, user) = as_user(&driver, "root", "/bin/sh".into(), vec![]);
+        assert_eq!((command.as_str(), user.as_str()), ("/bin/sh", "root"));
+        let (_, _, user, cwd) = as_user_in(&driver, "daytona", "id".into(), vec![], "/".into());
+        assert_eq!((user.as_str(), cwd.as_str()), ("daytona", "/"));
+    }
+
     #[test]
     fn switches_users_with_sudo_unless_the_driver_can() {
         let (c, a, u) = as_user("cua", "root", "/bin/bash".into(), vec!["-l".into()]);
