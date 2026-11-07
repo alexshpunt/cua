@@ -308,6 +308,58 @@ fn wait_for_journal_text(journal: &FixtureJournal, id: &str, expected: &str) {
 
 #[test]
 #[ignore]
+fn harness_webview_semantic_set_value() {
+    let case = native_background_case(
+        "webview2",
+        "semantic_set_value",
+        Targeting::Ax,
+        DriverRoute::UiaValue,
+    );
+    run_web_case_with_preparation(
+        case,
+        "webview2",
+        webview_exe(),
+        "CuaTestHarness WebView [ready",
+        |_, _, _, _| {},
+        |pid, wid, driver, journal| {
+            let state = snapshot(driver, pid, wid);
+            let index = ax::element_index_containing(state.tree_text(), "txt-input")
+                .expect("WebView2 input missing from accessibility snapshot");
+            let response = driver.call(
+                "semantic_action",
+                serde_json::json!({
+                    "pid": pid,
+                    "window_id": wid,
+                    "element_token": state.element_token(index),
+                    "operation": "set_value",
+                    "value": "webview semantic test"
+                }),
+            );
+            assert!(
+                !response.is_error(),
+                "semantic set_value failed: {}",
+                response.text()
+            );
+            assert_eq!(response.structured()["route"], "accessibility");
+            let deadline = Instant::now() + Duration::from_secs(5);
+            loop {
+                if journal.snapshot()["txt-input"]["value"] == "webview semantic test" {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "fixture value did not change: {}",
+                    journal.snapshot()
+                );
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        },
+        |(), passed| Observation::delivered_with_fixture_state(passed),
+    );
+}
+
+#[test]
+#[ignore]
 fn harness_webview_left_click_px_background() {
     let case = native_background_case(
         "webview2",
