@@ -66,18 +66,23 @@ that are easy to miss:
 - Tests that start VMs, containers, or host input are opt-in
   (off by default) and clean up what they create.
 
+## Fork testing priorities
+
+This fork primarily targets Windows. Keep the existing Linux CI coverage, but
+do not require macOS tests or macOS certification to land fork changes unless
+the user explicitly requests them. Keep manual macOS workflows available.
+
 ## Cross-platform Cua Driver behavior
 
-Treat user-visible Cua Driver behavior as a cross-platform contract. Implement
-shared state, geometry, timing, and protocol semantics in the common crates
-whenever possible, then keep each macOS, Windows, X11, and Wayland adapter thin.
-Do not silently land a platform-specific cursor or interaction change as though
-it were universal.
+Implement shared state, geometry, timing, and protocol semantics in the common
+crates whenever possible, and keep platform adapters thin. Do not present a
+platform-specific cursor or interaction change as universal.
 
-For every affected platform, add focused coverage and either verify the native
-behavior or document a concrete operating-system or compositor limitation.
-When a platform cannot support the same contract, return or publish that
-limitation explicitly instead of substituting misleading behavior.
+Add focused coverage for affected supported platforms, prioritizing Windows
+and retaining Linux coverage. Verify native behavior where required by this
+fork's testing priorities, or document a concrete operating-system or compositor
+limitation. Explicitly report unsupported behavior rather than substituting
+misleading results; macOS verification is not a prerequisite for fork changes.
 
 ## Expensive end-to-end test timing
 
@@ -86,13 +91,14 @@ plus the repository's ordinary pull request CI. Do not repeatedly run the full
 representative desktop matrix against intermediate commits when the affected
 code or test plan is still changing.
 
-Run the complete cross-platform desktop E2E matrix once the implementation is
-stable, on the exact candidate SHA immediately before the pull request is made
-ready or merged. If that candidate changes afterward, rerun only the evidence
-affected by the change; a product, harness, generated-contract, or environment
-change normally requires recertification, while an instructions-only or other
-demonstrably non-executable change does not require repeating unrelated desktop
-rows. Record the tested SHA and account for any final diff explicitly.
+Run the fork's applicable Windows and Linux desktop E2E matrix once the
+implementation is stable, on the exact candidate SHA immediately before the
+pull request is made ready or merged. If that candidate changes afterward,
+rerun only the evidence affected by the change; a product, harness,
+generated-contract, or environment change normally requires recertification,
+while an instructions-only or other demonstrably non-executable change does not
+require repeating unrelated desktop rows. Record the tested SHA and account for
+any final diff explicitly.
 
 After merge, run a short main-branch smoke and release-path verification. Repeat
 the full matrix after merge only when the merge result materially differs from
