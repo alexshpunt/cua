@@ -57,6 +57,39 @@ struct UiaControl<'a> {
     prepared: Option<Prepared>,
 }
 impl UiaControl<'_> {
+    // A provider in another process is admitted only while the retained
+    // element still belongs to the exact observed window's UIA subtree.
+    fn check_descendant(&self) -> Result<(), Failure> {
+        use windows::Win32::{
+            Foundation::HWND,
+            System::Com::{CoCreateInstance, CLSCTX_INPROC_SERVER},
+        };
+        let automation: IUIAutomation =
+            unsafe { CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER) }
+                .map_err(query_error)?;
+        let root = unsafe { automation.ElementFromHandle(HWND(self.hwnd as *mut _)) }
+            .map_err(query_error)?;
+        let desktop = unsafe { automation.GetRootElement() }.map_err(query_error)?;
+        let walker = unsafe { automation.RawViewWalker() }.map_err(query_error)?;
+        let mut current = self.element.clone();
+        // Bound a broken or cyclic provider tree and fail closed.
+        for _ in 0..256 {
+            if unsafe { automation.CompareElements(&current, &root) }
+                .map_err(query_error)?
+                .as_bool()
+            {
+                return Ok(());
+            }
+            if unsafe { automation.CompareElements(&current, &desktop) }
+                .map_err(query_error)?
+                .as_bool()
+            {
+                break;
+            }
+            current = unsafe { walker.GetParentElement(&current) }.map_err(query_error)?;
+        }
+        Err(Failure::refusal("semantic_element_process_changed"))
+    }
     fn check_window(&self) -> Result<(), Failure> {
         use windows::Win32::{
             Foundation::HWND,
@@ -76,8 +109,19 @@ impl UiaControl<'_> {
 impl Control for UiaControl<'_> {
     fn enabled(&mut self) -> Result<bool, Failure> {
         self.check_window()?;
-        if unsafe { self.element.CurrentProcessId() }.map_err(query_error)? != self.pid as i32 {
+        // Bind the retained element to the provider seen in the window snapshot,
+        // not to the host PID: WebView2's provider may run in another process.
+        let observed_pid = unsafe { self.element.CachedProcessId() }.map_err(query_error)?;
+        let current_pid = unsafe { self.element.CurrentProcessId() }.map_err(query_error)?;
+        if observed_pid <= 0 || observed_pid != current_pid {
             return Err(Failure::refusal("semantic_element_process_changed"));
+        }
+        if current_pid != self.pid as i32 {
+            self.check_descendant()?;
+            self.check_window()?;
+            if unsafe { self.element.CurrentProcessId() }.map_err(query_error)? != observed_pid {
+                return Err(Failure::refusal("semantic_element_process_changed"));
+            }
         }
         unsafe { self.element.CurrentIsEnabled() }
             .map(|value| value.as_bool())

@@ -716,6 +716,7 @@ unsafe fn node_cache_request(
     let cache_req = automation.CreateCacheRequest()?;
     let mut complete = true;
     for prop in &[
+        UIA_ProcessIdPropertyId,
         UIA_ControlTypePropertyId,
         UIA_NamePropertyId,
         UIA_ValueValuePropertyId,
