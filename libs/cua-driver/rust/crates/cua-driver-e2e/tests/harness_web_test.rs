@@ -320,7 +320,21 @@ fn harness_webview_semantic_set_value() {
         "webview2",
         webview_exe(),
         "CuaTestHarness WebView [ready",
-        |_, _, _, _| {},
+        |pid, wid, driver, _| {
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                let state = snapshot(driver, pid, wid);
+                if ax::element_index_containing(state.tree_text(), "txt-input").is_some() {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "WebView2 input did not become accessible: {}",
+                    state.tree_text()
+                );
+                std::thread::sleep(Duration::from_millis(100));
+            }
+        },
         |pid, wid, driver, journal| {
             let state = snapshot(driver, pid, wid);
             let index = ax::element_index_containing(state.tree_text(), "txt-input")
