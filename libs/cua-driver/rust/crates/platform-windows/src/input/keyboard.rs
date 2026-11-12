@@ -697,8 +697,9 @@ fn with_confirmed_foreground<T>(
         };
         if !foreground_matches_target_or_owned_window(foreground_target, actual.0 as usize as u64) {
             bail!(
-                "foreground_unavailable: exact target HWND {:?} or a verified same-process \
-                 owned window was not foreground while preparing {operation} \
+                "foreground_unavailable: exact target HWND {:?}, a verified same-process \
+                 owned window or a window embedded in the target was not foreground while \
+                 preparing {operation} \
                  (actual foreground HWND {:?}); no input was sent",
                 target.0,
                 actual.0

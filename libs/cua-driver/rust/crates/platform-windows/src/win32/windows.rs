@@ -209,16 +209,16 @@ fn chain_reaches_target(
 ) -> bool {
     let mut current = actual;
     for _ in 0..64 {
-        let Some(owner) = next(current) else {
+        let Some(step) = next(current) else {
             return false;
         };
-        if owner == target {
+        if step == target {
             return true;
         }
-        if owner == current || owner == actual {
+        if step == current || step == actual {
             return false;
         }
-        current = owner;
+        current = step;
     }
     false
 }
