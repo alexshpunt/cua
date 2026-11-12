@@ -72,6 +72,15 @@ jobs:
           & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -format json |
             Set-Content build-evidence/msvc-installation.json
           if ($LASTEXITCODE -ne 0) { throw 'Visual Studio discovery failed' }
+      - name: Check the generated contract manifest is current
+        # The manifest drift gate only runs for pull requests and pushes to main, so a commit
+        # pushed straight to the fork's branch could carry a stale manifest (LPT-1412).
+        # Regenerate and compare with git, which ignores the checkout's line endings.
+        run: |
+          cargo run --locked -p cua-driver-contract --bin cua-contract-gen -- all
+          if ($LASTEXITCODE -ne 0) { throw "contract generation failed: $LASTEXITCODE" }
+          git diff --exit-code -- ../contract/manifest.json
+          if ($LASTEXITCODE -ne 0) { throw 'libs/cua-driver/contract/manifest.json is stale; run cua-contract-gen -- all and commit it' }
       - name: Run hermetic owner tests
         if: ${{ !inputs.skip_tests }}
         env:
