@@ -24,8 +24,9 @@ use std::sync::Mutex;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT, TRUE};
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumChildWindows, EnumWindows, GetClassNameW, GetWindow, GetWindowRect, GetWindowTextLengthW,
-    GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindow, IsWindowVisible, GW_OWNER,
+    EnumChildWindows, EnumWindows, GetAncestor, GetClassNameW, GetDesktopWindow, GetWindow,
+    GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
+    IsWindow, IsWindowVisible, GA_PARENT, GW_OWNER,
 };
 
 #[derive(Debug, Clone)]
@@ -183,26 +184,32 @@ struct PostActionForegroundRelation {
     actual_visible: bool,
     same_pid: bool,
     ownership_reaches_target: bool,
+    /// The actual window's parent chain reaches the target: a window of any
+    /// process embedded inside it, such as a Unity Editor in a Herdr tab.
+    embedded_in_target: bool,
     actual_is_prior_owner: bool,
 }
 
 fn post_action_foreground_allowed(relation: PostActionForegroundRelation) -> bool {
     relation.actual_live
         && relation.actual_visible
-        && relation.same_pid
         && ((relation.target_identity_live
-            && (relation.exact_match || relation.ownership_reaches_target))
-            || (relation.target_gone && relation.actual_is_prior_owner))
+            && ((relation.same_pid
+                && (relation.exact_match || relation.ownership_reaches_target))
+                || relation.embedded_in_target))
+            || (relation.target_gone && relation.same_pid && relation.actual_is_prior_owner))
 }
 
-fn owner_chain_reaches_target(
+/// Whether following `next` from `actual` (its owner or its parent) reaches
+/// `target`, within 64 steps and without a cycle back to `actual`.
+fn chain_reaches_target(
     target: u64,
     actual: u64,
-    mut owner_of: impl FnMut(u64) -> Option<u64>,
+    mut next: impl FnMut(u64) -> Option<u64>,
 ) -> bool {
     let mut current = actual;
     for _ in 0..64 {
-        let Some(owner) = owner_of(current) else {
+        let Some(owner) = next(current) else {
             return false;
         };
         if owner == target {
@@ -214,6 +221,35 @@ fn owner_chain_reaches_target(
         current = owner;
     }
     false
+}
+
+fn owner_of(hwnd: u64) -> Option<u64> {
+    let owner = unsafe { GetWindow(HWND(hwnd as *mut _), GW_OWNER) }
+        .ok()
+        .unwrap_or_default();
+    (!owner.0.is_null()).then_some(owner.0 as usize as u64)
+}
+
+/// The window's parent as `GetAncestor(GA_PARENT)` reports it; none for a
+/// top-level window, whose parent is the desktop. A popup that another
+/// process moved into its own window with `SetParent` keeps its popup style,
+/// and `GetParent` returns its owner instead; `GA_PARENT` names the parent.
+fn parent_of(hwnd: u64) -> Option<u64> {
+    let parent = unsafe { GetAncestor(HWND(hwnd as *mut _), GA_PARENT) };
+    (!parent.0.is_null() && parent != unsafe { GetDesktopWindow() })
+        .then_some(parent.0 as usize as u64)
+}
+
+/// Whether `actual` is a live, visible window other than `target` whose
+/// parent chain reaches `target`, whatever process it belongs to: a window
+/// embedded in the target, such as a Unity Editor in a Herdr tab. While such
+/// a window has the foreground, keyboard input to the target belongs to it.
+pub(crate) fn embedded_in_target(target: u64, actual: u64) -> bool {
+    target != actual
+        && window_owner_pid(target).is_some()
+        && window_owner_pid(actual).is_some()
+        && unsafe { IsWindowVisible(HWND(actual as *mut _)) }.as_bool()
+        && chain_reaches_target(target, actual, parent_of)
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -243,6 +279,9 @@ pub(crate) fn capture_foreground_target(target: u64) -> Option<ForegroundTarget>
 /// may then legitimately open a same-process owned popup or modal, so the
 /// post-action check accepts that transient only when it is still a live,
 /// visible HWND and its complete `GW_OWNER` chain reaches the exact target.
+/// A click may also give the foreground to a window of another process that
+/// is embedded in the target (its parent chain reaches it), which counts as
+/// the target.
 /// A dismiss action may instead destroy the requested owned modal; that is
 /// accepted only when foreground returns to its snapshotted same-process owner.
 /// Unrelated same-process siblings and foreign foreground windows fail closed.
@@ -254,13 +293,10 @@ pub(crate) fn foreground_matches_target_or_owned_window(
     let actual_pid = window_owner_pid(actual);
     let actual_hwnd = HWND(actual as *mut _);
     let actual_visible = actual_pid.is_some() && unsafe { IsWindowVisible(actual_hwnd) }.as_bool();
-    let ownership_reaches_target = target.hwnd != actual
-        && owner_chain_reaches_target(target.hwnd, actual, |hwnd| {
-            let owner = unsafe { GetWindow(HWND(hwnd as *mut _), GW_OWNER) }
-                .ok()
-                .unwrap_or_default();
-            (!owner.0.is_null()).then_some(owner.0 as usize as u64)
-        });
+    let ownership_reaches_target =
+        target.hwnd != actual && chain_reaches_target(target.hwnd, actual, owner_of);
+    let embedded_in_target =
+        target.hwnd != actual && chain_reaches_target(target.hwnd, actual, parent_of);
 
     post_action_foreground_allowed(PostActionForegroundRelation {
         exact_match: target.hwnd == actual,
@@ -270,6 +306,7 @@ pub(crate) fn foreground_matches_target_or_owned_window(
         actual_visible,
         same_pid: actual_pid == Some(target.pid),
         ownership_reaches_target,
+        embedded_in_target,
         actual_is_prior_owner: target.owner == Some(actual),
     })
 }
@@ -439,8 +476,8 @@ fn get_window_bounds(hwnd: HWND) -> (i32, i32, i32, i32) {
 #[cfg(test)]
 mod exact_window_tests {
     use super::{
-        closed_target_successor_allowed, exact_window_from_probe, lookup_window_for_pid_with,
-        owner_chain_reaches_target, post_action_foreground_allowed, win32_first_with,
+        chain_reaches_target, closed_target_successor_allowed, exact_window_from_probe,
+        lookup_window_for_pid_with, post_action_foreground_allowed, win32_first_with,
         ClosedTargetRelation, PidWindowLookup, PostActionForegroundRelation, WindowInfo,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -544,8 +581,38 @@ mod exact_window_tests {
             actual_visible: true,
             same_pid,
             ownership_reaches_target,
+            embedded_in_target: false,
             actual_is_prior_owner: false,
         }
+    }
+
+    #[test]
+    fn a_window_of_another_process_embedded_in_the_target_counts_as_the_target() {
+        // A popup parented into a container that is a child of the target.
+        let parents = [(30, 20), (20, 10)];
+        assert!(chain_reaches_target(10, 30, |hwnd| {
+            parents
+                .iter()
+                .find_map(|(child, parent)| (*child == hwnd).then_some(*parent))
+        }));
+        let mut embedded = relation(false, false, false);
+        embedded.embedded_in_target = true;
+        assert!(post_action_foreground_allowed(embedded));
+        // Not once the target is gone, nor for a hidden or destroyed window.
+        embedded.target_identity_live = false;
+        embedded.target_gone = true;
+        assert!(!post_action_foreground_allowed(embedded));
+        embedded.target_identity_live = true;
+        embedded.target_gone = false;
+        embedded.actual_visible = false;
+        assert!(!post_action_foreground_allowed(embedded));
+        embedded.actual_visible = true;
+        embedded.actual_live = false;
+        assert!(!post_action_foreground_allowed(embedded));
+        // A foreign window outside the target stays denied.
+        assert!(!post_action_foreground_allowed(relation(
+            false, false, false
+        )));
     }
 
     #[test]
@@ -557,7 +624,7 @@ mod exact_window_tests {
     #[test]
     fn nested_owned_popup_chain_reaches_exact_target() {
         let owners = [(30, 20), (20, 10)];
-        assert!(owner_chain_reaches_target(10, 30, |hwnd| {
+        assert!(chain_reaches_target(10, 30, |hwnd| {
             owners
                 .iter()
                 .find_map(|(child, owner)| (*child == hwnd).then_some(*owner))
@@ -572,7 +639,7 @@ mod exact_window_tests {
         assert!(!post_action_foreground_allowed(relation(
             false, false, true
         )));
-        assert!(!owner_chain_reaches_target(10, 30, |hwnd| {
+        assert!(!chain_reaches_target(10, 30, |hwnd| {
             (hwnd == 30).then_some(40)
         }));
     }
@@ -638,7 +705,7 @@ mod exact_window_tests {
         stale.actual_live = true;
         stale.actual_visible = false;
         assert!(!post_action_foreground_allowed(stale));
-        assert!(!owner_chain_reaches_target(10, 30, |_| Some(30)));
+        assert!(!chain_reaches_target(10, 30, |_| Some(30)));
     }
 }
 

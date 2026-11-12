@@ -527,9 +527,12 @@ pub fn send_text_synthesized_after_focus(
     // (`post_enter_keystroke`) — because terminals and rich editors honour an
     // Enter key event, not a raw `\r`/`\n` Unicode packet. `\r\n` collapses to
     // a single Return (the `\r` emits the Enter; the following `\n` is silent).
+    // The layout of the window that reads the keys: an embedded foreground
+    // window's own thread can use another layout than the target's.
+    let reader = embedded_foreground(target).unwrap_or(target);
     let layout = unsafe {
         windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardLayout(GetWindowThreadProcessId(
-            target, None,
+            reader, None,
         ))
     };
     let caps_lock = unsafe {
@@ -620,8 +623,19 @@ fn wait_for_exact_foreground(target: HWND, timeout: Duration) -> bool {
     }
 }
 
+/// The foreground window when it is embedded in `target` (see
+/// [`crate::win32::embedded_in_target`]): keys and text for the target go to it.
+fn embedded_foreground(target: HWND) -> Option<HWND> {
+    let foreground = unsafe { GetForegroundWindow() };
+    crate::win32::embedded_in_target(target.0 as usize as u64, foreground.0 as usize as u64)
+        .then_some(foreground)
+}
+
 /// Run one system-queue input transaction while `target`, or a live visible
 /// same-process window whose owner chain reaches `target`, is foreground.
+/// A window embedded in `target` that already has the foreground, such as a
+/// Unity Editor inside a Herdr tab, takes the input instead: activating
+/// `target` would take the keyboard from it.
 /// Foreground and optional child focus are checked against
 /// external Win32/UIA state instead of inferred from API return values or a
 /// fixed settle delay. The prior foreground is restored on every body/focus
@@ -633,8 +647,11 @@ fn with_confirmed_foreground<T>(
     body: impl FnOnce(Option<&InputQueueAttachment>, ForegroundTarget) -> Result<T>,
 ) -> Result<T> {
     let previous = unsafe { GetForegroundWindow() };
-    let _ = unsafe { crate::input::force_foreground_assisted(target) };
-    if !wait_for_exact_foreground(target, Duration::from_millis(500)) {
+    let embedded = embedded_foreground(target).is_some();
+    if !embedded {
+        let _ = unsafe { crate::input::force_foreground_assisted(target) };
+    }
+    if !embedded && !wait_for_exact_foreground(target, Duration::from_millis(500)) {
         let actual = unsafe { GetForegroundWindow() };
         if !previous.0.is_null() && previous != target {
             let _ = unsafe { SetForegroundWindow(previous) };
