@@ -101,10 +101,12 @@ impl ToolOutput for PresentAgentActivityOutput {
     }
 }
 
-fn rect() -> Value {
-    json!({"type":"object","required":["x","y","width","height"],"properties":{
-    "x":{"type":"integer","minimum":-2000000,"maximum":2000000},"y":{"type":"integer","minimum":-2000000,"maximum":2000000},
-    "width":{"type":"integer","minimum":1,"maximum":32768},"height":{"type":"integer","minimum":1,"maximum":32768}},"additionalProperties":false})
+fn rect(description: &str) -> Value {
+    json!({"type":"object","description":description,"required":["x","y","width","height"],"properties":{
+    "x":{"type":"integer","minimum":-2000000,"maximum":2000000,"description":"Left edge in pixels."},
+    "y":{"type":"integer","minimum":-2000000,"maximum":2000000,"description":"Top edge in pixels."},
+    "width":{"type":"integer","minimum":1,"maximum":32768,"description":"Width in pixels."},
+    "height":{"type":"integer","minimum":1,"maximum":32768,"description":"Height in pixels."}},"additionalProperties":false})
 }
 fn tool<O: ToolOutput>(
     name: &str,
@@ -136,20 +138,34 @@ pub fn contracts() -> Vec<ToolContract> {
     vec![
         tool::<SetAgentVisualsOutput>("set_agent_visuals","Configure the current session's human-only native activity presentation. Off clears pending visuals without changing capture or input.","agent_visuals.configure",json!({
             "type":"object","properties":{
-                "session":{"type":"string"},"preset":{"type":"string","enum":["off","subtle","full"]},
-                "observations":{"type":"boolean"},"previews":{"type":"boolean"},"pointer":{"type":"boolean"},"scroll_drag":{"type":"boolean"},"keyboard":{"type":"boolean"},
-                "opacity":{"type":"number","minimum":0,"maximum":1},"quality":{"type":"string","enum":["performance","balanced","high"]},"reduced_motion":{"type":"boolean"}
+                "session":{"type":"string","description":"Public session label whose presentation settings change. Omit it to use the authenticated transport's implicit lifecycle session."},
+                "preset":{"type":"string","enum":["off","subtle","full"],"description":"Presentation level; the default is full. off disables native activity visuals and clears pending ones; subtle shows them without operation-output previews; full also shows previews."},
+                "observations":{"type":"boolean","description":"Show observation activity (overview, detail, inspect and verify). Default true."},
+                "previews":{"type":"boolean","description":"Show operation-output images on activity cards. Takes effect only with preset full. Default true."},
+                "pointer":{"type":"boolean","description":"Show pointer actions such as clicks. Default true."},
+                "scroll_drag":{"type":"boolean","description":"Show scroll and drag actions. Default true."},
+                "keyboard":{"type":"boolean","description":"Show keyboard actions such as typing text and pressing keys. Default true."},
+                "opacity":{"type":"number","minimum":0,"maximum":1,"description":"Presentation opacity from 0 to 1; 0 disables the visuals. Default 0.9."},
+                "quality":{"type":"string","enum":["performance","balanced","high"],"description":"Frame-rate tradeoff: performance renders at about 20 frames per second, balanced at about 30 and high at about 60. Default balanced."},
+                "reduced_motion":{"type":"boolean","description":"Use reduced motion for the presentation's animation. Default false."}
             },"additionalProperties":false})),
         tool::<PresentAgentActivityOutput>("present_agent_activity","Enqueue validated human-only observation metadata and an optional operation-output image. Queued is not proof of display or action success. Clear invalidates older generations.","agent_visuals.present",json!({
             "type":"object","required":["generation","kind"],"properties":{
-                "session":{"type":"string"},"generation":{"type":"integer","minimum":1,"maximum":9007199254740991u64},
-                "kind":{"type":"string","enum":["overview","detail","inspect","verify","action","clear"]},
-                "source":{"type":"object","required":["bounds"],"properties":{
-                    "window_id":{"type":"integer","minimum":1,"maximum":9007199254740991u64},"pid":{"type":"integer","minimum":1},"identity":{"type":"string","maxLength":128},
-                    "display":{"type":"string","minLength":1,"maxLength":256},"bounds":rect()},"additionalProperties":false},
-                "region":rect(),"point":{"type":"object","required":["x","y"],"properties":{"x":{"type":"integer"},"y":{"type":"integer"}},"additionalProperties":false},
-                "image":{"type":"object","required":["data","mime_type"],"properties":{"data":{"type":"string","minLength":1,"maxLength":12582912},"mime_type":{"type":"string","enum":["image/png","image/jpeg"]}},"additionalProperties":false},
-                "action":{"type":"string","maxLength":64},"typed_text":{"type":"string","minLength":1,"maxLength":200},"outcome":{"type":"string","enum":["delivered","refused","unknown","verified"]}
+                "session":{"type":"string","description":"Public session label that owns the presented activity. Omit it to use the authenticated transport's implicit lifecycle session."},
+                "generation":{"type":"integer","minimum":1,"maximum":9007199254740991u64,"description":"Monotonically increasing publication number within the session. A generation not newer than the latest accepted one is reported as stale."},
+                "kind":{"type":"string","enum":["overview","detail","inspect","verify","action","clear"],"description":"What the activity shows: overview, detail, inspect or verify for an observation, action for an operation that already ran, or clear to remove the visuals and invalidate older generations. clear takes no source, region, point or image."},
+                "source":{"type":"object","description":"Where the activity happened: a window (window_id, pid and identity) or a display (display), plus its bounds. Required unless kind is clear. A window source and a display source cannot be mixed.","required":["bounds"],"properties":{
+                    "window_id":{"type":"integer","minimum":1,"maximum":9007199254740991u64,"description":"Window id, as returned by the window tools. Set it with pid and identity for a window source."},
+                    "pid":{"type":"integer","minimum":1,"description":"Process id that owns the window. Must match the pid inside identity."},
+                    "identity":{"type":"string","maxLength":128,"description":"Window ownership token in the form PiComputerUse.<32 hex digits>:<pid>:<counter>."},
+                    "display":{"type":"string","minLength":1,"maxLength":256,"description":"Display id for a display source, such as \"primary\". Do not combine it with window fields."},
+                    "bounds":rect("Pixel bounds of the source. The region and point must lie inside it.")},"additionalProperties":false},
+                "region":rect("Area of interest inside the source bounds, in the same coordinates as the bounds."),
+                "point":{"type":"object","description":"Point of interest inside the source bounds, in the same coordinates as the bounds.","required":["x","y"],"properties":{"x":{"type":"integer","description":"Horizontal position in pixels."},"y":{"type":"integer","description":"Vertical position in pixels."}},"additionalProperties":false},
+                "image":{"type":"object","description":"Operation-output image already returned by an observation, shown as a preview. Nothing is captured. Not accepted for action activity or a refused or unknown outcome.","required":["data","mime_type"],"properties":{"data":{"type":"string","minLength":1,"maxLength":12582912,"description":"Base64-encoded image bytes."},"mime_type":{"type":"string","enum":["image/png","image/jpeg"],"description":"Image format of data."}},"additionalProperties":false},
+                "action":{"type":"string","maxLength":64,"description":"Name of the operation that ran, in lowercase letters and underscores, such as click or type_text. It selects the card label and whether the pointer, keyboard or scroll_drag setting applies."},
+                "typed_text":{"type":"string","minLength":1,"maxLength":200,"description":"Text an action typed, shown beside the action. Only for kind action; 1 to 200 characters without control characters."},
+                "outcome":{"type":"string","enum":["delivered","refused","unknown","verified"],"description":"Result of the operation or observation: delivered, refused, unknown or verified."}
             },"additionalProperties":false})),
     ]
 }
