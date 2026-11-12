@@ -5332,23 +5332,28 @@
         "additionalProperties": false,
         "properties": {
           "action": {
+            "description": "Name of the operation that ran, in lowercase letters and underscores, such as click or type_text. It selects the card label and whether the pointer, keyboard or scroll_drag setting applies.",
             "maxLength": 64,
             "type": "string"
           },
           "generation": {
+            "description": "Monotonically increasing publication number within the session. A generation not newer than the latest accepted one is reported as stale.",
             "maximum": 9007199254740991,
             "minimum": 1,
             "type": "integer"
           },
           "image": {
             "additionalProperties": false,
+            "description": "Operation-output image already returned by an observation, shown as a preview. Nothing is captured. Not accepted for action activity or a refused or unknown outcome.",
             "properties": {
               "data": {
+                "description": "Base64-encoded image bytes.",
                 "maxLength": 12582912,
                 "minLength": 1,
                 "type": "string"
               },
               "mime_type": {
+                "description": "Image format of data.",
                 "enum": [
                   "image/png",
                   "image/jpeg"
@@ -5363,6 +5368,7 @@
             "type": "object"
           },
           "kind": {
+            "description": "What the activity shows: overview, detail, inspect or verify for an observation, action for an operation that already ran, or clear to remove the visuals and invalidate older generations. clear takes no source, region, point or image.",
             "enum": [
               "overview",
               "detail",
@@ -5374,6 +5380,7 @@
             "type": "string"
           },
           "outcome": {
+            "description": "Result of the operation or observation: delivered, refused, unknown or verified.",
             "enum": [
               "delivered",
               "refused",
@@ -5384,11 +5391,14 @@
           },
           "point": {
             "additionalProperties": false,
+            "description": "Point of interest inside the source bounds, in the same coordinates as the bounds.",
             "properties": {
               "x": {
+                "description": "Horizontal position in pixels.",
                 "type": "integer"
               },
               "y": {
+                "description": "Vertical position in pixels.",
                 "type": "integer"
               }
             },
@@ -5400,23 +5410,28 @@
           },
           "region": {
             "additionalProperties": false,
+            "description": "Area of interest inside the source bounds, in the same coordinates as the bounds.",
             "properties": {
               "height": {
+                "description": "Height in pixels.",
                 "maximum": 32768,
                 "minimum": 1,
                 "type": "integer"
               },
               "width": {
+                "description": "Width in pixels.",
                 "maximum": 32768,
                 "minimum": 1,
                 "type": "integer"
               },
               "x": {
+                "description": "Left edge in pixels.",
                 "maximum": 2000000,
                 "minimum": -2000000,
                 "type": "integer"
               },
               "y": {
+                "description": "Top edge in pixels.",
                 "maximum": 2000000,
                 "minimum": -2000000,
                 "type": "integer"
@@ -5431,30 +5446,37 @@
             "type": "object"
           },
           "session": {
+            "description": "Public session label that owns the presented activity. Omit it to use the authenticated transport's implicit lifecycle session.",
             "type": "string"
           },
           "source": {
             "additionalProperties": false,
+            "description": "Where the activity happened: a window (window_id, pid and identity) or a display (display), plus its bounds. Required unless kind is clear. A window source and a display source cannot be mixed.",
             "properties": {
               "bounds": {
                 "additionalProperties": false,
+                "description": "Pixel bounds of the source. The region and point must lie inside it.",
                 "properties": {
                   "height": {
+                    "description": "Height in pixels.",
                     "maximum": 32768,
                     "minimum": 1,
                     "type": "integer"
                   },
                   "width": {
+                    "description": "Width in pixels.",
                     "maximum": 32768,
                     "minimum": 1,
                     "type": "integer"
                   },
                   "x": {
+                    "description": "Left edge in pixels.",
                     "maximum": 2000000,
                     "minimum": -2000000,
                     "type": "integer"
                   },
                   "y": {
+                    "description": "Top edge in pixels.",
                     "maximum": 2000000,
                     "minimum": -2000000,
                     "type": "integer"
@@ -5469,19 +5491,23 @@
                 "type": "object"
               },
               "display": {
+                "description": "Display id for a display source, such as \"primary\". Do not combine it with window fields.",
                 "maxLength": 256,
                 "minLength": 1,
                 "type": "string"
               },
               "identity": {
+                "description": "Window ownership token in the form PiComputerUse.<32 hex digits>:<pid>:<counter>.",
                 "maxLength": 128,
                 "type": "string"
               },
               "pid": {
+                "description": "Process id that owns the window. Must match the pid inside identity.",
                 "minimum": 1,
                 "type": "integer"
               },
               "window_id": {
+                "description": "Window id, as returned by the window tools. Set it with pid and identity for a window source.",
                 "maximum": 9007199254740991,
                 "minimum": 1,
                 "type": "integer"
@@ -5491,6 +5517,12 @@
               "bounds"
             ],
             "type": "object"
+          },
+          "typed_text": {
+            "description": "Text an action typed, shown beside the action. Only for kind action; 1 to 200 characters without control characters.",
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
           }
         },
         "required": [
@@ -6935,20 +6967,25 @@
         "additionalProperties": false,
         "properties": {
           "keyboard": {
+            "description": "Show keyboard actions such as typing text and pressing keys. Default true.",
             "type": "boolean"
           },
           "observations": {
+            "description": "Show observation activity (overview, detail, inspect and verify). Default true.",
             "type": "boolean"
           },
           "opacity": {
+            "description": "Presentation opacity from 0 to 1; 0 disables the visuals. Default 0.9.",
             "maximum": 1,
             "minimum": 0,
             "type": "number"
           },
           "pointer": {
+            "description": "Show pointer actions such as clicks. Default true.",
             "type": "boolean"
           },
           "preset": {
+            "description": "Presentation level; the default is full. off disables native activity visuals and clears pending ones; subtle shows them without operation-output previews; full also shows previews.",
             "enum": [
               "off",
               "subtle",
@@ -6957,9 +6994,11 @@
             "type": "string"
           },
           "previews": {
+            "description": "Show operation-output images on activity cards. Takes effect only with preset full. Default true.",
             "type": "boolean"
           },
           "quality": {
+            "description": "Frame-rate tradeoff: performance renders at about 20 frames per second, balanced at about 30 and high at about 60. Default balanced.",
             "enum": [
               "performance",
               "balanced",
@@ -6968,12 +7007,15 @@
             "type": "string"
           },
           "reduced_motion": {
+            "description": "Use reduced motion for the presentation's animation. Default false.",
             "type": "boolean"
           },
           "scroll_drag": {
+            "description": "Show scroll and drag actions. Default true.",
             "type": "boolean"
           },
           "session": {
+            "description": "Public session label whose presentation settings change. Omit it to use the authenticated transport's implicit lifecycle session.",
             "type": "string"
           }
         },
