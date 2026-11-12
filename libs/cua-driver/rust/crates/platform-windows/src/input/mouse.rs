@@ -797,8 +797,9 @@ fn send_click_synthesized_mods_impl(
                 }
                 if Instant::now() >= deadline {
                     bail!(
-                        "foreground_unavailable: exact target HWND {:?} or a verified same-process \
-                         post-action window was not foreground after the click \
+                        "foreground_unavailable: exact target HWND {:?}, a verified same-process \
+                         post-action window or a window embedded in the target was not \
+                         foreground after the click \
                          (actual foreground HWND 0x{actual:x})",
                         target.0
                     );
