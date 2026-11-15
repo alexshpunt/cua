@@ -446,6 +446,12 @@ fn drives_native_input(capability: &str) -> bool {
         || capability == "window.frame.set"
 }
 
+/// Fork tools with their own closed receipt instead of `ActionResult`: each
+/// reports native delivery and an explicit `effect` (never a plain success),
+/// and its contract test owns that receipt (`pointer_contract`,
+/// `scroll_contract`).
+const OWN_RECEIPT_INPUT_TOOLS: &[&str] = &["move_pointer", "scroll_at"];
+
 #[test]
 fn every_native_input_tool_publishes_the_action_result() {
     let mut d = RawDriver::spawn().expect("spawn source-built driver for schema test");
@@ -470,7 +476,7 @@ fn every_native_input_tool_publishes_the_action_result() {
                 .filter_map(serde_json::Value::as_str)
                 .any(drives_native_input)
         });
-        if !native_input {
+        if !native_input || OWN_RECEIPT_INPUT_TOOLS.contains(&name) {
             continue;
         }
         checked += 1;
