@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Native Windows backend for `input_timeline`: SendInput for keys, buttons,
 //! motion and wheel, and one synthetic pen device for pen contacts.
 use std::sync::atomic::{AtomicBool, Ordering};

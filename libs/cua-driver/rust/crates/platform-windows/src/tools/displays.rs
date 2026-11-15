@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Windows-only public monitor reads; no input capture publication or desktop-scale mutation.
 
 use async_trait::async_trait;
@@ -38,7 +41,7 @@ impl Tool for ListDisplaysTool {
         &self,
         adapter: &str,
         _: &Value,
-    ) -> Result<Option<Value>, String> {
+    ) -> Result<Option<Value>, cua_driver_core::tool::ProtectedResourceScopeError> {
         if adapter != "private_observation" {
             return Ok(None);
         }
@@ -89,7 +92,7 @@ impl Tool for GetDisplayStateTool {
         &self,
         adapter: &str,
         args: &Value,
-    ) -> Result<Option<Value>, String> {
+    ) -> Result<Option<Value>, cua_driver_core::tool::ProtectedResourceScopeError> {
         if adapter != "private_observation" {
             return Ok(None);
         }

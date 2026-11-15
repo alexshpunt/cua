@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Session-owned human-only presentation. The worker has no input/capture operations.
 
 use cursor_overlay::activity::{ActivityEvent, ActivityKind, VisualSettings};

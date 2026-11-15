@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Public strict operation refusal without reading user state or invoking host UIA.
 use super::super::semantic::SemanticActionTool;
 use super::*;

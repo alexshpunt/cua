@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Typed presentation requests. Presentation never grants capture or input authority.
 use crate::{ToolInput, VisualPreset, VisualQuality};
 use schemars::JsonSchema;

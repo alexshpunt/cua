@@ -1,7 +1,11 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! One-use, exact-window native management. No input, desktop switch or replay fallback.
 
+use super::super::set_window_frame::outer_frame_for_visible_request;
 use super::window_restore::{cancelled, failure, sample, target, Marker};
-use super::{outer_frame_for_visible_request, ToolState};
+use super::ToolState;
 use crate::window_restore_state::{Admission, Lifetime};
 use async_trait::async_trait;
 use cua_driver_contract::{

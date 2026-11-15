@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Exact-window native pointer input. No desktop, button or key fallback.
 
 use super::{

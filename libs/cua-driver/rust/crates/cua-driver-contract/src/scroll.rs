@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Capture-bound native wheel input. Wheel detents are not content pixels.
 
 use crate::inputs::string_schema;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Win32 monitor metadata and GDI capture on one PMv2-aware worker thread.
 
 use super::{DisplayReadError, DisplayTopology};

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Explicit accessibility-only writes. Completion is not application-effect evidence.
 use crate::inputs::{element_token_schema, string_schema};
 use crate::{Platform, SchemaMode, ToolAnnotations, ToolContract, ToolInput, ToolOutput};

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! A bounded held path. The backend owns native targeting, timing and input.
 
 /// Native local pixels measured from the captured window's top-left.

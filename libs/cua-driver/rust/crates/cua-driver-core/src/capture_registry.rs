@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Cua AI, Inc.
+
 //! Bounded, immutable screenshot storage for later coordinate-bound actions.
 //!
 //! This registry deliberately does not store accessibility elements or mirror
@@ -743,8 +746,25 @@ impl CaptureRegistry {
         &self,
         request: CaptureActionRequest,
     ) -> Result<CaptureActionAdmission, CaptureActionError> {
+        self.admit_action_with(request, true)
+    }
+
+    /// Admission without spending the capture: the same checks and mapping,
+    /// but the capture stays usable if the action is then refused.
+    fn preview_action(
+        &self,
+        request: CaptureActionRequest,
+    ) -> Result<CaptureActionAdmission, CaptureActionError> {
+        self.admit_action_with(request, false)
+    }
+
+    fn admit_action_with(
+        &self,
+        request: CaptureActionRequest,
+        consume: bool,
+    ) -> Result<CaptureActionAdmission, CaptureActionError> {
         let point = (request.screenshot_x, request.screenshot_y);
-        let [admission] = self.admit_points(request, [point])?;
+        let [admission] = self.admit_points_with(request, [point], consume)?;
         Ok(admission)
     }
 
@@ -752,6 +772,15 @@ impl CaptureRegistry {
         &self,
         request: CaptureActionRequest,
         points: [(f64, f64); N],
+    ) -> Result<[CaptureActionAdmission; N], CaptureActionError> {
+        self.admit_points_with(request, points, true)
+    }
+
+    fn admit_points_with<const N: usize>(
+        &self,
+        request: CaptureActionRequest,
+        points: [(f64, f64); N],
+        consume: bool,
     ) -> Result<[CaptureActionAdmission; N], CaptureActionError> {
         let now = self.clock.now();
         let mut inner = self.lock_inner();
@@ -783,7 +812,9 @@ impl CaptureRegistry {
             native_action_dimensions: capture.native_action_dimensions,
             digest: capture.digest,
         });
-        self.remove_capture(&mut inner, request.capture_id);
+        if consume {
+            self.remove_capture(&mut inner, request.capture_id);
+        }
         Ok(admissions)
     }
 
@@ -1048,6 +1079,18 @@ impl CaptureService {
             to_y: to.action_y,
         })
     }
+
+    /// [`Self::admit_action`] that leaves the capture unspent. For an action
+    /// that may still be refused after its point is mapped (a background click
+    /// that finds no accessible control): the caller spends the capture with
+    /// `admit_action` only once the action is dispatched.
+    pub fn preview_action(
+        &self,
+        request: CaptureActionRequest,
+    ) -> Result<CaptureActionAdmission, CaptureActionError> {
+        self.registry.preview_action(request)
+    }
+
     /// Predict, without consuming anything, whether a capture-bound action
     /// with these trusted runtime arguments will be refused at admission.
     /// Returns the stable refusal wire code (`capture_id_invalid`,
@@ -1385,6 +1428,28 @@ mod tests {
             admission.native_action_dimensions,
             NativeActionDimensions::new(4, 6).unwrap()
         );
+    }
+
+    #[test]
+    fn preview_leaves_the_capture_unspent_until_it_is_admitted() {
+        let service = CaptureService::new(config(2, 10_000)).unwrap();
+        let owner = service.binding("session-a", 1).unwrap();
+        let target = CaptureTarget::PrimaryDesktop;
+        let id = service
+            .publish(publication(png(2, 2, 1), target.clone(), "session-a", 1))
+            .unwrap();
+        let request = || action_request(id, owner.clone(), target.clone(), (2, 2));
+        // A previewed action that is then refused leaves the capture usable.
+        let previewed = service.preview_action(request()).unwrap();
+        service.preview_action(request()).unwrap();
+        // Admission spends it, exactly once.
+        let admitted = service.admit_action(request()).unwrap();
+        assert_eq!(
+            (previewed.action_x, previewed.action_y),
+            (admitted.action_x, admitted.action_y)
+        );
+        assert!(service.admit_action(request()).is_err());
+        assert!(service.preview_action(request()).is_err());
     }
 
     #[test]

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Adapter-internal native visualization tools, separate from capture/input authority.
 use super::*;
 
@@ -5,6 +8,11 @@ pub struct SetAgentVisualsTool;
 pub struct PresentAgentActivityTool;
 static SETTINGS_DEF: std::sync::OnceLock<ToolDef> = std::sync::OnceLock::new();
 static PRESENT_DEF: std::sync::OnceLock<ToolDef> = std::sync::OnceLock::new();
+fn canonical_cursor_def(name: &str) -> ToolDef {
+    let contract = cua_driver_contract::tool_contract(name)
+        .unwrap_or_else(|| panic!("missing canonical contract for {name}"));
+    ToolDef::from_contract(&contract)
+}
 fn failure(code: &'static str) -> ToolResult {
     ToolResult::error("Native presentation is unavailable for this request.")
         .with_structured(json!({"status":"unavailable","code":code}))

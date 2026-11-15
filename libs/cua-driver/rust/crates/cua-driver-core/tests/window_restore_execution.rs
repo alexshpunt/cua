@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 use cua_driver_core::window_restore::{execute, Backend, Failure, RESTORE_MAX_WAIT_MS};
 
 #[derive(Default)]

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Documented Windows shell desktop queries. Reads never activate or move a window or desktop.
 
 use cua_driver_contract::{DesktopQueryError, DesktopQueryErrorCode, VirtualDesktopMembership};

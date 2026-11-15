@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Exact-window native mouse motion, followed by bounded dwell or checked wheel axes.
 //! Unlike click/drag helpers, this operation leaves focus and pointer in place.
 

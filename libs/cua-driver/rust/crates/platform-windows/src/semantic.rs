@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Strict pattern dispatch shared with the real COM binding and hermetic owner tests.
 use cua_driver_contract::{SemanticOperation, SemanticPattern};
 

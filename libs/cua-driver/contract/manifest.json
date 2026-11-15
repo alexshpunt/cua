@@ -63,7 +63,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -71,11 +71,9 @@
             "description": "Exact window (kind \"window\", with pid and window_id) or desktop (kind \"desktop\", with display_id). \"primary\" is the portable desktop target.",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -83,12 +81,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -233,6 +229,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -314,7 +313,7 @@
             "type": "boolean"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           }
         },
@@ -397,7 +396,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "text": {
@@ -497,7 +496,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "steps": {
@@ -510,11 +509,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -522,12 +519,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -674,6 +669,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -769,124 +767,6 @@
         "required": [
           "session",
           "active"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "escalate_session",
-      "description": "Deprecated compatibility tool for legacy capture-scope sessions. New callers select window or desktop modality on each action. No deescalate_session tool exists.",
-      "platforms": [
-        "macos",
-        "windows",
-        "linux"
-      ],
-      "capabilities": [
-        "session.capture_scope.escalate"
-      ],
-      "annotations": {
-        "read_only": false,
-        "destructive": false,
-        "idempotent": false,
-        "open_world": false
-      },
-      "schema_mode": "canonical_runtime",
-      "cursor_semantics": {
-        "action": "system"
-      },
-      "input_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "detail": {
-            "description": "Optional bounded diagnostic detail. Never use secrets or page content.",
-            "maxLength": 200,
-            "type": "string"
-          },
-          "reason": {
-            "description": "Why the window-scoped attempt failed and desktop capture is needed.",
-            "enum": [
-              "ax_tree_pixel_mismatch",
-              "background_delivery_failed",
-              "foreground_ineffective",
-              "no_window_target",
-              "other"
-            ],
-            "type": "string"
-          },
-          "session": {
-            "description": "Public label of the legacy capture-scope session to escalate.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session",
-          "reason"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "capture_scope": {
-            "enum": [
-              "auto",
-              "window",
-              "desktop"
-            ],
-            "type": "string"
-          },
-          "desktop_capture_authorized": {
-            "type": "boolean"
-          },
-          "desktop_unlocked": {
-            "type": "boolean"
-          },
-          "effective_scope": {
-            "enum": [
-              "window",
-              "desktop"
-            ],
-            "type": "string"
-          },
-          "escalation_detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "escalation_reason": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ax_tree_pixel_mismatch",
-                  "background_delivery_failed",
-                  "foreground_ineffective",
-                  "no_window_target",
-                  "other"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "session": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "session",
-          "capture_scope",
-          "effective_scope",
-          "desktop_capture_authorized",
-          "desktop_unlocked",
-          "escalation_reason",
-          "escalation_detail"
         ],
         "type": "object"
       }
@@ -1189,7 +1069,7 @@
         "additionalProperties": false,
         "properties": {
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           }
         },
@@ -1250,7 +1130,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           }
         },
@@ -1595,7 +1475,7 @@
         "additionalProperties": false,
         "properties": {
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           }
         },
@@ -1722,105 +1602,6 @@
           "recording_active",
           "idle_seconds",
           "expires_in_seconds"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "get_session_state",
-      "description": "Deprecated compatibility alias that reads a live legacy session's capture policy. Use get_session for lifecycle state.",
-      "platforms": [
-        "macos",
-        "windows",
-        "linux"
-      ],
-      "capabilities": [
-        "session.capture_scope.read"
-      ],
-      "annotations": {
-        "read_only": true,
-        "destructive": false,
-        "idempotent": true,
-        "open_world": false
-      },
-      "schema_mode": "canonical_runtime",
-      "cursor_semantics": {
-        "action": "system"
-      },
-      "input_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "session": {
-            "description": "Optional public label. When omitted, inspect the caller's attached\nimplicit session.",
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "capture_scope": {
-            "enum": [
-              "auto",
-              "window",
-              "desktop"
-            ],
-            "type": "string"
-          },
-          "desktop_capture_authorized": {
-            "type": "boolean"
-          },
-          "desktop_unlocked": {
-            "type": "boolean"
-          },
-          "effective_scope": {
-            "enum": [
-              "window",
-              "desktop"
-            ],
-            "type": "string"
-          },
-          "escalation_detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "escalation_reason": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ax_tree_pixel_mismatch",
-                  "background_delivery_failed",
-                  "foreground_ineffective",
-                  "no_window_target",
-                  "other"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "session": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "session",
-          "capture_scope",
-          "effective_scope",
-          "desktop_capture_authorized",
-          "desktop_unlocked",
-          "escalation_reason",
-          "escalation_detail"
         ],
         "type": "object"
       }
@@ -2808,7 +2589,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -2816,11 +2597,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -2828,12 +2607,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -2971,6 +2748,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -3031,7 +2811,8 @@
       ],
       "capabilities": [
         "menu.path.invoke",
-        "accessibility.menu.native"
+        "accessibility.menu.native",
+        "input.delivery_mode"
       ],
       "annotations": {
         "read_only": false,
@@ -3047,6 +2828,14 @@
         "additionalProperties": false,
         "description": "Exact, immediate-child application menu path to resolve and invoke through\nthe operating system's accessibility API. Path labels are matched after\ntrimming surrounding whitespace and otherwise remain case-sensitive. On\nmacOS, three periods in a label also match the ellipsis character that\nnative menu titles use (`Save As...` finds `Save As…`).",
         "properties": {
+          "delivery_mode": {
+            "description": "`background` (default) never takes the user's keyboard or pointer and refuses with\n`background_unavailable` when the item can only be reached by opening a menu. `foreground`\nis the explicit escalation that may activate the window and open menus. Linux honors it;\nmacOS and Windows accept it and keep their existing menu behavior.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
           "path": {
             "description": "Menu labels from the top-level menu to the item, e.g. `[\"File\", \"Save As...\"]`\n(1 to 16 labels).",
             "items": {
@@ -3064,7 +2853,7 @@
             "type": "integer"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "window_id": {
@@ -3201,6 +2990,9 @@
               "array",
               "null"
             ]
+          },
+          "fast_path": {
+            "type": "object"
           },
           "hint": {
             "type": [
@@ -4450,7 +4242,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -4458,11 +4250,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -4470,12 +4260,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -4621,6 +4409,9 @@
               "array",
               "null"
             ]
+          },
+          "fast_path": {
+            "type": "object"
           },
           "hint": {
             "type": [
@@ -5598,7 +5389,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -5606,11 +5397,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -5618,12 +5407,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -5760,6 +5547,9 @@
               "array",
               "null"
             ]
+          },
+          "fast_path": {
+            "type": "object"
           },
           "hint": {
             "type": [
@@ -5996,7 +5786,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -6004,11 +5794,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -6016,12 +5804,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -6166,6 +5952,9 @@
               "array",
               "null"
             ]
+          },
+          "fast_path": {
+            "type": "object"
           },
           "hint": {
             "type": [
@@ -7129,7 +6918,7 @@
             "type": "integer"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "width": {
@@ -7282,6 +7071,9 @@
               "array",
               "null"
             ]
+          },
+          "fast_path": {
+            "type": "object"
           },
           "hint": {
             "type": [
@@ -7681,33 +7473,6 @@
             ],
             "type": "string"
           },
-          "escalation_detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "escalation_reason": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ax_tree_pixel_mismatch",
-                  "background_delivery_failed",
-                  "foreground_ineffective",
-                  "no_window_target",
-                  "other"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "revived": {
             "type": "boolean"
           },
@@ -7721,8 +7486,6 @@
           "effective_scope",
           "desktop_capture_authorized",
           "desktop_unlocked",
-          "escalation_reason",
-          "escalation_detail",
           "active",
           "revived"
         ],
@@ -7763,7 +7526,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -7771,11 +7534,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -7783,12 +7544,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -7928,6 +7687,9 @@
               "array",
               "null"
             ]
+          },
+          "fast_path": {
+            "type": "object"
           },
           "hint": {
             "type": [
@@ -8102,7 +7864,7 @@
             "type": "integer"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session. This\nfield never selects capture modality or authorization.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. This field never selects capture modality or authorization.",
             "type": "string"
           },
           "stable_samples": {

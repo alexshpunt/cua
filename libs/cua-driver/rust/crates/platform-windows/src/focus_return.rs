@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Agent input hands the foreground back to the human's window.
 //!
 //! With `CUA_FOCUS_RETURN=1`, every foreground input action (a click at a point, keys, typing, a

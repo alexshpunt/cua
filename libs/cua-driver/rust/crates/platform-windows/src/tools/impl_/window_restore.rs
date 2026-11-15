@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Metadata-only window state and explicit restore/activation. No injected-input fallback.
 
 use super::{exact_window_ownership_result, ToolState};
@@ -209,7 +212,7 @@ pub(super) fn sample(marker: &Marker) -> Result<Sample, Failure> {
 }
 
 /// Bounded private state admissions; eviction and runtime drop release owned lifetime markers.
-pub(super) struct Manager {
+pub(crate) struct Manager {
     states: Mutex<Store<Marker>>,
 }
 

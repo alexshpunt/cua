@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! One bounded key hold with complete pointer gestures inside it.
 use crate::drag_path::{self, Path, Point};
 use serde_json::{json, Value};

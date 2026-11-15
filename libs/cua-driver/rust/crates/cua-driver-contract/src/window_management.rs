@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! One-use exact-window management. Desktop-frame coordinates never grant pointer authority.
 
 use crate::inputs::string_schema;

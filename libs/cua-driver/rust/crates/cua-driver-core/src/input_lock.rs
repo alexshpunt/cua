@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! One action at a time on a shared desktop.
 //!
 //! Several agents can drive the same desktop, each through its own driver process. When

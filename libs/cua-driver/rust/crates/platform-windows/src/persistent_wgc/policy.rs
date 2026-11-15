@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Decisions shared by the isolated probe and its hermetic tests.
 
 /// windows-core 0.58 wraps a successful null interface as Error::empty (HRESULT 0).

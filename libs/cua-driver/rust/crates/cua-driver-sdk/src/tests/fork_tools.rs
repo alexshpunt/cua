@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Exercise fork methods through the public authenticated carrier and session APIs.
 use super::*;
 use crate::remote::{

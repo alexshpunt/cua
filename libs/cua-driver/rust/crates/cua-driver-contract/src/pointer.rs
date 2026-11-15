@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Exact-window native pointer motion. Delivery does not prove an app effect.
 
 use crate::inputs::{element_token_schema, string_schema};

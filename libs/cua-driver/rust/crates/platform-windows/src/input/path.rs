@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Foreground Windows held paths, using the same SendInput backend as clicks.
 
 use std::sync::atomic::{AtomicBool, Ordering};

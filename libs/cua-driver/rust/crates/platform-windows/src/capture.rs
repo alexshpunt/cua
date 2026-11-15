@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Cua AI, Inc.
+
 //! Window screenshot via PrintWindow + GDI BitBlt on Windows.
 //!
 //! `PW_RENDERFULLCONTENT` (0x2) renders the window contents even if it is
@@ -88,7 +91,10 @@ mod frame_geometry {
                 return None;
             }
             let scale = f64::from(window_dpi) / f64::from(monitor_dpi);
-            Some((f64::from(self.width) * scale, f64::from(self.height) * scale))
+            Some((
+                f64::from(self.width) * scale,
+                f64::from(self.height) * scale,
+            ))
         }
 
         pub fn local_point(self, x: i32, y: i32) -> Option<(f64, f64)> {
@@ -618,7 +624,10 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     // compositor does on screen.
     let painted = geometry.painted_size(GetDpiForWindow(hwnd), window_monitor_dpi(hwnd));
     let (buf_w, buf_h) = painted.map_or((w, h), |(painted_w, painted_h)| {
-        (w.max(painted_w.ceil() as i32), h.max(painted_h.ceil() as i32))
+        (
+            w.max(painted_w.ceil() as i32),
+            h.max(painted_h.ceil() as i32),
+        )
     });
     let bitmap = CreateCompatibleBitmap(screen_dc, buf_w, buf_h);
     let old_bitmap = SelectObject(mem_dc, bitmap);

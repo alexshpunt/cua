@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 use super::*;
 use crate::drag_path::{Backend as PathBackend, Point};
 

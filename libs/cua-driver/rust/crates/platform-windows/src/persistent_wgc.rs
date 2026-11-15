@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Session/window ownership for the opt-in Windows capture worker.
 //! Native resources stay on one MTA thread. No pixels are retained in this registry.
 use anyhow::{ensure, Result};

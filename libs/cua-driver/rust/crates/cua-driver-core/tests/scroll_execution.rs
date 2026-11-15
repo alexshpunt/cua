@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 use cua_driver_contract::ScrollAxis;
 use cua_driver_core::pointer::Failure;
 use cua_driver_core::scroll::{execute, Backend};

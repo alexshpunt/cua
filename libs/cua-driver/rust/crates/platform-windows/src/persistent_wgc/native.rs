@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! MTA-owned retained WGC resources for the explicit window capture route.
 use super::policy::{content_bytes, empty_frame_hresult, frame_timing, fresh_frame, qpc_100ns};
 use anyhow::{ensure, Context, Result};

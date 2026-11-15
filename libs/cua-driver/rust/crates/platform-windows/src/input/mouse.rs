@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Cua AI, Inc.
+
 //! Background mouse injection via PostMessage.
 //!
 //! All clicks target the **deepest child** HWND at the click point
@@ -225,6 +228,7 @@ fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Resu
 /// Post a press-drag-release gesture via PostMessage.
 ///
 /// Coordinates are root-hwnd client-area relative.
+#[allow(clippy::too_many_arguments)]
 pub fn post_drag(
     hwnd: u64,
     from_x: i32,
@@ -282,6 +286,7 @@ pub fn post_drag(
 /// under the start point and targets that HWND for the whole gesture (a drag
 /// stays within one control), with each point converted to the child's own
 /// client space. Endpoints are given in **screen** coordinates.
+#[allow(clippy::too_many_arguments)]
 pub fn post_drag_screen(
     root: u64,
     sx_from: i32,
@@ -507,7 +512,16 @@ pub fn send_click_synthesized_mods(
     button: &str,
     modifiers: &[&str],
 ) -> Result<()> {
-    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers, false).map(|_| ())
+    send_click_synthesized_mods_impl(
+        target,
+        sx,
+        sy,
+        count,
+        button,
+        modifiers,
+        ClickMode::NonActivating,
+    )
+    .map(|_| ())
 }
 
 /// SendInput click for an explicit foreground request. Unlike the historical
@@ -526,7 +540,27 @@ pub fn send_click_synthesized_active_mods(
     button: &str,
     modifiers: &[&str],
 ) -> Result<Option<u64>> {
-    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers, true)
+    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers, ClickMode::Window)
+}
+
+/// Explicit desktop clicks leave the hardware cursor at the requested point.
+pub fn send_click_synthesized_desktop_mods(
+    target: u64,
+    sx: i32,
+    sy: i32,
+    count: usize,
+    button: &str,
+    modifiers: &[&str],
+) -> Result<()> {
+    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers, ClickMode::Desktop)
+        .map(|_| ())
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum ClickMode {
+    NonActivating,
+    Window,
+    Desktop,
 }
 
 fn send_click_synthesized_mods_impl(
@@ -536,9 +570,10 @@ fn send_click_synthesized_mods_impl(
     count: usize,
     button: &str,
     modifiers: &[&str],
-    activate: bool,
+    mode: ClickMode,
 ) -> Result<Option<u64>> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
+    let activate = mode != ClickMode::NonActivating;
     let target = HWND(target as *mut _);
     if target.0.is_null() {
         bail!("invalid target hwnd");
@@ -625,7 +660,7 @@ fn send_click_synthesized_mods_impl(
         // Save previous foreground + cursor position so we can restore.
         let prev_fg = GetForegroundWindow();
         let mut prev_cursor = POINT::default();
-        let _ = GetCursorPos(&mut prev_cursor);
+        let prev_cursor_valid = GetCursorPos(&mut prev_cursor).is_ok();
 
         // Bring the target to the top of the VISIBLE z-order so the
         // coordinate-routed SendInput mouse click lands on it — WITHOUT stealing
@@ -770,7 +805,17 @@ fn send_click_synthesized_mods_impl(
                     SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
                 );
             }
-            let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
+            if prev_cursor_valid {
+                let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
+            }
+        } else if mode == ClickMode::Window && prev_cursor_valid {
+            // Restore our injected movement, but leave a later user/app move alone.
+            let mut current_cursor = POINT::default();
+            if GetCursorPos(&mut current_cursor).is_ok()
+                && cursor_still_at_injected_click(current_cursor.x, current_cursor.y, sx, sy)
+            {
+                let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
+            }
         }
         drop(noactivate);
         if let Some(occluded) = occluded {
@@ -848,12 +893,22 @@ pub fn note_foreground_after(
     result
 }
 
+fn cursor_still_at_injected_click(x: i32, y: i32, click_x: i32, click_y: i32) -> bool {
+    x.abs_diff(click_x) <= 2 && y.abs_diff(click_y) <= 2
+}
+
 /// Press-hold-move-release drag via `SendInput`.
 ///
 /// Both the desktop and explicit-window routes retain this fork's exact-target
 /// activation and press-point ownership checks. Moves use `SendInput` alone:
 /// warping the pointer ahead of its move event can make canvas strokes empty.
 /// Neither route restores the pointer or foreground after the gesture.
+///
+/// `modifiers` (ctrl/shift/alt/win) are held through the system input queue
+/// from before the press until after the release, so targets that read live
+/// key state (WPF `Keyboard.Modifiers`, Excel's Ctrl-drag copy) see a
+/// modified drag.
+#[allow(clippy::too_many_arguments)]
 pub fn send_drag_synthesized(
     target: u64,
     sx_from: i32,
@@ -863,6 +918,7 @@ pub fn send_drag_synthesized(
     duration_ms: u64,
     steps: usize,
     button: &str,
+    modifiers: &[&str],
 ) -> Result<()> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(target as *mut _);
@@ -878,6 +934,7 @@ pub fn send_drag_synthesized(
         "middle" => (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP),
         _ => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
     };
+    let (mod_downs, mod_ups) = crate::input::keyboard::modifier_hold_inputs(modifiers);
 
     let (vd_x, vd_y, vd_w, vd_h) = unsafe {
         (
@@ -927,6 +984,14 @@ pub fn send_drag_synthesized(
     };
     let send =
         |input: INPUT| unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) == 1 };
+    // Release the held modifiers, retrying once like the click path so a
+    // partially inserted release does not leave system key state held.
+    let release_modifiers = || unsafe {
+        let size = std::mem::size_of::<INPUT>() as i32;
+        mod_ups.is_empty()
+            || SendInput(&mod_ups, size) as usize == mod_ups.len()
+            || SendInput(&mod_ups, size) as usize == mod_ups.len()
+    };
 
     unsafe {
         if !crate::input::force_foreground_assisted(target).0 {
@@ -938,12 +1003,26 @@ pub fn send_drag_synthesized(
     }
     // Only the press point matters: the window that takes the press captures the moves.
     crate::input::occlusion::check_point(target.0 as usize as u64, sx_from, sy_from)?;
+    // Hold the modifiers before the press.
+    if !mod_downs.is_empty() {
+        let sent = unsafe { SendInput(&mod_downs, std::mem::size_of::<INPUT>() as i32) };
+        if sent as usize != mod_downs.len() {
+            let _ = release_modifiers();
+            bail!(
+                "SendInput inserted {sent}/{} modifier key presses; no mouse input was sent",
+                mod_downs.len()
+            );
+        }
+        sleep(Duration::from_millis(5));
+    }
     let (nfx, nfy) = norm(sx_from, sy_from);
     if !send(make_input(nfx, nfy, MOUSEEVENTF_MOVE)) {
+        let _ = release_modifiers();
         bail!("SendInput did not insert the drag's first move; no button was pressed");
     }
     sleep(Duration::from_millis(30));
     if !send(button_input(down_flag)) {
+        let _ = release_modifiers();
         bail!("SendInput did not insert the drag's button press");
     }
     sleep(Duration::from_millis(30));
@@ -965,12 +1044,21 @@ pub fn send_drag_synthesized(
     }
     // Always release, even after a failed move, so no button stays held.
     let released = send(button_input(up_flag)) || send(button_input(up_flag));
+    // A target that samples live key state while handling the release still
+    // sees the modifiers held; release them after the settle.
     sleep(Duration::from_millis(40));
+    let modifiers_released = release_modifiers();
     if !released {
         let (cx, cy) = cursor_at;
         bail!(
             "SendInput did not insert the drag's button release after a retry; the \
              button may still be held at screen ({cx},{cy}), so the cursor was left there."
+        );
+    }
+    if !modifiers_released {
+        bail!(
+            "SendInput did not insert the drag's modifier key releases after a retry; \
+             modifier keys may still be held."
         );
     }
     if !moves_ok {
@@ -981,6 +1069,7 @@ pub fn send_drag_synthesized(
 
 /// Explicit-window entry point, with the same exact-target guards and physical
 /// motion as the desktop route.
+#[allow(clippy::too_many_arguments)]
 pub fn send_drag_synthesized_active(
     target: u64,
     sx_from: i32,
@@ -990,6 +1079,7 @@ pub fn send_drag_synthesized_active(
     duration_ms: u64,
     steps: usize,
     button: &str,
+    modifiers: &[&str],
 ) -> Result<()> {
     send_drag_synthesized(
         target,
@@ -1000,6 +1090,7 @@ pub fn send_drag_synthesized_active(
         duration_ms,
         steps,
         button,
+        modifiers,
     )
 }
 
@@ -1171,6 +1262,20 @@ mod nc_hit_tests {
         assert_eq!(classify_nc_move_resize_hit(3), None); // HTSYSMENU (click, not drag-move)
         assert_eq!(classify_nc_move_resize_hit(-1), None); // HTERROR
         assert_eq!(classify_nc_move_resize_hit(18), None); // HTBORDER (non-resizable edge)
+    }
+}
+
+#[cfg(test)]
+mod cursor_restore_tests {
+    use super::cursor_still_at_injected_click;
+
+    #[test]
+    fn restore_only_while_the_cursor_remains_at_the_injected_point() {
+        assert!(cursor_still_at_injected_click(-100, 200, -100, 200));
+        assert!(cursor_still_at_injected_click(-98, 198, -100, 200));
+        assert!(!cursor_still_at_injected_click(-97, 200, -100, 200));
+        assert!(!cursor_still_at_injected_click(-100, 203, -100, 200));
+        assert!(!cursor_still_at_injected_click(i32::MIN, 0, i32::MAX, 0));
     }
 }
 

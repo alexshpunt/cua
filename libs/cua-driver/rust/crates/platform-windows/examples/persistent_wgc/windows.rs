@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Read-only retained WGC experiment. No snapshot or input authority is published.
 use super::policy::{
     content_bytes, empty_frame_hresult, frame_timing, fresh_frame, new_delivery, qpc_100ns,

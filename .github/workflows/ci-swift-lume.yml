@@ -5,6 +5,7 @@ on:
       - "libs/lume/**"
       - ".github/workflows/ci-swift-lume.yml"
 
+  merge_group:
 concurrency:
   group: lume-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,9 +21,15 @@ permissions:
   contents: read
 
 jobs:
+  quick:
+    name: quick
+    if: (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    uses: ./.github/workflows/ci-quick.yml
+
   test:
+    needs: quick
     # macOS checks are disabled in the fork.
-    if: ${{ github.repository == 'trycua/cua' }}
+    if: ${{ github.repository == 'trycua/cua' && !failure() && !cancelled() && needs.quick.outputs.skip != 'true' }}
     name: Test
     runs-on: macos-15
     steps:
@@ -32,8 +39,9 @@ jobs:
       - run: swift test
         working-directory: ./libs/lume
   build:
+    needs: quick
     # macOS checks are disabled in the fork.
-    if: ${{ github.repository == 'trycua/cua' }}
+    if: ${{ github.repository == 'trycua/cua' && !failure() && !cancelled() && needs.quick.outputs.skip != 'true' }}
     name: Release build
     runs-on: macos-15
     steps:

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Human stop: the person at the machine ends all agent input from this process.
 //!
 //! A platform signal (on Windows, three physical Escape presses) calls [`trigger`]. From then on the

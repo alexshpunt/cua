@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Cua AI, Inc.
+
 fn main() {
     // `cfg(target_os)` in a build script is the host's: check the target, so a cross build embeds it too.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {

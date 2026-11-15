@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! One timed input program: keys, every mouse button, absolute and relative
 //! motion, wheel and pen contacts, released completely when it ends.
 //!
