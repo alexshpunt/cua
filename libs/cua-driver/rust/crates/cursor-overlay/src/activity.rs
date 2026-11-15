@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Human-only activity metadata and bounded preview rendering. No capture or input authority.
 
 use crate::session_badge::{font, rounded_rect as rounded};

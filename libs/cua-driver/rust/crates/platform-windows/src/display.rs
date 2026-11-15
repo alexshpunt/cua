@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Exact monitor selection. A topology snapshot is read geometry, never input authority.
 
 use cua_driver_contract::DisplayInfo;

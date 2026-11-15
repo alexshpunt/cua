@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 use cua_driver_contract::*;
 use cua_driver_core::window_management::{self, Backend, Failure};
 use std::collections::VecDeque;

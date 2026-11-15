@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 use cua_driver_contract::{
     tool_contract, validate_success_output, Platform, SchemaMode, ToolInput, WindowRestoreInput,
     WindowStatusInput,

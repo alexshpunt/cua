@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! The person at the machine: triple Escape stops the agent, and physical presses are counted.
 //!
 //! When `CUA_ESCAPE_STOP=1` is set at startup, a low-level keyboard hook watches for the person at the

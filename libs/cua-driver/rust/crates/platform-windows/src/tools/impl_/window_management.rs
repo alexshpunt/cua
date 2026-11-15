@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! One-use, exact-window native management. No input, desktop switch or replay fallback.
 
 use super::super::set_window_frame::outer_frame_for_visible_request;

@@ -41,7 +41,8 @@ env:
 
 jobs:
   kit:
-    if: ${{ !startsWith(github.head_ref, 'release-please--branches--') }}
+    # It packages a cua-driver-rs release's plugin source; the fork publishes no such releases.
+    if: ${{ github.repository == 'trycua/cua' && !startsWith(github.head_ref, 'release-please--branches--') }}
     name: ${{ matrix.channel }} (${{ matrix.profile }})
     runs-on: ubuntu-24.04
     timeout-minutes: 60

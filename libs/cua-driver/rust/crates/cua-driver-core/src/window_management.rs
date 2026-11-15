@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! One native window-management request, bounded observation and truthful interruption prefixes.
 
 pub use crate::pointer::Failure;

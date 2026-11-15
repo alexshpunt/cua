@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! UIA-only semantic operations; this module has no input-event dispatch path.
 use super::impl_::ToolState;
 use crate::semantic::{self, Control, Failure};

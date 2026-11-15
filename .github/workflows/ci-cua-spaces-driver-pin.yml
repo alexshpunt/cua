@@ -35,6 +35,8 @@ jobs:
       - name: Pin test (offline)
         run: python3 .github/scripts/tests/test_spaces_cua_driver_pin.py
       - name: The pin is at most 24h behind the latest stable release
+        # The fork publishes no cua-driver-rs releases to compare against.
+        if: github.repository == 'trycua/cua'
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 -I .github/scripts/spaces_cua_driver_pin.py check --grace-hours 24

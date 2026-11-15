@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Read-only Windows shell desktop membership, independent of window lifetime and input authority.
 
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};

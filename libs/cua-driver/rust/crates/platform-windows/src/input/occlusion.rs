@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Which window a real pointer press at a screen point reaches.
 //!
 //! `SendInput` goes to whatever window is on top at the point. A press planned

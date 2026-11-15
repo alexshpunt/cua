@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Exact-window state and explicit restoration. Neither operation injects input.
 
 use crate::inputs::string_schema;

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 use super::{CursorRegistry, DragTool, DriverConfig, Snapshots, ToolState};
 use cua_driver_core::tool::Tool;
 use serde_json::json;

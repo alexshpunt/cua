@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Windows presentation metadata. These tools never capture pixels or dispatch input.
 use crate::{Platform, SchemaMode, ToolAnnotations, ToolContract, ToolOutput};
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};

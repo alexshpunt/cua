@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! One native restore request and explicit activation, with truthful interrupted prefixes.
 
 pub use crate::pointer::Failure;

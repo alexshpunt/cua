@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Bounded, single-use exact-window state admission. The native lease owns its lifetime marker.
 
 use std::collections::VecDeque;

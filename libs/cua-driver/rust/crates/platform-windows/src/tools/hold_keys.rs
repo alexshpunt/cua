@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Copyright (c) 2026 Cua AI, Inc.
+// Copyright (c) 2026 Aleksandr Shpuntenko
 
 use async_trait::async_trait;
 use cua_driver_core::{

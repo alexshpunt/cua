@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Metadata-only window state and explicit restore/activation. No injected-input fallback.
 
 use super::{exact_window_ownership_result, ToolState};

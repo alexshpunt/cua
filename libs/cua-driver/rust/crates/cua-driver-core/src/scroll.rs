@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! One native movement followed by checked, bounded wheel axes.
 //! Activation, arrival confirmation and effect measurement belong to the adapter.
 

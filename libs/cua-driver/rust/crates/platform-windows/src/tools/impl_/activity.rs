@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Adapter-internal native visualization tools, separate from capture/input authority.
 use super::*;
 

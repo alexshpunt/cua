@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Windows-only public monitor reads; no input capture publication or desktop-scale mutation.
 
 use async_trait::async_trait;

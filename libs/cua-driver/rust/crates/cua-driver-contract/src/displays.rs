@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Windows-only read contracts for an exact native display. These pixels grant no input.
 
 use crate::{

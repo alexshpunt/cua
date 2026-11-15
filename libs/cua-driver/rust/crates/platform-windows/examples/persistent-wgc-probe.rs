@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 //! Isolated read-only capture experiment. This executable is not a Driver runtime.
 #[path = "../src/persistent_wgc/policy.rs"]
 mod policy;

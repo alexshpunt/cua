@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// Copyright (c) 2026 Aleksandr Shpuntenko
+
 use crate::{tool_contract, Platform};
 use serde_json::json;
 
