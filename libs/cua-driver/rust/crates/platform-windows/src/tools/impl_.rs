@@ -508,6 +508,105 @@ impl Tool for ExactPidWindowTargetGuard {
     }
 }
 
+/// Foreground input hands the foreground back to the human's window afterward
+/// (`CUA_FOCUS_RETURN=1`). It sits inside the pid-only guard, so a call addressed by pid alone
+/// already names its window here.
+struct FocusReturnGuard {
+    inner: Box<dyn Tool>,
+}
+
+#[async_trait]
+impl Tool for FocusReturnGuard {
+    fn def(&self) -> &ToolDef {
+        self.inner.def()
+    }
+
+    fn has_independent_input_lane(&self, args: &Value) -> bool {
+        self.inner.has_independent_input_lane(args)
+    }
+
+    async fn protected_resource_ownership(
+        &self,
+        adapter_id: &str,
+        args: &Value,
+    ) -> cua_driver_core::tool::ProtectedResourceOwnership {
+        self.inner
+            .protected_resource_ownership(adapter_id, args)
+            .await
+    }
+
+    async fn protected_resource_scope(
+        &self,
+        adapter_id: &str,
+        args: &Value,
+    ) -> Result<Option<Value>, String> {
+        self.inner.protected_resource_scope(adapter_id, args).await
+    }
+
+    async fn validate_protected_resource_scope(
+        &self,
+        adapter_id: &str,
+        args: &Value,
+        approved_scope: &Value,
+    ) -> Result<(), String> {
+        self.inner
+            .validate_protected_resource_scope(adapter_id, args, approved_scope)
+            .await
+    }
+
+    async fn invoke(&self, args: Value) -> ToolResult {
+        let lease = match foreground_input_window(&self.inner.def().name, &args) {
+            Some(window_id) if crate::focus_return::enabled() => {
+                tokio::task::spawn_blocking(move || crate::focus_return::begin(window_id))
+                    .await
+                    .ok()
+                    .flatten()
+            }
+            _ => None,
+        };
+        let mut result = self.inner.invoke(args).await;
+        if let Some(lease) = lease {
+            if let Ok(Some(line)) = tokio::task::spawn_blocking(move || lease.finish()).await {
+                result
+                    .content
+                    .push(cua_driver_core::protocol::Content::text(line));
+            }
+        }
+        result
+    }
+}
+
+/// Input tools whose `delivery_mode:"foreground"` takes the foreground for their window.
+const FOREGROUND_INPUT_TOOLS: &[&str] = &[
+    "click",
+    "double_click",
+    "right_click",
+    "drag",
+    "hold_keys",
+    "input_timeline",
+    "type_text",
+    "press_key",
+    "hotkey",
+    "scroll",
+    "scroll_at",
+    "move_pointer",
+];
+
+/// The exact window a foreground input call takes the foreground for, from its top-level
+/// `window_id` or its `target`.
+fn foreground_input_window(tool: &str, args: &Value) -> Option<u64> {
+    if !FOREGROUND_INPUT_TOOLS.contains(&tool)
+        || args.get("scope").and_then(Value::as_str) == Some("desktop")
+        || crate::input::delivery::DeliveryMode::from_args(args)
+            != crate::input::delivery::DeliveryMode::Foreground
+    {
+        return None;
+    }
+    args.get("window_id")
+        .and_then(Value::as_u64)
+        .or_else(|| args.get("target")?.get("window_id")?.as_u64())
+}
+
 type PidWindowGuardParts = (
     WindowTargetCandidates,
     cua_driver_core::window_target::TokenPidResolver,
@@ -519,8 +618,13 @@ fn pid_window_guarded<T: Tool + 'static>(
 ) -> Box<dyn Tool> {
     Box::new(ExactPidWindowTargetGuard {
         inner: Box::new(
-            PidOnlyWindowTargetGuard::new(Box::new(tool), candidates.clone())
-                .with_token_pid_resolver(token_pid_resolver.clone()),
+            PidOnlyWindowTargetGuard::new(
+                Box::new(FocusReturnGuard {
+                    inner: Box::new(tool),
+                }),
+                candidates.clone(),
+            )
+            .with_token_pid_resolver(token_pid_resolver.clone()),
         ),
     })
 }
