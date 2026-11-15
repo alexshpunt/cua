@@ -721,7 +721,9 @@ fn with_confirmed_foreground<T>(
         _ => {}
     }
     drop(attachment);
-    if !previous.0.is_null() && previous != target {
+    // Under a focus return lease, the tool layer hands the foreground to the human's window
+    // instead, and keeps it with the target while a menu or popup the keys opened is still open.
+    if !previous.0.is_null() && previous != target && !crate::focus_return::active() {
         let _ = unsafe { SetForegroundWindow(previous) };
     }
     result
