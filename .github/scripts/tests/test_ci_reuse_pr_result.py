@@ -521,7 +521,7 @@ def test_cua_sdk_subset_names_are_real_jobs_with_the_pull_request_legs():
     assert len(names) == len(set(names))
     assert '--stamp-job "reuse PR results"' in command
     assert wf["jobs"]["reuse"]["name"] == "reuse PR results"
-    assert set(names) <= job_names(wf, expand_os=("ubuntu-latest", "windows-latest"))
+    assert set(names) <= job_names(wf, expand_os=("ubuntu-latest", "macos-26", "windows-latest"))
 
 
 def literals(expr):
@@ -530,8 +530,8 @@ def literals(expr):
 
 MATRIX_JOBS = {
     # job id: legs a pull request runs and which of them are in the reused subset
+    # The fork runs no macOS legs.
     "rust-lint": ["ubuntu-latest", "windows-latest"],
-    "rust": ["ubuntu-latest"],
     "spaces-e2e": ["ubuntu-latest"],
     "bindings": ["ubuntu-latest"],
     "python": ["ubuntu-latest"],
@@ -546,6 +546,7 @@ def test_cua_sdk_matrix_on_main_is_the_full_matrix_minus_the_pull_request_legs(j
     assert "reuse" in (job["needs"] if isinstance(job["needs"], list) else [job["needs"]])
     os_matrix = job["strategy"]["matrix"]["os"]
     if isinstance(os_matrix, list):
+        # Every leg is in the subset: with no leg left for main, the job skips when it is reused.
         assert os_matrix == MATRIX_JOBS[job_id]
         assert "needs.reuse.outputs.pr_subset != 'true'" in job["if"]
     else:
@@ -558,6 +559,91 @@ def test_cua_sdk_matrix_on_main_is_the_full_matrix_minus_the_pull_request_legs(j
     prefix = job["name"].split("(")[0].replace("${{ matrix.os }}", "").strip()
     for leg in MATRIX_JOBS[job_id]:
         assert f"{prefix} ({leg})" in subset
+
+
+def test_cua_sdk_rust_linux_leg_is_sharded_behind_the_reused_check_name():
+    wf = load("ci-cua-sdk.yml")
+    # The reuse subset names `rust (ubuntu-latest)`: a plain job with that name
+    # reports the result of the sharded Linux jobs.
+    assert wf["jobs"]["rust-linux-result"]["name"] == "rust (ubuntu-latest)"
+    assert wf["jobs"]["rust-linux-result"]["needs"] == ["quick", "reuse", "rust-linux"]
+    assert wf["jobs"]["rust-linux"]["strategy"]["matrix"]["shard"] == [1, 2, 3]
+    assert "--partition hash:${{ matrix.shard }}/3" in str(wf["jobs"]["rust-linux"]["steps"])
+    # Both run exactly when the old Linux leg did: never when the subset is reused on a full run.
+    assert (
+        wf["jobs"]["rust-linux"]["if"].split("&&", 3)[3]
+        == wf["jobs"]["rust-linux-result"]["if"].split("&&", 3)[3]
+    )
+    assert "needs.reuse.outputs.pr_subset == 'true'" in wf["jobs"]["rust-linux"]["if"]
+    # The Windows leg stays in `rust`, on full runs only; the fork runs no macOS leg.
+    job = wf["jobs"]["rust"]
+    assert literals(job["strategy"]["matrix"]["os"]) == [["windows-latest"]]
+    assert "ci:full" in job["if"]
+
+
+def test_cua_sdk_rust_tests_are_built_once_and_run_from_the_archive():
+    wf = load("ci-cua-sdk.yml")
+    build, shards = wf["jobs"]["rust-linux-build"], wf["jobs"]["rust-linux"]
+    assert build["needs"] == ["quick", "reuse"] and shards["needs"] == [
+        "quick",
+        "reuse",
+        "rust-linux-build",
+    ]
+    # Same conditions: the build runs exactly when the shards do.
+    assert build["if"] == shards["if"]
+    build_text, shard_text = str(build["steps"]), str(shards["steps"])
+    assert "cargo nextest archive" in build_text and "rust-linux-tests" in build_text
+    assert (
+        "cargo nextest run" in shard_text
+        and "--archive-file" in shard_text
+        and "--workspace-remap" in shard_text
+    )
+    # Integration tests bake CARGO_BIN_EXE_* and CARGO_TARGET_TMPDIR in at compile time: the archive must be
+    # unpacked into the build's target directory and target/tmp must exist, or every cua-cli test fails to spawn.
+    assert (
+        "--extract-to ." in shard_text
+        and "--extract-overwrite" in shard_text
+        and "mkdir -p target/tmp" in shard_text
+    )
+    # The shards never compile the nextest packages again: they only restore the cache.
+    assert "cargo nextest run --locked" not in shard_text
+    assert any(
+        s.get("with", {}).get("save-if") == "false"
+        for s in shards["steps"]
+        if "rust-cache" in str(s.get("uses", ""))
+    )
+    assert not any(
+        "save-if" in s.get("with", {})
+        for s in build["steps"]
+        if "rust-cache" in str(s.get("uses", ""))
+    )
+
+
+def test_cua_sdk_pool_model_checks_leave_pull_requests_but_run_on_main_and_nightly():
+    text = (ROOT / ".github/workflows/ci-cua-sdk.yml").read_text()
+    wf = load("ci-cua-sdk.yml")
+    assert "schedule" in (wf.get("on") or wf[True])
+    run = next(
+        s["run"]
+        for s in wf["jobs"]["rust-linux"]["steps"]
+        if "cargo nextest run" in s.get("run", "")
+    )
+    # Excluded only on pull requests without `ci:full`; main, the nightly schedule and `ci:full` run them.
+    assert (
+        "github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'ci:full')"
+        in run
+    )
+    for name in (
+        "pool_protocol_is_safe",
+        "mutation_no_epoch_check_breaks_single_writer",
+        "finding_stale_holder_cancels_current_attempt",
+    ):
+        assert f"test(={name})" in run
+        assert (
+            f"fn {name}()"
+            in (ROOT / "libs/cua/crates/cua-spaces-cluster/tests/pool_model.rs").read_text()
+        )
+    assert "pool_model" in text
 
 
 def test_cua_sdk_jobs_in_the_subset_skip_only_when_it_is_reused():
@@ -584,6 +670,8 @@ def test_cua_sdk_jobs_in_the_subset_skip_only_when_it_is_reused():
                 f"needs.{need}.result != 'failure'" in cond
                 and f"needs.{need}.result != 'cancelled'" in cond
             )
+    # Jobs outside the subset are untouched by the reuse.
+    assert "reuse" not in str(wf["jobs"]["swift"])
 
 
 def test_cua_sdk_reuse_job_cannot_block_the_run():
@@ -606,7 +694,7 @@ LANES = {
     "ci-cua-spacesd.yml": (
         "cua-spacesd / changes",
         {"test": ("fmt, clippy, test ({os})", "legs_test")},
-        {"relay-e2e": "relay e2e (docker)"},
+        {},
     ),
     "ci-cua-driver-contract-clients.yml": (
         "contract clients / changes",
@@ -667,7 +755,7 @@ def test_script_change_triggers_the_workflow(filename):
 
 # What each workflow's jobs install from a floating spec: the stamp must cover it.
 FLOATING = {
-    "ci-cua-spacesd.yml": {"rust-stable"},
+    "ci-cua-spacesd.yml": set(),
     "ci-cua-driver-contract-clients.yml": {"node-22", "python-3.12"},
     "ci-cua-sdk.yml": {"node-22", "uv", "python-standalone"},
 }
@@ -688,3 +776,36 @@ def test_floating_inputs_are_fingerprinted(filename):
         assert "python-3.12" in flags
     if "astral-sh/setup-uv" in text:
         assert {"uv", "python-standalone"} <= flags
+
+
+def test_cua_spacesd_relay_e2e_shards_are_legs_reused_by_name():
+    """`relay e2e (docker) (<shard>)`: one job per shard, each reusable by name like the OS legs (CUA-3558)."""
+    wf = load("ci-cua-spacesd.yml")
+    changes, job = wf["jobs"]["changes"], wf["jobs"]["relay-e2e"]
+    steps = {s.get("id"): s for s in changes["steps"]}
+    shards = '["core","hosted","teleport","tunnel"]'
+    assert job["name"].replace("${{ matrix.shard }}", "{os}") == "relay e2e (docker) ({os})"
+    assert '--template "relay e2e (docker) ({os})"' in steps["legs_relay"]["run"]
+    assert steps["legs_relay"]["env"] == {
+        "REUSED": "${{ steps.reuse.outputs.reused }}",
+        "LEGS": shards,
+    }
+    assert (
+        steps["legs_relay"]["continue-on-error"] is True
+        and steps["legs_relay"]["timeout-minutes"] == 1
+    )
+    assert job["strategy"]["matrix"]["shard"] == "${{ fromJSON(needs.changes.outputs.legs_relay) }}"
+    assert "needs.changes.outputs.legs_relay != '[]'" in job["if"]
+    # A failed legs step falls back to every shard.
+    assert (
+        changes["outputs"]["legs_relay"]
+        == f"${{{{ steps.legs_relay.outputs.legs || '{shards}' }}}}"
+    )
+
+
+def test_cua_spacesd_scope_steps_read_the_paginated_files_api_per_page():
+    """`gh api --paginate --jq` runs the filter once per page, and each page is an array."""
+    wf = load("ci-cua-spacesd.yml")
+    for step_id in ("scope", "relay_scope"):
+        step = next(s for s in wf["jobs"]["changes"]["steps"] if s.get("id") == step_id)
+        assert "--jq '.[]" in step["run"], step_id

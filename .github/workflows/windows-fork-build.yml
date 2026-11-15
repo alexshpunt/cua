@@ -51,7 +51,7 @@ jobs:
         with:
           ref: ${{ env.SOURCE_REF }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1, same as the upstream release
+      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1 (same as the upstream release)
         with:
           targets: x86_64-pc-windows-msvc
       - uses: actions/cache@v4

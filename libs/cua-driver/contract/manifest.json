@@ -63,7 +63,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -71,11 +71,9 @@
             "description": "Exact window (kind \"window\", with pid and window_id) or desktop (kind \"desktop\", with display_id). \"primary\" is the portable desktop target.",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -83,12 +81,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -233,6 +229,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -314,7 +313,7 @@
             "type": "boolean"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           }
         },
@@ -397,7 +396,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "text": {
@@ -497,7 +496,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "steps": {
@@ -510,11 +509,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -522,12 +519,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -674,6 +669,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -769,124 +767,6 @@
         "required": [
           "session",
           "active"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "escalate_session",
-      "description": "Deprecated compatibility tool for legacy capture-scope sessions. New callers select window or desktop modality on each action. No deescalate_session tool exists.",
-      "platforms": [
-        "macos",
-        "windows",
-        "linux"
-      ],
-      "capabilities": [
-        "session.capture_scope.escalate"
-      ],
-      "annotations": {
-        "read_only": false,
-        "destructive": false,
-        "idempotent": false,
-        "open_world": false
-      },
-      "schema_mode": "canonical_runtime",
-      "cursor_semantics": {
-        "action": "system"
-      },
-      "input_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "detail": {
-            "description": "Optional bounded diagnostic detail. Never use secrets or page content.",
-            "maxLength": 200,
-            "type": "string"
-          },
-          "reason": {
-            "description": "Why the window-scoped attempt failed and desktop capture is needed.",
-            "enum": [
-              "ax_tree_pixel_mismatch",
-              "background_delivery_failed",
-              "foreground_ineffective",
-              "no_window_target",
-              "other"
-            ],
-            "type": "string"
-          },
-          "session": {
-            "description": "Public label of the legacy capture-scope session to escalate.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "session",
-          "reason"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "capture_scope": {
-            "enum": [
-              "auto",
-              "window",
-              "desktop"
-            ],
-            "type": "string"
-          },
-          "desktop_capture_authorized": {
-            "type": "boolean"
-          },
-          "desktop_unlocked": {
-            "type": "boolean"
-          },
-          "effective_scope": {
-            "enum": [
-              "window",
-              "desktop"
-            ],
-            "type": "string"
-          },
-          "escalation_detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "escalation_reason": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ax_tree_pixel_mismatch",
-                  "background_delivery_failed",
-                  "foreground_ineffective",
-                  "no_window_target",
-                  "other"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "session": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "session",
-          "capture_scope",
-          "effective_scope",
-          "desktop_capture_authorized",
-          "desktop_unlocked",
-          "escalation_reason",
-          "escalation_detail"
         ],
         "type": "object"
       }
@@ -1189,7 +1069,7 @@
         "additionalProperties": false,
         "properties": {
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           }
         },
@@ -1250,7 +1130,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           }
         },
@@ -1347,230 +1227,6 @@
       }
     },
     {
-      "name": "get_display_state",
-      "description": "Read exactly one enumerated Windows display with matching topology. Pixels are display-local and do not authorize input; missing or changed targets refuse without primary fallback.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "screen.capture",
-        "screen.dimensions"
-      ],
-      "annotations": {
-        "read_only": true,
-        "destructive": false,
-        "idempotent": false,
-        "open_world": false
-      },
-      "schema_mode": "canonical_runtime",
-      "cursor_semantics": {
-        "action": "observe"
-      },
-      "input_schema": {
-        "additionalProperties": false,
-        "description": "Read exactly the enumerated display in this topology; never fall back to primary.",
-        "properties": {
-          "display_id": {
-            "description": "Exact native display_id returned by list_displays, not an enumeration index or primary alias.",
-            "type": "string"
-          },
-          "max_image_dimension": {
-            "description": "Zero or omitted keeps native physical resolution.",
-            "maximum": 4294967295,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
-            "type": "string"
-          },
-          "topology_id": {
-            "description": "Exact topology_id from the same discovery; a changed topology refuses without pixels or fallback.",
-            "type": "string"
-          }
-        },
-        "required": [
-          "display_id",
-          "topology_id"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "agent_overlay_capture": {
-            "additionalProperties": false,
-            "properties": {
-              "method": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "reason": {
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "status": {
-                "oneOf": [
-                  {
-                    "const": "excluded",
-                    "type": "string"
-                  },
-                  {
-                    "const": "not_present",
-                    "type": "string"
-                  },
-                  {
-                    "const": "not_excluded",
-                    "type": "string"
-                  }
-                ]
-              }
-            },
-            "required": [
-              "status"
-            ],
-            "type": "object"
-          },
-          "display": {
-            "properties": {
-              "bounds": {
-                "properties": {
-                  "height": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "width": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "x": {
-                    "format": "int32",
-                    "type": "integer"
-                  },
-                  "y": {
-                    "format": "int32",
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "x",
-                  "y",
-                  "width",
-                  "height"
-                ],
-                "type": "object"
-              },
-              "display_id": {
-                "type": "string"
-              },
-              "dpi": {
-                "minimum": 0,
-                "type": [
-                  "integer",
-                  "null"
-                ]
-              },
-              "monitor_device_paths": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "monitor_handle": {
-                "type": "string"
-              },
-              "primary": {
-                "type": "boolean"
-              },
-              "scale_factor": {
-                "type": [
-                  "number",
-                  "null"
-                ]
-              },
-              "work_area": {
-                "properties": {
-                  "height": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "width": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "x": {
-                    "format": "int32",
-                    "type": "integer"
-                  },
-                  "y": {
-                    "format": "int32",
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "x",
-                  "y",
-                  "width",
-                  "height"
-                ],
-                "type": "object"
-              }
-            },
-            "required": [
-              "display_id",
-              "monitor_handle",
-              "monitor_device_paths",
-              "bounds",
-              "work_area",
-              "primary"
-            ],
-            "type": "object"
-          },
-          "platform": {
-            "type": "string"
-          },
-          "screenshot_height": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "screenshot_mime_type": {
-            "type": "string"
-          },
-          "screenshot_original_height": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "screenshot_original_width": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "screenshot_width": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "topology_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "platform",
-          "topology_id",
-          "display",
-          "screenshot_width",
-          "screenshot_height",
-          "screenshot_original_width",
-          "screenshot_original_height",
-          "screenshot_mime_type",
-          "agent_overlay_capture"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "get_screen_size",
       "description": "Return the primary display dimensions and scale factor in the platform's desktop coordinate space.",
       "platforms": [
@@ -1595,7 +1251,7 @@
         "additionalProperties": false,
         "properties": {
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           }
         },
@@ -1722,349 +1378,6 @@
           "recording_active",
           "idle_seconds",
           "expires_in_seconds"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "get_session_state",
-      "description": "Deprecated compatibility alias that reads a live legacy session's capture policy. Use get_session for lifecycle state.",
-      "platforms": [
-        "macos",
-        "windows",
-        "linux"
-      ],
-      "capabilities": [
-        "session.capture_scope.read"
-      ],
-      "annotations": {
-        "read_only": true,
-        "destructive": false,
-        "idempotent": true,
-        "open_world": false
-      },
-      "schema_mode": "canonical_runtime",
-      "cursor_semantics": {
-        "action": "system"
-      },
-      "input_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "session": {
-            "description": "Optional public label. When omitted, inspect the caller's attached\nimplicit session.",
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "capture_scope": {
-            "enum": [
-              "auto",
-              "window",
-              "desktop"
-            ],
-            "type": "string"
-          },
-          "desktop_capture_authorized": {
-            "type": "boolean"
-          },
-          "desktop_unlocked": {
-            "type": "boolean"
-          },
-          "effective_scope": {
-            "enum": [
-              "window",
-              "desktop"
-            ],
-            "type": "string"
-          },
-          "escalation_detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "escalation_reason": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ax_tree_pixel_mismatch",
-                  "background_delivery_failed",
-                  "foreground_ineffective",
-                  "no_window_target",
-                  "other"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "session": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "session",
-          "capture_scope",
-          "effective_scope",
-          "desktop_capture_authorized",
-          "desktop_unlocked",
-          "escalation_reason",
-          "escalation_detail"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "get_window_control_state",
-      "description": "Use get_window_control_state to read exact Windows window geometry and state without pixels, a UI walk, activation or input. The one-use management state grants neither pointer nor typing authority.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "window.state"
-      ],
-      "annotations": {
-        "read_only": true,
-        "destructive": false,
-        "idempotent": false,
-        "open_world": true
-      },
-      "schema_mode": "canonical_runtime",
-      "input_schema": {
-        "additionalProperties": false,
-        "description": "Read exact-window metadata and issue one management admission without capture or activation.",
-        "properties": {
-          "pid": {
-            "description": "Process that owns the exact sampled window.",
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
-            "type": "string"
-          },
-          "window_id": {
-            "description": "Exact top-level native window identifier; do not substitute another window of the process.",
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "pid": {
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "state": {
-            "additionalProperties": false,
-            "properties": {
-              "bounds": {
-                "additionalProperties": false,
-                "properties": {
-                  "height": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "width": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "x": {
-                    "format": "int32",
-                    "type": "integer"
-                  },
-                  "y": {
-                    "format": "int32",
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "x",
-                  "y",
-                  "width",
-                  "height"
-                ],
-                "type": "object"
-              },
-              "bounds_source": {
-                "enum": [
-                  "dwm_visible_frame",
-                  "window_rect"
-                ],
-                "type": "string"
-              },
-              "coordinate_space": {
-                "enum": [
-                  "windows_desktop_pixels"
-                ],
-                "type": "string"
-              },
-              "foreground_at_target": {
-                "type": "boolean"
-              },
-              "foreground_window": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "keyboard_focus_at_target": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
-              },
-              "maximized": {
-                "type": "boolean"
-              },
-              "minimized": {
-                "type": "boolean"
-              },
-              "virtual_desktop": {
-                "additionalProperties": false,
-                "properties": {
-                  "desktop_id": {
-                    "not": {
-                      "const": "00000000-0000-0000-0000-000000000000"
-                    },
-                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "desktop_id_error": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "code": {
-                        "enum": [
-                          "com_initialization_failed",
-                          "manager_unavailable",
-                          "window_unavailable",
-                          "desktop_id_query_failed",
-                          "current_desktop_query_failed",
-                          "invalid_desktop_id",
-                          "query_worker_failed"
-                        ],
-                        "type": "string"
-                      },
-                      "hresult": {
-                        "format": "int32",
-                        "type": [
-                          "integer",
-                          "null"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "code"
-                    ],
-                    "type": [
-                      "object",
-                      "null"
-                    ]
-                  },
-                  "on_current_desktop": {
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
-                  },
-                  "on_current_desktop_error": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "code": {
-                        "enum": [
-                          "com_initialization_failed",
-                          "manager_unavailable",
-                          "window_unavailable",
-                          "desktop_id_query_failed",
-                          "current_desktop_query_failed",
-                          "invalid_desktop_id",
-                          "query_worker_failed"
-                        ],
-                        "type": "string"
-                      },
-                      "hresult": {
-                        "format": "int32",
-                        "type": [
-                          "integer",
-                          "null"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "code"
-                    ],
-                    "type": [
-                      "object",
-                      "null"
-                    ]
-                  },
-                  "sampled_at_unix_ms": {
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "desktop_id",
-                  "on_current_desktop",
-                  "desktop_id_error",
-                  "on_current_desktop_error",
-                  "sampled_at_unix_ms"
-                ],
-                "type": "object"
-              },
-              "visible": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "bounds",
-              "bounds_source",
-              "coordinate_space",
-              "minimized",
-              "maximized",
-              "visible",
-              "foreground_at_target",
-              "keyboard_focus_at_target",
-              "foreground_window",
-              "virtual_desktop"
-            ],
-            "type": "object"
-          },
-          "state_id": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "window_id": {
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id",
-          "state_id",
-          "state"
         ],
         "type": "object"
       }
@@ -2205,36 +1518,12 @@
           "elements": {
             "items": {
               "properties": {
-                "actionable": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
                 "actions": {
                   "items": {
                     "type": "string"
                   },
                   "type": [
                     "array",
-                    "null"
-                  ]
-                },
-                "automation_id": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "checked": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "class_name": {
-                  "type": [
-                    "string",
                     "null"
                   ]
                 },
@@ -2253,18 +1542,6 @@
                   ]
                 },
                 "enabled": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
-                "expanded": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
-                "focused": {
                   "type": [
                     "boolean",
                     "null"
@@ -2296,12 +1573,6 @@
                     "null"
                   ]
                 },
-                "help_text": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
                 "in_web_content": {
                   "type": [
                     "boolean",
@@ -2326,62 +1597,10 @@
                     "null"
                   ]
                 },
-                "name": {
-                  "type": [
-                    "string",
-                    "null"
-                  ]
-                },
-                "offscreen": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
                 "parent_index": {
                   "minimum": 0,
                   "type": [
                     "integer",
-                    "null"
-                  ]
-                },
-                "password": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
-                "range": {
-                  "properties": {
-                    "max": {
-                      "type": "number"
-                    },
-                    "min": {
-                      "type": "number"
-                    },
-                    "value": {
-                      "type": "number"
-                    }
-                  },
-                  "required": [
-                    "value",
-                    "min",
-                    "max"
-                  ],
-                  "type": [
-                    "object",
-                    "null"
-                  ]
-                },
-                "read_only": {
-                  "type": [
-                    "boolean",
-                    "null"
-                  ]
-                },
-                "required": {
-                  "type": [
-                    "boolean",
                     "null"
                   ]
                 },
@@ -2542,104 +1761,6 @@
               "null"
             ]
           },
-          "virtual_desktop": {
-            "additionalProperties": false,
-            "properties": {
-              "desktop_id": {
-                "not": {
-                  "const": "00000000-0000-0000-0000-000000000000"
-                },
-                "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "desktop_id_error": {
-                "additionalProperties": false,
-                "properties": {
-                  "code": {
-                    "enum": [
-                      "com_initialization_failed",
-                      "manager_unavailable",
-                      "window_unavailable",
-                      "desktop_id_query_failed",
-                      "current_desktop_query_failed",
-                      "invalid_desktop_id",
-                      "query_worker_failed"
-                    ],
-                    "type": "string"
-                  },
-                  "hresult": {
-                    "format": "int32",
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "code"
-                ],
-                "type": [
-                  "object",
-                  "null"
-                ]
-              },
-              "on_current_desktop": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
-              },
-              "on_current_desktop_error": {
-                "additionalProperties": false,
-                "properties": {
-                  "code": {
-                    "enum": [
-                      "com_initialization_failed",
-                      "manager_unavailable",
-                      "window_unavailable",
-                      "desktop_id_query_failed",
-                      "current_desktop_query_failed",
-                      "invalid_desktop_id",
-                      "query_worker_failed"
-                    ],
-                    "type": "string"
-                  },
-                  "hresult": {
-                    "format": "int32",
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "code"
-                ],
-                "type": [
-                  "object",
-                  "null"
-                ]
-              },
-              "sampled_at_unix_ms": {
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "desktop_id",
-              "on_current_desktop",
-              "desktop_id_error",
-              "on_current_desktop_error",
-              "sampled_at_unix_ms"
-            ],
-            "type": [
-              "object",
-              "null"
-            ]
-          },
           "window_bounds": {
             "properties": {
               "height": {
@@ -2685,91 +1806,6 @@
       }
     },
     {
-      "name": "get_window_status",
-      "description": "Use get_window_status to read minimized, visible, foreground and separately measured keyboard-focus state of one exact Windows window without capturing pixels, walking a UI tree or changing activation. The returned state reference grants one-use restore authority, not pixel or typing authority.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "window.state"
-      ],
-      "annotations": {
-        "read_only": true,
-        "destructive": false,
-        "idempotent": false,
-        "open_world": true
-      },
-      "schema_mode": "canonical_runtime",
-      "input_schema": {
-        "additionalProperties": false,
-        "description": "Read native state without pixels, a UI tree, activation or input.",
-        "properties": {
-          "pid": {
-            "description": "Process that owns the exact target window.",
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
-            "type": "string"
-          },
-          "window_id": {
-            "description": "Exact top-level native window identifier.",
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "foreground_at_target": {
-            "type": "boolean"
-          },
-          "keyboard_focus_at_target": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "minimized": {
-            "type": "boolean"
-          },
-          "pid": {
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "state_id": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "visible": {
-            "type": "boolean"
-          },
-          "window_id": {
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id",
-          "state_id",
-          "minimized",
-          "visible",
-          "foreground_at_target"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "hotkey",
       "description": "Press a key chord in the foreground desktop application.",
       "platforms": [
@@ -2808,7 +1844,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -2816,11 +1852,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -2828,12 +1862,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -2971,6 +2003,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -3031,7 +2066,8 @@
       ],
       "capabilities": [
         "menu.path.invoke",
-        "accessibility.menu.native"
+        "accessibility.menu.native",
+        "input.delivery_mode"
       ],
       "annotations": {
         "read_only": false,
@@ -3047,6 +2083,14 @@
         "additionalProperties": false,
         "description": "Exact, immediate-child application menu path to resolve and invoke through\nthe operating system's accessibility API. Path labels are matched after\ntrimming surrounding whitespace and otherwise remain case-sensitive. On\nmacOS, three periods in a label also match the ellipsis character that\nnative menu titles use (`Save As...` finds `Save As…`).",
         "properties": {
+          "delivery_mode": {
+            "description": "`background` (default) never takes the user's keyboard or pointer and refuses with\n`background_unavailable` when the item can only be reached by opening a menu. `foreground`\nis the explicit escalation that may activate the window and open menus. Linux honors it;\nmacOS and Windows accept it and keep their existing menu behavior.",
+            "enum": [
+              "background",
+              "foreground"
+            ],
+            "type": "string"
+          },
           "path": {
             "description": "Menu labels from the top-level menu to the item, e.g. `[\"File\", \"Save As...\"]`\n(1 to 16 labels).",
             "items": {
@@ -3064,7 +2108,7 @@
             "type": "integer"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "window_id": {
@@ -3202,6 +2246,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -3336,153 +2383,6 @@
         },
         "required": [
           "apps"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "list_displays",
-      "description": "List connected Windows displays with native physical bounds and topology. No screenshot or input authority.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "screen.dimensions"
-      ],
-      "annotations": {
-        "read_only": true,
-        "destructive": false,
-        "idempotent": false,
-        "open_world": false
-      },
-      "schema_mode": "canonical_runtime",
-      "cursor_semantics": {
-        "action": "observe"
-      },
-      "input_schema": {
-        "additionalProperties": false,
-        "description": "Enumerate connected displays without reading pixels.",
-        "properties": {
-          "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
-            "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "displays": {
-            "items": {
-              "properties": {
-                "bounds": {
-                  "properties": {
-                    "height": {
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "width": {
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "x": {
-                      "format": "int32",
-                      "type": "integer"
-                    },
-                    "y": {
-                      "format": "int32",
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y",
-                    "width",
-                    "height"
-                  ],
-                  "type": "object"
-                },
-                "display_id": {
-                  "type": "string"
-                },
-                "dpi": {
-                  "minimum": 0,
-                  "type": [
-                    "integer",
-                    "null"
-                  ]
-                },
-                "monitor_device_paths": {
-                  "items": {
-                    "type": "string"
-                  },
-                  "type": "array"
-                },
-                "monitor_handle": {
-                  "type": "string"
-                },
-                "primary": {
-                  "type": "boolean"
-                },
-                "scale_factor": {
-                  "type": [
-                    "number",
-                    "null"
-                  ]
-                },
-                "work_area": {
-                  "properties": {
-                    "height": {
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "width": {
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "x": {
-                      "format": "int32",
-                      "type": "integer"
-                    },
-                    "y": {
-                      "format": "int32",
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "x",
-                    "y",
-                    "width",
-                    "height"
-                  ],
-                  "type": "object"
-                }
-              },
-              "required": [
-                "display_id",
-                "monitor_handle",
-                "monitor_device_paths",
-                "bounds",
-                "work_area",
-                "primary"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "platform": {
-            "type": "string"
-          },
-          "topology_id": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "platform",
-          "topology_id",
-          "displays"
         ],
         "type": "object"
       }
@@ -3742,104 +2642,6 @@
                 "title": {
                   "type": "string"
                 },
-                "virtual_desktop": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "desktop_id": {
-                      "not": {
-                        "const": "00000000-0000-0000-0000-000000000000"
-                      },
-                      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "desktop_id_error": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "code": {
-                          "enum": [
-                            "com_initialization_failed",
-                            "manager_unavailable",
-                            "window_unavailable",
-                            "desktop_id_query_failed",
-                            "current_desktop_query_failed",
-                            "invalid_desktop_id",
-                            "query_worker_failed"
-                          ],
-                          "type": "string"
-                        },
-                        "hresult": {
-                          "format": "int32",
-                          "type": [
-                            "integer",
-                            "null"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code"
-                      ],
-                      "type": [
-                        "object",
-                        "null"
-                      ]
-                    },
-                    "on_current_desktop": {
-                      "type": [
-                        "boolean",
-                        "null"
-                      ]
-                    },
-                    "on_current_desktop_error": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "code": {
-                          "enum": [
-                            "com_initialization_failed",
-                            "manager_unavailable",
-                            "window_unavailable",
-                            "desktop_id_query_failed",
-                            "current_desktop_query_failed",
-                            "invalid_desktop_id",
-                            "query_worker_failed"
-                          ],
-                          "type": "string"
-                        },
-                        "hresult": {
-                          "format": "int32",
-                          "type": [
-                            "integer",
-                            "null"
-                          ]
-                        }
-                      },
-                      "required": [
-                        "code"
-                      ],
-                      "type": [
-                        "object",
-                        "null"
-                      ]
-                    },
-                    "sampled_at_unix_ms": {
-                      "minimum": 0,
-                      "type": "integer"
-                    }
-                  },
-                  "required": [
-                    "desktop_id",
-                    "on_current_desktop",
-                    "desktop_id_error",
-                    "on_current_desktop_error",
-                    "sampled_at_unix_ms"
-                  ],
-                  "type": [
-                    "object",
-                    "null"
-                  ]
-                },
                 "window_id": {
                   "minimum": 0,
                   "type": "integer"
@@ -3868,551 +2670,6 @@
         },
         "required": [
           "windows"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "manage_window",
-      "description": "Use manage_window to move, resize, minimize, maximize or focus one admitted Windows window through native APIs. Focus never restores a minimized target or injects keys. No implicit desktop switch or previous foreground restoration occurs. Retain interrupted prefixes, never replay an uncertain request, and read state again before deciding.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "window.manage"
-      ],
-      "annotations": {
-        "read_only": false,
-        "destructive": true,
-        "idempotent": false,
-        "open_world": true
-      },
-      "schema_mode": "canonical_runtime",
-      "input_schema": {
-        "additionalProperties": false,
-        "description": "A source-bound one-use operation, with no input-event, delivery-mode or sequence fields.",
-        "properties": {
-          "height": {
-            "description": "For resize, supply the height between 1 and 32767 desktop pixels. Omit for other operations.",
-            "maximum": 32767,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "operation": {
-            "description": "Choose one native operation. Focus never restores a minimized window; maximize may activate it.",
-            "enum": [
-              "move",
-              "resize",
-              "minimize",
-              "maximize",
-              "focus"
-            ],
-            "type": "string"
-          },
-          "pid": {
-            "description": "Process that owns the admitted exact window.",
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
-            "type": "string"
-          },
-          "state_id": {
-            "description": "Submit the fresh one-use get_window_control_state reference, not a screenshot or element token.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "unit": {
-            "description": "For move or resize, supply windows_desktop_pixels and use the state's declared bounds source. Omit otherwise; overview and CSS coordinates are not accepted.",
-            "enum": [
-              "windows_desktop_pixels"
-            ],
-            "type": "string"
-          },
-          "width": {
-            "description": "For resize, supply the width between 1 and 32767 desktop pixels. Omit for other operations.",
-            "maximum": 32767,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "window_id": {
-            "description": "Exact native window from the sampled control state.",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "x": {
-            "description": "For move, supply the left desktop-pixel position between -100000 and 100000. Omit for other operations.",
-            "maximum": 100000,
-            "minimum": -100000,
-            "type": "integer"
-          },
-          "y": {
-            "description": "For move, supply the top desktop-pixel position between -100000 and 100000. Omit for other operations.",
-            "maximum": 100000,
-            "minimum": -100000,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id",
-          "state_id",
-          "operation"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "before": {
-            "additionalProperties": false,
-            "properties": {
-              "bounds": {
-                "additionalProperties": false,
-                "properties": {
-                  "height": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "width": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "x": {
-                    "format": "int32",
-                    "type": "integer"
-                  },
-                  "y": {
-                    "format": "int32",
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "x",
-                  "y",
-                  "width",
-                  "height"
-                ],
-                "type": "object"
-              },
-              "bounds_source": {
-                "enum": [
-                  "dwm_visible_frame",
-                  "window_rect"
-                ],
-                "type": "string"
-              },
-              "coordinate_space": {
-                "enum": [
-                  "windows_desktop_pixels"
-                ],
-                "type": "string"
-              },
-              "foreground_at_target": {
-                "type": "boolean"
-              },
-              "foreground_window": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "keyboard_focus_at_target": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
-              },
-              "maximized": {
-                "type": "boolean"
-              },
-              "minimized": {
-                "type": "boolean"
-              },
-              "virtual_desktop": {
-                "additionalProperties": false,
-                "properties": {
-                  "desktop_id": {
-                    "not": {
-                      "const": "00000000-0000-0000-0000-000000000000"
-                    },
-                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "desktop_id_error": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "code": {
-                        "enum": [
-                          "com_initialization_failed",
-                          "manager_unavailable",
-                          "window_unavailable",
-                          "desktop_id_query_failed",
-                          "current_desktop_query_failed",
-                          "invalid_desktop_id",
-                          "query_worker_failed"
-                        ],
-                        "type": "string"
-                      },
-                      "hresult": {
-                        "format": "int32",
-                        "type": [
-                          "integer",
-                          "null"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "code"
-                    ],
-                    "type": [
-                      "object",
-                      "null"
-                    ]
-                  },
-                  "on_current_desktop": {
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
-                  },
-                  "on_current_desktop_error": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "code": {
-                        "enum": [
-                          "com_initialization_failed",
-                          "manager_unavailable",
-                          "window_unavailable",
-                          "desktop_id_query_failed",
-                          "current_desktop_query_failed",
-                          "invalid_desktop_id",
-                          "query_worker_failed"
-                        ],
-                        "type": "string"
-                      },
-                      "hresult": {
-                        "format": "int32",
-                        "type": [
-                          "integer",
-                          "null"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "code"
-                    ],
-                    "type": [
-                      "object",
-                      "null"
-                    ]
-                  },
-                  "sampled_at_unix_ms": {
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "desktop_id",
-                  "on_current_desktop",
-                  "desktop_id_error",
-                  "on_current_desktop_error",
-                  "sampled_at_unix_ms"
-                ],
-                "type": "object"
-              },
-              "visible": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "bounds",
-              "bounds_source",
-              "coordinate_space",
-              "minimized",
-              "maximized",
-              "visible",
-              "foreground_at_target",
-              "keyboard_focus_at_target",
-              "foreground_window",
-              "virtual_desktop"
-            ],
-            "type": [
-              "object",
-              "null"
-            ]
-          },
-          "effect": {
-            "enum": [
-              "confirmed"
-            ],
-            "type": "string"
-          },
-          "mutation_accepted": {
-            "type": "boolean"
-          },
-          "mutation_attempted": {
-            "type": "boolean"
-          },
-          "observed": {
-            "additionalProperties": false,
-            "properties": {
-              "bounds": {
-                "additionalProperties": false,
-                "properties": {
-                  "height": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "width": {
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "x": {
-                    "format": "int32",
-                    "type": "integer"
-                  },
-                  "y": {
-                    "format": "int32",
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "x",
-                  "y",
-                  "width",
-                  "height"
-                ],
-                "type": "object"
-              },
-              "bounds_source": {
-                "enum": [
-                  "dwm_visible_frame",
-                  "window_rect"
-                ],
-                "type": "string"
-              },
-              "coordinate_space": {
-                "enum": [
-                  "windows_desktop_pixels"
-                ],
-                "type": "string"
-              },
-              "foreground_at_target": {
-                "type": "boolean"
-              },
-              "foreground_window": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "keyboard_focus_at_target": {
-                "type": [
-                  "boolean",
-                  "null"
-                ]
-              },
-              "maximized": {
-                "type": "boolean"
-              },
-              "minimized": {
-                "type": "boolean"
-              },
-              "virtual_desktop": {
-                "additionalProperties": false,
-                "properties": {
-                  "desktop_id": {
-                    "not": {
-                      "const": "00000000-0000-0000-0000-000000000000"
-                    },
-                    "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "desktop_id_error": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "code": {
-                        "enum": [
-                          "com_initialization_failed",
-                          "manager_unavailable",
-                          "window_unavailable",
-                          "desktop_id_query_failed",
-                          "current_desktop_query_failed",
-                          "invalid_desktop_id",
-                          "query_worker_failed"
-                        ],
-                        "type": "string"
-                      },
-                      "hresult": {
-                        "format": "int32",
-                        "type": [
-                          "integer",
-                          "null"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "code"
-                    ],
-                    "type": [
-                      "object",
-                      "null"
-                    ]
-                  },
-                  "on_current_desktop": {
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
-                  },
-                  "on_current_desktop_error": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "code": {
-                        "enum": [
-                          "com_initialization_failed",
-                          "manager_unavailable",
-                          "window_unavailable",
-                          "desktop_id_query_failed",
-                          "current_desktop_query_failed",
-                          "invalid_desktop_id",
-                          "query_worker_failed"
-                        ],
-                        "type": "string"
-                      },
-                      "hresult": {
-                        "format": "int32",
-                        "type": [
-                          "integer",
-                          "null"
-                        ]
-                      }
-                    },
-                    "required": [
-                      "code"
-                    ],
-                    "type": [
-                      "object",
-                      "null"
-                    ]
-                  },
-                  "sampled_at_unix_ms": {
-                    "minimum": 0,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "desktop_id",
-                  "on_current_desktop",
-                  "desktop_id_error",
-                  "on_current_desktop_error",
-                  "sampled_at_unix_ms"
-                ],
-                "type": "object"
-              },
-              "visible": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "bounds",
-              "bounds_source",
-              "coordinate_space",
-              "minimized",
-              "maximized",
-              "visible",
-              "foreground_at_target",
-              "keyboard_focus_at_target",
-              "foreground_window",
-              "virtual_desktop"
-            ],
-            "type": [
-              "object",
-              "null"
-            ]
-          },
-          "operation": {
-            "enum": [
-              "move",
-              "resize",
-              "minimize",
-              "maximize",
-              "focus"
-            ],
-            "type": "string"
-          },
-          "pid": {
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "postcondition_confirmed": {
-            "type": "boolean"
-          },
-          "requested_bounds": {
-            "additionalProperties": false,
-            "properties": {
-              "height": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "width": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "x": {
-                "format": "int32",
-                "type": "integer"
-              },
-              "y": {
-                "format": "int32",
-                "type": "integer"
-              }
-            },
-            "required": [
-              "x",
-              "y",
-              "width",
-              "height"
-            ],
-            "type": [
-              "object",
-              "null"
-            ]
-          },
-          "route": {
-            "enum": [
-              "native"
-            ],
-            "type": "string"
-          },
-          "state_id": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "window_id": {
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id",
-          "state_id",
-          "operation",
-          "requested_bounds",
-          "mutation_attempted",
-          "mutation_accepted",
-          "postcondition_confirmed",
-          "before",
-          "observed",
-          "route",
-          "effect"
         ],
         "type": "object"
       }
@@ -4450,7 +2707,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -4458,11 +2715,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -4470,12 +2725,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -4622,6 +2875,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -4668,158 +2924,6 @@
         "required": [
           "effect",
           "route"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "move_pointer",
-      "description": "Move the real pointer once against an exact admitted Windows window, with optional bounded hover dwell. No button or key events. Background refuses; explicit foreground leaves the target active and pointer in place. Completion is native delivery, not proof of an application hover effect; observe again.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "input.pointer.move",
-        "input.delivery_mode",
-        "accessibility.element_tokens"
-      ],
-      "annotations": {
-        "read_only": false,
-        "destructive": true,
-        "idempotent": false,
-        "open_world": true
-      },
-      "schema_mode": "canonical_runtime",
-      "input_schema": {
-        "additionalProperties": false,
-        "description": "One capture-bound point or snapshot token belonging to an exact Windows window.",
-        "properties": {
-          "capture_id": {
-            "description": "Current capture authority; required with x/y and forbidden with an element token.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "delivery_mode": {
-            "default": "background",
-            "description": "Background refuses. Explicit foreground leaves the target and pointer in place.",
-            "enum": [
-              "background",
-              "foreground"
-            ],
-            "type": "string"
-          },
-          "dwell_ms": {
-            "default": 0,
-            "description": "Zero moves only; positive values request bounded dwell at the target.",
-            "maximum": 10000,
-            "minimum": 0,
-            "type": "integer"
-          },
-          "element_token": {
-            "description": "Current snapshot element token; cannot be combined with capture coordinates.",
-            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
-            "type": "string"
-          },
-          "pid": {
-            "description": "Process that owns the exact target window.",
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
-            "type": "string"
-          },
-          "window_id": {
-            "description": "Exact top-level native window identifier.",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "x": {
-            "description": "Horizontal point in the admitted overview image, not desktop or detail pixels.",
-            "minimum": 0,
-            "type": "number"
-          },
-          "y": {
-            "description": "Vertical point in the same admitted overview image.",
-            "minimum": 0,
-            "type": "number"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "attempted": {
-            "type": "boolean"
-          },
-          "delivered": {
-            "type": "boolean"
-          },
-          "delivery_mode": {
-            "enum": [
-              "foreground"
-            ],
-            "type": "string"
-          },
-          "dwell_elapsed_ms": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "dwell_ms": {
-            "minimum": 0,
-            "type": "integer"
-          },
-          "effect": {
-            "enum": [
-              "unverifiable"
-            ],
-            "type": "string"
-          },
-          "foreground_at_target": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "foreground_changed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "pointer_at_target": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "pointer_changed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "route": {
-            "enum": [
-              "native"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "attempted",
-          "delivered",
-          "route",
-          "effect",
-          "delivery_mode",
-          "dwell_ms",
-          "dwell_elapsed_ms"
         ],
         "type": "object"
       }
@@ -5313,250 +3417,6 @@
       }
     },
     {
-      "name": "present_agent_activity",
-      "description": "Enqueue validated human-only observation metadata and an optional operation-output image. Queued is not proof of display or action success. Clear invalidates older generations.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "agent_visuals.present"
-      ],
-      "annotations": {
-        "read_only": false,
-        "destructive": false,
-        "idempotent": true,
-        "open_world": false
-      },
-      "schema_mode": "canonical_runtime",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "description": "Name of the operation that ran, in lowercase letters and underscores, such as click or type_text. It selects the card label and whether the pointer, keyboard or scroll_drag setting applies.",
-            "maxLength": 64,
-            "type": "string"
-          },
-          "generation": {
-            "description": "Monotonically increasing publication number within the session. A generation not newer than the latest accepted one is reported as stale.",
-            "maximum": 9007199254740991,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "image": {
-            "additionalProperties": false,
-            "description": "Operation-output image already returned by an observation, shown as a preview. Nothing is captured. Not accepted for action activity or a refused or unknown outcome.",
-            "properties": {
-              "data": {
-                "description": "Base64-encoded image bytes.",
-                "maxLength": 12582912,
-                "minLength": 1,
-                "type": "string"
-              },
-              "mime_type": {
-                "description": "Image format of data.",
-                "enum": [
-                  "image/png",
-                  "image/jpeg"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "data",
-              "mime_type"
-            ],
-            "type": "object"
-          },
-          "kind": {
-            "description": "What the activity shows: overview, detail, inspect or verify for an observation, action for an operation that already ran, or clear to remove the visuals and invalidate older generations. clear takes no source, region, point or image.",
-            "enum": [
-              "overview",
-              "detail",
-              "inspect",
-              "verify",
-              "action",
-              "clear"
-            ],
-            "type": "string"
-          },
-          "outcome": {
-            "description": "Result of the operation or observation: delivered, refused, unknown or verified.",
-            "enum": [
-              "delivered",
-              "refused",
-              "unknown",
-              "verified"
-            ],
-            "type": "string"
-          },
-          "point": {
-            "additionalProperties": false,
-            "description": "Point of interest inside the source bounds, in the same coordinates as the bounds.",
-            "properties": {
-              "x": {
-                "description": "Horizontal position in pixels.",
-                "type": "integer"
-              },
-              "y": {
-                "description": "Vertical position in pixels.",
-                "type": "integer"
-              }
-            },
-            "required": [
-              "x",
-              "y"
-            ],
-            "type": "object"
-          },
-          "region": {
-            "additionalProperties": false,
-            "description": "Area of interest inside the source bounds, in the same coordinates as the bounds.",
-            "properties": {
-              "height": {
-                "description": "Height in pixels.",
-                "maximum": 32768,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "width": {
-                "description": "Width in pixels.",
-                "maximum": 32768,
-                "minimum": 1,
-                "type": "integer"
-              },
-              "x": {
-                "description": "Left edge in pixels.",
-                "maximum": 2000000,
-                "minimum": -2000000,
-                "type": "integer"
-              },
-              "y": {
-                "description": "Top edge in pixels.",
-                "maximum": 2000000,
-                "minimum": -2000000,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "x",
-              "y",
-              "width",
-              "height"
-            ],
-            "type": "object"
-          },
-          "session": {
-            "description": "Public session label that owns the presented activity. Omit it to use the authenticated transport's implicit lifecycle session.",
-            "type": "string"
-          },
-          "source": {
-            "additionalProperties": false,
-            "description": "Where the activity happened: a window (window_id, pid and identity) or a display (display), plus its bounds. Required unless kind is clear. A window source and a display source cannot be mixed.",
-            "properties": {
-              "bounds": {
-                "additionalProperties": false,
-                "description": "Pixel bounds of the source. The region and point must lie inside it.",
-                "properties": {
-                  "height": {
-                    "description": "Height in pixels.",
-                    "maximum": 32768,
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  "width": {
-                    "description": "Width in pixels.",
-                    "maximum": 32768,
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  "x": {
-                    "description": "Left edge in pixels.",
-                    "maximum": 2000000,
-                    "minimum": -2000000,
-                    "type": "integer"
-                  },
-                  "y": {
-                    "description": "Top edge in pixels.",
-                    "maximum": 2000000,
-                    "minimum": -2000000,
-                    "type": "integer"
-                  }
-                },
-                "required": [
-                  "x",
-                  "y",
-                  "width",
-                  "height"
-                ],
-                "type": "object"
-              },
-              "display": {
-                "description": "Display id for a display source, such as \"primary\". Do not combine it with window fields.",
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              "identity": {
-                "description": "Window ownership token in the form PiComputerUse.<32 hex digits>:<pid>:<counter>.",
-                "maxLength": 128,
-                "type": "string"
-              },
-              "pid": {
-                "description": "Process id that owns the window. Must match the pid inside identity.",
-                "minimum": 1,
-                "type": "integer"
-              },
-              "window_id": {
-                "description": "Window id, as returned by the window tools. Set it with pid and identity for a window source.",
-                "maximum": 9007199254740991,
-                "minimum": 1,
-                "type": "integer"
-              }
-            },
-            "required": [
-              "bounds"
-            ],
-            "type": "object"
-          },
-          "typed_text": {
-            "description": "Text an action typed, shown beside the action. Only for kind action; 1 to 200 characters without control characters.",
-            "maxLength": 200,
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "generation",
-          "kind"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "generation": {
-            "maximum": 9007199254740991,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "status": {
-            "enum": [
-              "queued",
-              "stale",
-              "cleared",
-              "disabled"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "generation"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "press_key",
       "description": "Press one key, with optional modifiers, in the foreground desktop application.",
       "platforms": [
@@ -5598,7 +3458,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -5606,11 +3466,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -5618,12 +3476,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -5761,6 +3617,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -5807,137 +3666,6 @@
         "required": [
           "effect",
           "route"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "restore_window",
-      "description": "Use restore_window to restore and explicitly activate one exact Windows window. Native restoration and activation inject no keyboard or pointer input. Success leaves the target active. Do not replay an interrupted or uncertain request. Read the target again for pixels; native state confirmation does not establish fresh paint.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "window.restore"
-      ],
-      "annotations": {
-        "read_only": false,
-        "destructive": true,
-        "idempotent": false,
-        "open_world": true
-      },
-      "schema_mode": "canonical_runtime",
-      "input_schema": {
-        "additionalProperties": false,
-        "description": "One fresh, narrowly scoped state reference; no screenshot coordinates are accepted.",
-        "properties": {
-          "pid": {
-            "description": "Process that owns the exact target window.",
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
-            "type": "string"
-          },
-          "state_id": {
-            "description": "Fresh one-use native window-state admission, not a capture or element token.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "window_id": {
-            "description": "Exact top-level native window identifier.",
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id",
-          "state_id"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "activation_attempted": {
-            "type": "boolean"
-          },
-          "activation_succeeded": {
-            "type": "boolean"
-          },
-          "effect": {
-            "enum": [
-              "confirmed"
-            ],
-            "type": "string"
-          },
-          "foreground_at_target": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "foreground_changed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "keyboard_focus_at_target": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "pid": {
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "restore_attempted": {
-            "type": "boolean"
-          },
-          "restore_requested": {
-            "type": "boolean"
-          },
-          "restored": {
-            "type": "boolean"
-          },
-          "route": {
-            "enum": [
-              "native"
-            ],
-            "type": "string"
-          },
-          "state_id": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "visible": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "window_id": {
-            "minimum": 1,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id",
-          "state_id",
-          "restore_attempted",
-          "restore_requested",
-          "restored",
-          "activation_attempted",
-          "activation_succeeded",
-          "route",
-          "effect"
         ],
         "type": "object"
       }
@@ -5996,7 +3724,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -6004,11 +3732,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -6016,12 +3742,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -6167,6 +3891,9 @@
               "null"
             ]
           },
+          "fast_path": {
+            "type": "object"
+          },
           "hint": {
             "type": [
               "string",
@@ -6213,327 +3940,6 @@
         "required": [
           "effect",
           "route"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "scroll_at",
-      "description": "Use scroll_at to deliver native wheel input at a current overview point in one exact Windows window without an accessibility scroll target. Delivery does not prove content displacement; observe the same window again.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "input.pointer.scroll",
-        "input.delivery_mode"
-      ],
-      "annotations": {
-        "read_only": false,
-        "destructive": true,
-        "idempotent": false,
-        "open_world": true
-      },
-      "schema_mode": "canonical_runtime",
-      "input_schema": {
-        "additionalProperties": false,
-        "description": "A current overview point belonging to one exact Windows window.",
-        "properties": {
-          "capture_id": {
-            "description": "Use a current overview capture ID for this exact window, never a detail or display ID.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "delivery_mode": {
-            "default": "background",
-            "description": "Background refuses. Explicit foreground leaves the target and pointer active.",
-            "enum": [
-              "background",
-              "foreground"
-            ],
-            "type": "string"
-          },
-          "delta_x": {
-            "default": 0,
-            "description": "Signed horizontal detents; positive scrolls content right. Defaults to zero.",
-            "maximum": 50,
-            "minimum": -50,
-            "type": "integer"
-          },
-          "delta_y": {
-            "default": 0,
-            "description": "Signed vertical detents; positive scrolls content down. Defaults to zero.",
-            "maximum": 50,
-            "minimum": -50,
-            "type": "integer"
-          },
-          "pid": {
-            "description": "Process that owns the exact target window.",
-            "maximum": 2147483647,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that accepts it.\nOmit for the authenticated transport's implicit session.",
-            "type": "string"
-          },
-          "unit": {
-            "description": "State wheel_detents explicitly; the application controls actual displacement.",
-            "enum": [
-              "wheel_detents"
-            ],
-            "type": "string"
-          },
-          "window_id": {
-            "description": "Exact top-level native window identifier.",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "x": {
-            "description": "Horizontal point in the admitted overview image, not desktop pixels.",
-            "minimum": 0,
-            "type": "number"
-          },
-          "y": {
-            "description": "Vertical point in the same admitted overview image.",
-            "minimum": 0,
-            "type": "number"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id",
-          "capture_id",
-          "x",
-          "y",
-          "unit"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "attempted": {
-            "type": "boolean"
-          },
-          "attempted_axes": {
-            "items": {
-              "enum": [
-                "x",
-                "y"
-              ],
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "delivered": {
-            "type": "boolean"
-          },
-          "delivered_axes": {
-            "items": {
-              "enum": [
-                "x",
-                "y"
-              ],
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "delivery_mode": {
-            "enum": [
-              "foreground"
-            ],
-            "type": "string"
-          },
-          "delta_x": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "delta_y": {
-            "format": "int32",
-            "type": "integer"
-          },
-          "effect": {
-            "enum": [
-              "unverifiable"
-            ],
-            "type": "string"
-          },
-          "foreground_at_target": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "foreground_changed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "pointer_at_target": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "pointer_attempted": {
-            "type": "boolean"
-          },
-          "pointer_changed": {
-            "type": [
-              "boolean",
-              "null"
-            ]
-          },
-          "pointer_delivered": {
-            "type": "boolean"
-          },
-          "route": {
-            "enum": [
-              "native"
-            ],
-            "type": "string"
-          },
-          "unit": {
-            "enum": [
-              "wheel_detents"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "attempted",
-          "delivered",
-          "pointer_attempted",
-          "pointer_delivered",
-          "delta_x",
-          "delta_y",
-          "unit",
-          "attempted_axes",
-          "delivered_axes",
-          "route",
-          "effect",
-          "delivery_mode"
-        ],
-        "type": "object"
-      }
-    },
-    {
-      "name": "semantic_action",
-      "description": "Perform exactly invoke, select or set_value through an admitted Windows UIA pattern. Never use mouse/key events, activate the target or retry in foreground. Completion requires independent app readback; provider focus behavior is not guaranteed.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "accessibility.semantic_action",
-        "accessibility.element_tokens"
-      ],
-      "annotations": {
-        "read_only": false,
-        "destructive": true,
-        "idempotent": false,
-        "open_world": true
-      },
-      "schema_mode": "canonical_runtime",
-      "input_schema": {
-        "additionalProperties": false,
-        "description": "Snapshot-bound Windows UIA operation. Physical and foreground delivery are not accepted.",
-        "properties": {
-          "element_token": {
-            "description": "Current snapshot token belonging to that exact window.",
-            "pattern": "^s[0-9a-f]{8}:[0-9]+$",
-            "type": "string"
-          },
-          "operation": {
-            "description": "One UIA intent; no physical fallback or foreground delivery.",
-            "enum": [
-              "invoke",
-              "select",
-              "set_value"
-            ],
-            "type": "string"
-          },
-          "pid": {
-            "description": "Process that owns the exact top-level target window.",
-            "minimum": 0,
-            "type": "integer"
-          },
-          "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
-            "type": "string"
-          },
-          "value": {
-            "description": "Replacement text or numeric range value; required only for set_value.",
-            "type": "string"
-          },
-          "window_id": {
-            "description": "Exact native top-level window identifier from discovery.",
-            "minimum": 0,
-            "type": "integer"
-          }
-        },
-        "required": [
-          "pid",
-          "window_id",
-          "element_token",
-          "operation"
-        ],
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": true,
-        "properties": {
-          "delivery": {
-            "additionalProperties": false,
-            "properties": {
-              "mode": {
-                "enum": [
-                  "background"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "mode"
-            ],
-            "type": "object"
-          },
-          "effect": {
-            "enum": [
-              "unverifiable"
-            ],
-            "type": "string"
-          },
-          "operation": {
-            "enum": [
-              "invoke",
-              "select",
-              "set_value"
-            ],
-            "type": "string"
-          },
-          "pattern": {
-            "enum": [
-              "invoke",
-              "selection_item",
-              "value",
-              "range_value"
-            ],
-            "type": "string"
-          },
-          "route": {
-            "enum": [
-              "accessibility"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "operation",
-          "pattern",
-          "route",
-          "effect",
-          "delivery"
         ],
         "type": "object"
       }
@@ -6948,153 +4354,6 @@
       }
     },
     {
-      "name": "set_agent_visuals",
-      "description": "Configure the current session's human-only native activity presentation. Off clears pending visuals without changing capture or input.",
-      "platforms": [
-        "windows"
-      ],
-      "capabilities": [
-        "agent_visuals.configure"
-      ],
-      "annotations": {
-        "read_only": false,
-        "destructive": false,
-        "idempotent": true,
-        "open_world": false
-      },
-      "schema_mode": "canonical_runtime",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "keyboard": {
-            "description": "Show keyboard actions such as typing text and pressing keys. Default true.",
-            "type": "boolean"
-          },
-          "observations": {
-            "description": "Show observation activity (overview, detail, inspect and verify). Default true.",
-            "type": "boolean"
-          },
-          "opacity": {
-            "description": "Presentation opacity from 0 to 1; 0 disables the visuals. Default 0.9.",
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "pointer": {
-            "description": "Show pointer actions such as clicks. Default true.",
-            "type": "boolean"
-          },
-          "preset": {
-            "description": "Presentation level; the default is full. off disables native activity visuals and clears pending ones; subtle shows them without operation-output previews; full also shows previews.",
-            "enum": [
-              "off",
-              "subtle",
-              "full"
-            ],
-            "type": "string"
-          },
-          "previews": {
-            "description": "Show operation-output images on activity cards. Takes effect only with preset full. Default true.",
-            "type": "boolean"
-          },
-          "quality": {
-            "description": "Frame-rate tradeoff: performance renders at about 20 frames per second, balanced at about 30 and high at about 60. Default balanced.",
-            "enum": [
-              "performance",
-              "balanced",
-              "high"
-            ],
-            "type": "string"
-          },
-          "reduced_motion": {
-            "description": "Use reduced motion for the presentation's animation. Default false.",
-            "type": "boolean"
-          },
-          "scroll_drag": {
-            "description": "Show scroll and drag actions. Default true.",
-            "type": "boolean"
-          },
-          "session": {
-            "description": "Public session label whose presentation settings change. Omit it to use the authenticated transport's implicit lifecycle session.",
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "success_output_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "settings": {
-            "additionalProperties": false,
-            "properties": {
-              "keyboard": {
-                "type": "boolean"
-              },
-              "observations": {
-                "type": "boolean"
-              },
-              "opacity": {
-                "maximum": 1,
-                "minimum": 0,
-                "type": "number"
-              },
-              "pointer": {
-                "type": "boolean"
-              },
-              "preset": {
-                "enum": [
-                  "off",
-                  "subtle",
-                  "full"
-                ],
-                "type": "string"
-              },
-              "previews": {
-                "type": "boolean"
-              },
-              "quality": {
-                "enum": [
-                  "performance",
-                  "balanced",
-                  "high"
-                ],
-                "type": "string"
-              },
-              "reduced_motion": {
-                "type": "boolean"
-              },
-              "scroll_drag": {
-                "type": "boolean"
-              }
-            },
-            "required": [
-              "preset",
-              "observations",
-              "previews",
-              "pointer",
-              "scroll_drag",
-              "keyboard",
-              "opacity",
-              "quality",
-              "reduced_motion"
-            ],
-            "type": "object"
-          },
-          "status": {
-            "enum": [
-              "configured"
-            ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "status",
-          "settings"
-        ],
-        "type": "object"
-      }
-    },
-    {
       "name": "set_window_frame",
       "description": "Set one exact top-level window's frame in the desktop-coordinate space reported by list_windows and verify the resulting geometry through an independent readback.",
       "platforms": [
@@ -7129,7 +4388,7 @@
             "type": "integer"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "width": {
@@ -7282,6 +4541,9 @@
               "array",
               "null"
             ]
+          },
+          "fast_path": {
+            "type": "object"
           },
           "hint": {
             "type": [
@@ -7681,33 +4943,6 @@
             ],
             "type": "string"
           },
-          "escalation_detail": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "escalation_reason": {
-            "anyOf": [
-              {
-                "enum": [
-                  "ax_tree_pixel_mismatch",
-                  "background_delivery_failed",
-                  "foreground_ineffective",
-                  "no_window_target",
-                  "other"
-                ],
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "revived": {
             "type": "boolean"
           },
@@ -7721,8 +4956,6 @@
           "effective_scope",
           "desktop_capture_authorized",
           "desktop_unlocked",
-          "escalation_reason",
-          "escalation_detail",
           "active",
           "revived"
         ],
@@ -7763,7 +4996,7 @@
             "type": "string"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it.",
             "type": "string"
           },
           "target": {
@@ -7771,11 +5004,9 @@
             "description": "Preferred per-call target: an exact window (`kind=\"window\"`, `pid`, `window_id`) or the\nprimary desktop (`kind=\"desktop\"`, `display_id=\"primary\"`).",
             "properties": {
               "display_id": {
-                "description": "Display id. Required when kind is desktop; use \"primary\".",
                 "type": "string"
               },
               "kind": {
-                "description": "window requires pid and window_id; desktop requires display_id.",
                 "enum": [
                   "window",
                   "desktop"
@@ -7783,12 +5014,10 @@
                 "type": "string"
               },
               "pid": {
-                "description": "Process id. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               },
               "window_id": {
-                "description": "Window id from list_windows. Required when kind is window.",
                 "minimum": 0,
                 "type": "integer"
               }
@@ -7928,6 +5157,9 @@
               "array",
               "null"
             ]
+          },
+          "fast_path": {
+            "type": "object"
           },
           "hint": {
             "type": [
@@ -8102,7 +5334,7 @@
             "type": "integer"
           },
           "session": {
-            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. Omit it to use the authenticated transport's implicit lifecycle session. This\nfield never selects capture modality or authorization.",
+            "description": "For multi-call work, prefer a short public session label and repeat it on every call that\naccepts it. This field never selects capture modality or authorization.",
             "type": "string"
           },
           "stable_samples": {
