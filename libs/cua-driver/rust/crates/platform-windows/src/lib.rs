@@ -137,11 +137,11 @@ pub mod uia;
 #[cfg(target_os = "windows")]
 pub mod msaa;
 
-/// Triple Escape by the human stops agent input.
-pub mod human_input;
 /// Agent input hands the foreground back to the human's window.
 #[cfg(any(target_os = "windows", test))]
 mod focus_return;
+/// Triple Escape by the human stops agent input.
+pub mod human_input;
 #[cfg(target_os = "windows")]
 pub mod input;
 

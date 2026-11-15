@@ -372,7 +372,9 @@ pub fn post_type_text_with_delay(hwnd: u64, text: &str, inter_char_ms: u64) -> R
                 }
                 // Only foreground delivery maps characters to layout keys (`keyed`).
                 TextUnit::Key { .. } => {
-                    unreachable!("posted text is built by text_units, which never makes layout keys")
+                    unreachable!(
+                        "posted text is built by text_units, which never makes layout keys"
+                    )
                 }
             }
         }
@@ -1503,7 +1505,7 @@ mod post_text_unit_tests {
             .into_iter()
             .map(|u| match u {
                 TextUnit::Packet(c) => Some(c),
-                TextUnit::Return | TextUnit::Tab => None,
+                TextUnit::Return | TextUnit::Tab | TextUnit::Key { .. } => None,
             })
             .collect()
     }

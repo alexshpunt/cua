@@ -35,8 +35,9 @@ on:
   schedule:
     - cron: "0 6 * * *"
   # After merge: the full suite for a change to the driver, its tests or this gate.
+  # The fork's integration branch is pi-computer-use; it gets the same post-merge run.
   push:
-    branches: [main]
+    branches: [main, pi-computer-use]
     paths:
       - "libs/cua-driver/**"
       - "scripts/ci/**"

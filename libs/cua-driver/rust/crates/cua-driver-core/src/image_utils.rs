@@ -634,7 +634,9 @@ pub fn stretch_pixels_region(
 ) -> Result<Vec<u8>> {
     use fast_image_resize as fir;
     if src_w <= 0.0 || src_h <= 0.0 || src_w > f64::from(buf_w) || src_h > f64::from(buf_h) {
-        bail!("stretch_pixels_region: region {src_w}x{src_h} is outside the {buf_w}x{buf_h} buffer");
+        bail!(
+            "stretch_pixels_region: region {src_w}x{src_h} is outside the {buf_w}x{buf_h} buffer"
+        );
     }
     // Copy the region first: a crop box alone lets the filter read pixels
     // beyond it, which would blend the unpainted rest into the edges.
@@ -644,8 +646,12 @@ pub fn stretch_pixels_region(
     for row in pixels.chunks_exact(stride).take(region_h) {
         region.extend_from_slice(&row[..region_w * 4]);
     }
-    let source =
-        fir::images::ImageRef::new(region_w as u32, region_h as u32, &region, fir::PixelType::U8x4)?;
+    let source = fir::images::ImageRef::new(
+        region_w as u32,
+        region_h as u32,
+        &region,
+        fir::PixelType::U8x4,
+    )?;
     let mut stretched = fir::images::Image::new(w, h, fir::PixelType::U8x4);
     let options = fir::ResizeOptions::new()
         .crop(0.0, 0.0, src_w, src_h)
@@ -829,7 +835,13 @@ mod tests {
         let mut buf = Vec::new();
         for y in 0..4 {
             for x in 0..8 {
-                buf.extend_from_slice(if y >= 2 || x >= 4 { &black } else if x < 2 { &red } else { &blue });
+                buf.extend_from_slice(if y >= 2 || x >= 4 {
+                    &black
+                } else if x < 2 {
+                    &red
+                } else {
+                    &blue
+                });
             }
         }
         let out = stretch_pixels_region(&buf, 8, 4, 4.0, 2.0, 6, 3).expect("stretch");
@@ -840,8 +852,15 @@ mod tests {
             assert_eq!(px(5, y), blue);
             for x in 0..6 {
                 assert_eq!(px(x, y)[3], 255, "alpha at {x},{y}");
-                assert_eq!(px(x, y)[1], 0, "no black or other color mixed in at {x},{y}");
-                assert!(px(x, y)[0] > 0 || px(x, y)[2] > 0, "black leaked in at {x},{y}");
+                assert_eq!(
+                    px(x, y)[1],
+                    0,
+                    "no black or other color mixed in at {x},{y}"
+                );
+                assert!(
+                    px(x, y)[0] > 0 || px(x, y)[2] > 0,
+                    "black leaked in at {x},{y}"
+                );
             }
         }
         assert!(stretch_pixels_region(&buf, 8, 4, 9.0, 2.0, 6, 3).is_err());

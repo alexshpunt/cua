@@ -1315,6 +1315,8 @@ mod tests {
             depth: 0,
             parent_element_index: None,
             in_web_content: false,
+            actionable: false,
+            states: UiaStates::default(),
         };
         assert_eq!(
             format_node_line(&node),

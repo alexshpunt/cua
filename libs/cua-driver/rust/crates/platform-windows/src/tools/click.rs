@@ -13,10 +13,10 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use super::impl_::{
-    bitmap_to_screen, capture_admission_refusal, element_target_rect, is_windowless_desktop_action, minimized_element_refusal,
-    overlay_glide_to, overlay_glide_to_target, pin_overlay_above, resolve_cursor_key,
-    resolve_onscreen_point_with_scroll, restore_foreground_polling_best_effort, screenshot_scale,
-    uia_only_refusal, uia_only_schema, winui3_background_gesture, ToolState,
+    bitmap_to_screen, capture_admission_refusal, element_target_rect, is_windowless_desktop_action,
+    minimized_element_refusal, overlay_glide_to, overlay_glide_to_target, pin_overlay_above,
+    resolve_cursor_key, resolve_onscreen_point_with_scroll, restore_foreground_polling_best_effort,
+    screenshot_scale, uia_only_refusal, uia_only_schema, winui3_background_gesture, ToolState,
 };
 
 fn tool_result_text(result: ToolResult) -> String {

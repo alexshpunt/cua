@@ -22,7 +22,7 @@ def job(text: str, name: str) -> str:
 class QuickLane(unittest.TestCase):
     def test_full_suite_runs_after_merge_nightly_and_on_demand(self):
         trigger = GATE.split("permissions:", 1)[0]
-        self.assertIn("push:\n    branches: [main]", trigger)
+        self.assertIn("push:\n    branches: [main, pi-computer-use]", trigger)
         self.assertIn("schedule:", trigger)
         self.assertIn("workflow_dispatch:", trigger)
         self.assertIn("post-merge", job(GATE, "decide"))

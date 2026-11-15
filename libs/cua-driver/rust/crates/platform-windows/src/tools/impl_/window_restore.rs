@@ -209,7 +209,7 @@ pub(super) fn sample(marker: &Marker) -> Result<Sample, Failure> {
 }
 
 /// Bounded private state admissions; eviction and runtime drop release owned lifetime markers.
-pub(super) struct Manager {
+pub(crate) struct Manager {
     states: Mutex<Store<Marker>>,
 }
 

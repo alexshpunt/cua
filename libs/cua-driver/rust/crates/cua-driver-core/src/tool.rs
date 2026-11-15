@@ -7052,16 +7052,14 @@ resources:
             .unwrap();
         dispatch.abort();
         assert!(dispatch.await.unwrap_err().is_cancelled());
-        let blocked = tokio::time::timeout(
-            Duration::from_millis(40),
-            desktop_lane().lock.lock(),
-        )
-        .await;
+        let blocked =
+            tokio::time::timeout(Duration::from_millis(40), super::desktop_lane().lock.lock())
+                .await;
         let stayed_blocked = blocked.is_err();
         drop(blocked);
         finish.notify_one();
         let released =
-            tokio::time::timeout(Duration::from_secs(2), desktop_lane().lock.lock()).await;
+            tokio::time::timeout(Duration::from_secs(2), super::desktop_lane().lock.lock()).await;
         assert!(
             stayed_blocked,
             "cancellation admitted input before native release"

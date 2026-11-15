@@ -38,7 +38,7 @@ impl Tool for ListDisplaysTool {
         &self,
         adapter: &str,
         _: &Value,
-    ) -> Result<Option<Value>, String> {
+    ) -> Result<Option<Value>, cua_driver_core::tool::ProtectedResourceScopeError> {
         if adapter != "private_observation" {
             return Ok(None);
         }
@@ -89,7 +89,7 @@ impl Tool for GetDisplayStateTool {
         &self,
         adapter: &str,
         args: &Value,
-    ) -> Result<Option<Value>, String> {
+    ) -> Result<Option<Value>, cua_driver_core::tool::ProtectedResourceScopeError> {
         if adapter != "private_observation" {
             return Ok(None);
         }

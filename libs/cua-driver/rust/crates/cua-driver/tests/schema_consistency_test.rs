@@ -267,7 +267,10 @@ fn canonical_cursor_and_window_control_contracts_match_active_backend() {
                 || (cfg!(target_os = "windows")
                     && matches!(
                         contract.name.as_str(),
-                        "get_window_status" | "restore_window" | "get_window_control_state" | "manage_window"
+                        "get_window_status"
+                            | "restore_window"
+                            | "get_window_control_state"
+                            | "manage_window"
                     )))
     }) {
         let live = live_tools
