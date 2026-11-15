@@ -3596,6 +3596,12 @@ fn session_selecting_tool(tool_name: &str) -> bool {
         )
 }
 
+/// Replace a successful action's structured content with the closed public
+/// projection of its execution record. Any other structured field the tool set
+/// is dropped, and only the first non-empty text block becomes `summary`. A tool
+/// that has more to tell the client, such as a covering window or where the
+/// foreground went afterward, adds it as a further text block, which stays in
+/// `content`.
 fn publish_action_result(result: &mut ToolResult) -> Result<(), String> {
     let action = result
         .action_record
