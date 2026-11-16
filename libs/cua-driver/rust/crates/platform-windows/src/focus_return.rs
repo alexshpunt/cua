@@ -481,7 +481,9 @@ mod native {
                 Plan::Leave(outcome) => outcome,
                 Plan::Restore(human) => {
                     let hwnd = HWND(human.hwnd as usize as *mut _);
-                    if unsafe { crate::input::force_foreground_assisted(hwnd) }.0 {
+                    // Returning focus must not create another unconfirmed key
+                    // prefix through the explicit-activation unlock fallback.
+                    if unsafe { crate::input::force_foreground_attached(hwnd) } {
                         Outcome::Restored(human.hwnd)
                     } else {
                         Outcome::Refused {

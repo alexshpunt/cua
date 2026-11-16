@@ -14,9 +14,8 @@
 //! - **System ("getcursorinfo")**: `GetCursorInfo`'s `hCursor` compared with
 //!   the shared `LoadCursorW(NULL, IDC_*)` handles, which are the same handle
 //!   in every process of the session.
-//! - **Probe ("setcursorpos")**: `SetCursorPos`, which moves the pointer
-//!   without any button and makes the window under it receive
-//!   `WM_MOUSEMOVE` / `WM_SETCURSOR`, so it sets its cursor.
+//! - Active pointer-warp probing is unsupported: no external read witness
+//!   confirms its generated movement before restoring the pointer.
 //!
 //! Coordinates are physical screen pixels; cua-spacesd runs per-monitor DPI
 //! aware.
@@ -43,8 +42,7 @@ use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, POINT, RECT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetCursorInfo, GetCursorPos, GetWindowRect, LoadCursorW, SendMessageTimeoutW,
-    SetCursorPos, WindowFromPoint, CURSORINFO, CURSOR_SHOWING, GA_ROOT, SMTO_ABORTIFHUNG,
-    WM_NCHITTEST,
+    WindowFromPoint, CURSORINFO, CURSOR_SHOWING, GA_ROOT, SMTO_ABORTIFHUNG, WM_NCHITTEST,
 };
 
 use crate::pointer_shape_map::{resolve_uia_chain, shape_for_idc, shape_for_nchittest, IDC_IDS};
@@ -99,7 +97,7 @@ impl PointerShapeBackend for WindowsPointerShapes {
         BackendNames {
             hit_test: "uia",
             system: "getcursorinfo",
-            probe: "setcursorpos",
+            probe: "",
         }
     }
 
@@ -156,14 +154,16 @@ impl PointerShapeBackend for WindowsPointerShapes {
         Some((p.x as f64, p.y as f64))
     }
 
-    fn warp_pointer(&self, x: f64, y: f64) -> bool {
-        unsafe { SetCursorPos(x.round() as i32, y.round() as i32) }.is_ok()
+    fn warp_pointer(&self, _x: f64, _y: f64) -> bool {
+        false
     }
 
     fn limitation(&self) -> Option<String> {
         Some(
             "Application-defined cursors are not classified (hit-test fallback); \
-             elevated apps and the secure desktop are opaque to a non-elevated daemon."
+             elevated apps and the secure desktop are opaque to a non-elevated daemon. \
+             Active pointer-warp probing is unsupported because receiver read cannot be \
+             confirmed before pointer restoration."
                 .into(),
         )
     }

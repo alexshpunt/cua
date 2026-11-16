@@ -225,7 +225,11 @@ fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Resu
     }
     sleep(Duration::from_millis(50));
     unsafe {
-        if !prev_fg.0.is_null() && prev_fg != target_root && GetForegroundWindow() == target_root {
+        if !prev_fg.0.is_null()
+            && prev_fg != target_root
+            && GetForegroundWindow() == target_root
+            && !crate::focus_return::has_unconfirmed_input()
+        {
             crate::input::force_foreground_attached(prev_fg);
             sleep(Duration::from_millis(12));
             crate::input::force_foreground_attached(prev_fg);
@@ -675,17 +679,20 @@ fn send_click_synthesized_mods_impl(
         // `modifier` surface. Pressed via the system input queue so apps that
         // poll GetKeyState (WPF, Chromium) observe the held state, then released
         // after the click loop below.
-        let (mod_downs, mod_ups) = crate::input::keyboard::modifier_hold_inputs(modifiers);
+        let (mod_downs, _) = crate::input::keyboard::modifier_hold_inputs(modifiers);
         // After the target is raised, a window still on top at the point would take the press.
         let occluded = crate::input::occlusion::check_point(target.0 as usize as u64, sx, sy).err();
         let mut sent_ok = true;
+        let mut held_modifiers = 0;
         if occluded.is_none() && !mod_downs.is_empty() {
             let sent = send_unconfirmed_input(&mod_downs, std::mem::size_of::<INPUT>() as i32);
-            sent_ok = sent as usize == mod_downs.len();
+            held_modifiers = sent as usize;
+            sent_ok = held_modifiers == mod_downs.len();
             sleep(Duration::from_millis(5));
         }
 
         let count = count.max(1);
+        let mut button_held = false;
         for i in 0..count {
             if !sent_ok || occluded.is_some() {
                 break;
@@ -703,10 +710,19 @@ fn send_click_synthesized_mods_impl(
                 if index > 0 {
                     sleep(Duration::from_millis(if index == 1 { 30 } else { 15 }));
                 }
-                sent += send_unconfirmed_input(
+                let inserted = send_unconfirmed_input(
                     std::slice::from_ref(event),
                     std::mem::size_of::<INPUT>() as i32,
                 );
+                sent += inserted;
+                if inserted == 0 {
+                    break;
+                }
+                if index == 1 {
+                    button_held = true;
+                } else if index == 2 {
+                    button_held = false;
+                }
             }
             if sent != 3 {
                 sent_ok = false;
@@ -717,16 +733,11 @@ fn send_click_synthesized_mods_impl(
             }
         }
 
-        // Release any held modifiers (reverse order) before restoring z-order.
-        if occluded.is_none() && !mod_ups.is_empty() {
-            let released = send_unconfirmed_input(&mod_ups, std::mem::size_of::<INPUT>() as i32);
-            if released as usize != mod_ups.len() {
-                // A second release attempt is safe and reduces the chance of a
-                // partially inserted chord leaving system modifier state held.
-                let _ = send_unconfirmed_input(&mod_ups, std::mem::size_of::<INPUT>() as i32);
-                sent_ok = false;
-            }
+        if button_held {
+            // The normal UP inserted nothing; clean up only our inserted DOWN.
+            let _ = send_unconfirmed_input(&[up_input], std::mem::size_of::<INPUT>() as i32);
         }
+        sent_ok &= crate::input::keyboard::release_inserted_keys(&mod_downs, held_modifiers);
 
         // SendInput success confirms insertion, not receiver retrieval. Keep
         // pointer and foreground with the target: a timed restore can divert
@@ -840,7 +851,7 @@ pub fn send_drag_synthesized(
         "middle" => (MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP),
         _ => (MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP),
     };
-    let (mod_downs, mod_ups) = crate::input::keyboard::modifier_hold_inputs(modifiers);
+    let (mod_downs, _) = crate::input::keyboard::modifier_hold_inputs(modifiers);
 
     let (vd_x, vd_y, vd_w, vd_h) = unsafe {
         (
@@ -891,14 +902,8 @@ pub fn send_drag_synthesized(
     let send = |input: INPUT| unsafe {
         send_unconfirmed_input(&[input], std::mem::size_of::<INPUT>() as i32) == 1
     };
-    // Release the held modifiers, retrying once like the click path so a
-    // partially inserted release does not leave system key state held.
-    let release_modifiers = || unsafe {
-        let size = std::mem::size_of::<INPUT>() as i32;
-        mod_ups.is_empty()
-            || send_unconfirmed_input(&mod_ups, size) as usize == mod_ups.len()
-            || send_unconfirmed_input(&mod_ups, size) as usize == mod_ups.len()
-    };
+    let release_modifiers =
+        || crate::input::keyboard::release_inserted_keys(&mod_downs, mod_downs.len());
 
     unsafe {
         if !crate::input::force_foreground_assisted(target).0 {
@@ -915,7 +920,7 @@ pub fn send_drag_synthesized(
         let sent =
             unsafe { send_unconfirmed_input(&mod_downs, std::mem::size_of::<INPUT>() as i32) };
         if sent as usize != mod_downs.len() {
-            let _ = release_modifiers();
+            let _ = crate::input::keyboard::release_inserted_keys(&mod_downs, sent as usize);
             bail!(
                 "SendInput inserted {sent}/{} modifier key presses; no mouse input was sent",
                 mod_downs.len()
@@ -965,7 +970,7 @@ pub fn send_drag_synthesized(
     }
     if !modifiers_released {
         bail!(
-            "SendInput did not insert the drag's modifier key releases after a retry; \
+            "SendInput did not insert all of the drag's owned modifier key releases; \
              modifier keys may still be held."
         );
     }
@@ -1056,25 +1061,13 @@ pub fn send_wheel_synthesized(sx: i32, sy: i32, ticks: i32, horizontal: bool) ->
     };
 
     unsafe {
-        let mut prev_cursor = POINT::default();
-        let prev_cursor_valid = GetCursorPos(&mut prev_cursor).is_ok();
-
         // Wheel routes to the window under the cursor — place it on the target.
         SetCursorPos(sx, sy)?;
+        crate::focus_return::note_unconfirmed_input();
 
         let events = [wheel_input];
         let sent = send_unconfirmed_input(&events, std::mem::size_of::<INPUT>() as i32);
         if sent as usize != events.len() {
-            // This one-event insertion sent nothing, so restoring our own move
-            // cannot divert pending wheel input. Preserve any later human move.
-            let mut current = POINT::default();
-            if prev_cursor_valid
-                && GetCursorPos(&mut current).is_ok()
-                && current.x == sx
-                && current.y == sy
-            {
-                let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
-            }
             bail!("SendInput inserted {sent}/{} wheel events", events.len());
         }
 

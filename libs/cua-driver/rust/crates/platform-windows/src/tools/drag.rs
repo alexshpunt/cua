@@ -419,61 +419,15 @@ impl Tool for DragTool {
             }
         }
 
-        // delivery_mode:"background" — if a PostMessage drag would silently drop
-        // (Chromium/WPF/GTK canvas content reads mouse from the system input
-        // queue, not the per-window queue), fall back to coordinate-routed
-        // synthetic-pen drag injection instead of refusing. No foreground swap,
-        // no cursor move; the target is held non-activatable + cloaked for the
-        // stroke (mirrors the click pen path).
+        // Synthetic background input cannot guarantee cursor/focus posture.
+        // Refuse before input rather than restoring an unread stream by timer.
         if delivery == DeliveryMode::Background
             && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseMove)
         {
-            let target = hwnd;
-            let btn = button.clone();
-            pin_overlay_above(&cursor_key, hwnd);
-            overlay_glide_to(&cursor_key, sx_from as f64, sy_from as f64).await;
-            crate::overlay::send_command(
-                cursor_key.clone(),
-                cursor_overlay::OverlayCommand::ClickPulse {
-                    x: sx_from as f64,
-                    y: sy_from as f64,
-                },
+            return crate::input::delivery::background_pointer_unavailable_error(
+                hwnd,
+                EventKind::MouseMove,
             );
-            let inj = tokio::task::spawn_blocking(move || {
-                crate::input::inject::inject_drag_screen(
-                    target,
-                    sx_from,
-                    sy_from,
-                    sx_to,
-                    sy_to,
-                    steps.max(8),
-                    &btn,
-                )
-            });
-            let visual_drag = track_overlay_drag(
-                cursor_key.clone(),
-                (f64::from(sx_from), f64::from(sy_from)),
-                (f64::from(sx_to), f64::from(sy_to)),
-                duration_ms,
-                steps,
-            );
-            let inj = crate::activity::alongside_presentation(inj, visual_drag).await;
-            return match inj {
-                Ok(Ok(())) => complete_held_input(
-                    ToolResult::text(format!(
-                        "✅ Sent drag via synthetic-pen injection on pid {raw_pid} \
-                         from screen ({sx_from},{sy_from}) → ({sx_to},{sy_to}) \
-                         (delivery_mode:background, PostMessage would have been dropped)."
-                    )),
-                    crate::typing_turn::TypingTurn::Unobservable,
-                ),
-                Ok(Err(e)) => crate::input::delivery::background_unavailable_error_with_cause(
-                    hwnd,
-                    EventKind::MouseMove,
-                    e.to_string(),
-                ),
-                Err(e) => ToolResult::error(format!("Task error: {e}")),
-            };
         }
         // delivery_mode:"foreground" — SendInput-based drag. Required for WPF
         // Slider thumbs (and any framework that polls GetKeyState during

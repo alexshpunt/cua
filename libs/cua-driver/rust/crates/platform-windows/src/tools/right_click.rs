@@ -171,34 +171,17 @@ impl Tool for RightClickTool {
                     return r;
                 }
             }
-            // delivery_mode:"background" (default): try coordinate injection (no
-            // foreground swap) for drop-prone targets (#1984); a right-click
-            // injection that the actuator can't express falls back to the error.
+            // Refuse unsupported synthetic background input before insertion.
             if (cx, cy) != recorded_center {
                 crate::recording_hooks::capture_dispatch_click_target(hwnd, pid, cx, cy);
             }
             if delivery == DeliveryMode::Background
                 && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseClick)
             {
-                let inj = tokio::task::spawn_blocking({
-                    let admitted = admitted.clone();
-                    move || {
-                        let _admission = &admitted;
-                        crate::input::inject_click_screen(hwnd, cx, cy, 1, "right")
-                    }
-                })
-                .await;
-                return match inj {
-                    Ok(Ok(())) => ToolResult::text(format!(
-                        "✅ Injected right-click to [{idx}] at screen ({cx},{cy}) (background, no foreground swap)."
-                    )),
-                    Ok(Err(e)) => crate::input::delivery::background_unavailable_error_with_cause(
-                        hwnd,
-                        EventKind::MouseClick,
-                        e.to_string(),
-                    ),
-                    Err(e) => ToolResult::error(format!("Task error: {e}")),
-                };
+                return crate::input::delivery::background_pointer_unavailable_error(
+                    hwnd,
+                    EventKind::MouseClick,
+                );
             }
             if delivery == DeliveryMode::Foreground {
                 let send_result = tokio::task::spawn_blocking({
@@ -289,30 +272,14 @@ impl Tool for RightClickTool {
                     return r;
                 }
             }
-            // delivery_mode:"background" (default): try coordinate injection (no
-            // foreground swap) for drop-prone targets (#1984).
+            // Refuse unsupported synthetic background input before insertion.
             if delivery == DeliveryMode::Background
                 && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseClick)
             {
-                let inj = tokio::task::spawn_blocking({
-                    let admitted = admitted.clone();
-                    move || {
-                        let _admission = &admitted;
-                        crate::input::inject_click_screen(hwnd, sx_i, sy_i, 1, "right")
-                    }
-                })
-                .await;
-                return match inj {
-                    Ok(Ok(())) => ToolResult::text(format!(
-                        "✅ Injected right-click to pid {pid} at screen ({sx_i},{sy_i}) (background, no foreground swap)."
-                    )),
-                    Ok(Err(e)) => crate::input::delivery::background_unavailable_error_with_cause(
-                        hwnd,
-                        EventKind::MouseClick,
-                        e.to_string(),
-                    ),
-                    Err(e) => ToolResult::error(format!("Task error: {e}")),
-                };
+                return crate::input::delivery::background_pointer_unavailable_error(
+                    hwnd,
+                    EventKind::MouseClick,
+                );
             }
             if delivery == DeliveryMode::Foreground {
                 let send_result = tokio::task::spawn_blocking({

@@ -96,6 +96,7 @@ const PKEY_APP_USER_MODEL_ID: PROPERTYKEY = PROPERTYKEY {
 /// - Any COM-init failure on a thread that has previously been
 ///   initialized with a conflicting apartment model
 pub fn launch_uwp(aumid: &str, args: &str) -> windows::core::Result<u32> {
+    let input_activity = cua_driver_core::input_lock::activity_generation();
     // Session-0 short-circuit: `IApplicationActivationManager::ActivateApplication`
     // relies on the per-user AppX runtime that doesn't exist in services /
     // SSH-launched contexts. Calling it in Session 0 hangs indefinitely
@@ -136,7 +137,7 @@ pub fn launch_uwp(aumid: &str, args: &str) -> windows::core::Result<u32> {
     // logged at debug level and otherwise swallowed because the launch
     // itself succeeded and we don't want to fail the tool call on a
     // focus-restore corner case.
-    restore_foreground_best_effort(prior_foreground);
+    restore_foreground_best_effort(prior_foreground, pid, input_activity);
 
     Ok(pid)
 }
@@ -147,53 +148,49 @@ pub fn launch_uwp(aumid: &str, args: &str) -> windows::core::Result<u32> {
 /// a single immediate SetForegroundWindow call would race the AppX
 /// runtime and lose. Three attempts spaced 50ms apart covers the window.
 ///
-/// **Foreground-lock workaround:** Windows restricts SetForegroundWindow
-/// to processes that meet specific conditions (foreground process,
-/// owner of last input, etc.). The daemon usually meets none of these
-/// when launch_app is called from MCP. We inject a single VK_NONAME
-/// synthetic keypress via `keybd_event` to claim "owner of last input"
-/// status long enough for SetForegroundWindow to succeed. VK_NONAME
-/// (0xFC) is the reserved no-name virtual-key code — it does not map
-/// to any UI action and is safe to inject without side effects.
-fn restore_foreground_best_effort(prior: HWND) {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        keybd_event, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+/// Restoration inserts no unlock key and stops when newer input activity or
+/// an unconfirmed prefix makes automatic foreground return unsafe.
+fn restore_foreground_best_effort(prior: HWND, spawned_pid: u32, input_activity: u64) {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetWindowThreadProcessId, IsWindow, SetForegroundWindow,
     };
-    use windows::Win32::UI::WindowsAndMessaging::{IsWindow, SetForegroundWindow};
 
     if prior.0.is_null() {
         tracing::debug!(target: "launch_uwp", "no prior foreground to restore");
         return;
     }
-
-    // Claim "owner of last input" so the next SetForegroundWindow call
-    // isn't silently dropped by the foreground lock. VK_NONAME (0xFC)
-    // doesn't trigger any application's key handler.
-    const VK_NONAME: u8 = 0xFC;
-    unsafe {
-        keybd_event(VK_NONAME, 0, KEYBD_EVENT_FLAGS(0), 0);
-        keybd_event(VK_NONAME, 0, KEYEVENTF_KEYUP, 0);
-    }
-
     for attempt in 0..3 {
         if attempt > 0 {
             std::thread::sleep(std::time::Duration::from_millis(50));
         }
-        unsafe {
-            if !IsWindow(prior).as_bool() {
-                tracing::debug!(target: "launch_uwp", "prior foreground HWND no longer valid");
-                return;
-            }
-            let ok = SetForegroundWindow(prior).as_bool();
-            tracing::debug!(
-                target: "launch_uwp",
-                "SetForegroundWindow attempt {} -> {}",
-                attempt + 1,
-                ok,
-            );
-            if ok {
-                return;
-            }
+        let finished =
+            cua_driver_core::input_lock::run_if_activity_unchanged(input_activity, || {
+                if crate::focus_return::active() || crate::focus_return::has_unconfirmed_input() {
+                    return true;
+                }
+                unsafe {
+                    if !IsWindow(prior).as_bool() {
+                        return true;
+                    }
+                    let current = GetForegroundWindow();
+                    let mut current_pid = 0;
+                    let _ = GetWindowThreadProcessId(current, Some(&mut current_pid));
+                    if current == prior || current_pid != spawned_pid {
+                        return true;
+                    }
+                    let restored = SetForegroundWindow(prior).as_bool();
+                    tracing::debug!(
+                        target: "launch_uwp",
+                        "SetForegroundWindow attempt {} -> {}",
+                        attempt + 1,
+                        restored,
+                    );
+                    restored
+                }
+            })
+            .unwrap_or(true);
+        if finished {
+            return;
         }
     }
 }

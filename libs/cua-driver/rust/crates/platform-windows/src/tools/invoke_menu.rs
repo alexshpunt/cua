@@ -117,7 +117,10 @@ impl Tool for InvokeMenuTool {
                 std::thread::sleep(std::time::Duration::from_millis(100));
             }
             let result = crate::uia::invoke_menu_path(hwnd_value, &path);
-            if needs_activation && !prior.0.is_null() {
+            if needs_activation
+                && !prior.0.is_null()
+                && !crate::focus_return::has_unconfirmed_input()
+            {
                 let _ = unsafe { crate::input::force_foreground_attached(prior) };
             }
             result.map(|()| used_activation_retry)

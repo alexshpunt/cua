@@ -12,22 +12,7 @@
 //! their earlier prefix.
 //! Pure, so the table test runs on every host.
 
-/// How a foreground input turn ended, by what is known about inserted input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum TypingTurn {
-    /// Nothing was inserted.
-    NotSent,
-    /// The target thread read every inserted event.
-    Drained,
-    /// Input was inserted, but no supported witness covers every inserted event.
-    /// A timer or an unrelated sentinel is not a read confirmation.
-    Unobservable,
-    /// Inserted events may still be unread: a stalled unit, a short
-    /// `SendInput`, or a final drain that timed out.
-    Undrained,
-    /// Another window took the foreground between text units.
-    Lost,
-}
+pub(crate) use cua_driver_core::protocol::InputReadCompletion as TypingTurn;
 
 /// Whether to give the previous foreground back. Never while inserted input
 /// may be unread, and never from a window that took the foreground itself.
@@ -38,40 +23,13 @@ pub(crate) fn restores_previous(turn: TypingTurn) -> bool {
     }
 }
 
-impl TypingTurn {
-    /// Compose sequential producers without erasing an earlier unconfirmed prefix.
-    pub(crate) fn combine(self, next: Self) -> Self {
-        use TypingTurn::*;
-        match (self, next) {
-            (Lost, _) | (_, Lost) => Lost,
-            (Undrained, _) | (_, Undrained) => Undrained,
-            (Unobservable, _) | (_, Unobservable) => Unobservable,
-            (Drained, _) | (_, Drained) => Drained,
-            (NotSent, NotSent) => NotSent,
-        }
-    }
-}
-
-/// Carry read knowledge to the focus lease before the public action envelope replaces
-/// internal structured fields. Uncertainty also stays in text for public clients.
+/// Carry read knowledge to the focus lease without changing public structured
+/// output. Uncertainty stays in text and the action's existing effect contract.
 pub(crate) fn completion_result(
     mut result: cua_driver_core::protocol::ToolResult,
     turn: TypingTurn,
 ) -> cua_driver_core::protocol::ToolResult {
-    let code = match turn {
-        TypingTurn::NotSent => "not_sent",
-        TypingTurn::Drained => "read",
-        TypingTurn::Unobservable => "unobservable",
-        TypingTurn::Undrained => "stalled",
-        TypingTurn::Lost => "lost",
-    };
-    let structured = result
-        .structured_content
-        .get_or_insert_with(|| serde_json::json!({}));
-    structured["input_read"] = serde_json::json!(code);
-    if !restores_previous(turn) {
-        structured["foreground_restored"] = serde_json::json!(false);
-    }
+    result.input_read = Some(turn);
     if turn == TypingTurn::Unobservable {
         result
             .content
@@ -84,15 +42,21 @@ pub(crate) fn completion_result(
     result
 }
 
-/// A failed turn that did not give the previous foreground back. Callers
-/// report `foreground_restored: false`.
+/// Read knowledge retained on failures, including a confirmed earlier prefix.
 #[derive(Debug, thiserror::Error)]
-#[error("{error} Focus was not restored: {}", reason(*.turn))]
-pub(crate) struct ForegroundNotRestored {
+#[error("{error}{}", restoration_note(*.turn))]
+pub(crate) struct ForegroundInputError {
     pub(crate) error: anyhow::Error,
     pub(crate) turn: TypingTurn,
 }
 
+fn restoration_note(turn: TypingTurn) -> String {
+    if restores_previous(turn) {
+        String::new()
+    } else {
+        format!(" Focus was not restored: {}", reason(turn))
+    }
+}
 fn reason(turn: TypingTurn) -> &'static str {
     if turn == TypingTurn::Lost {
         "another window took the foreground during the call, and the driver does not take \
@@ -107,13 +71,17 @@ fn reason(turn: TypingTurn) -> &'static str {
 pub(crate) fn foreground_input_error(
     error: anyhow::Error,
 ) -> cua_driver_core::protocol::ToolResult {
-    let kept = error.downcast_ref::<ForegroundNotRestored>().is_some();
+    let turn = error
+        .downcast_ref::<ForegroundInputError>()
+        .map(|error| error.turn)
+        .unwrap_or(TypingTurn::NotSent);
     let result = cua_driver_core::protocol::ToolResult::error(error.to_string());
-    if kept {
-        result.with_structured(serde_json::json!({ "foreground_restored": false }))
-    } else {
+    let result = if restores_previous(turn) {
         result
-    }
+    } else {
+        result.with_structured(serde_json::json!({ "foreground_restored": false }))
+    };
+    completion_result(result, turn)
 }
 
 #[cfg(test)]
@@ -157,10 +125,10 @@ mod tests {
         assert_eq!(NotSent.combine(Drained), Drained);
     }
     #[test]
-    fn an_unrestored_turn_says_so_in_text_and_structure() {
+    fn an_unrestored_error_retains_its_read_completion_and_public_flag() {
         let stalled = anyhow::anyhow!("text_delivery_stalled: unit 3 of 5 was not read.");
         let result = foreground_input_error(
-            ForegroundNotRestored {
+            ForegroundInputError {
                 error: stalled,
                 turn: Undrained,
             }
@@ -171,10 +139,7 @@ mod tests {
             text.contains("text_delivery_stalled: unit 3 of 5"),
             "{text}"
         );
-        assert!(
-            text.contains("Focus was not restored: the target window stays in front"),
-            "{text}"
-        );
+        assert_eq!(result.input_read, Some(Undrained));
         assert_eq!(result.is_error, Some(true));
         assert_eq!(
             result.structured_content,
@@ -183,6 +148,7 @@ mod tests {
 
         let refused = foreground_input_error(anyhow::anyhow!("foreground_unavailable: no input"));
         assert_eq!(refused.is_error, Some(true));
+        assert_eq!(refused.input_read, Some(NotSent));
         assert_eq!(refused.structured_content, None);
     }
 }

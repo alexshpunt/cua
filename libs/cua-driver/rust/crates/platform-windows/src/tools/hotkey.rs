@@ -51,8 +51,9 @@ impl Tool for HotkeyTool {
                 visible to `GetKeyState` / `TranslateAccelerator`, so Win32 apps that bind \
                 accelerators via `TranslateAccelerator` (LibreOffice, FAR, classic Notepad, etc.) \
                 never see the combo as a real accelerator on the PostMessage-only path. \
-                Trade-off: brief foreground swap (mitigated by restoring the previous foreground \
-                after the keystrokes flush). Requires the daemon to have UIAccess integrity so \
+                Foreground return requires supported receiver-read evidence for every inserted \
+                event and no older unconfirmed input; otherwise the target stays in front. \
+                Requires the daemon to have UIAccess integrity so \
                 `SetForegroundWindow` is permitted — the MCP proxy auto-prefers the \
                 `cua-driver-uia.exe` worker pipe when both daemons are running.\n\n\
                 - **Legacy Win32 targets without modifiers** (plain `enter`, `tab`, `f5`, etc.) \

@@ -184,6 +184,7 @@ impl Tool for LaunchAppTool {
     }
 
     async fn invoke(&self, args: Value) -> ToolResult {
+        let input_activity = cua_driver_core::input_lock::activity_generation();
         let launch_path_opt = args
             .get("launch_path")
             .and_then(|v| v.as_str())
@@ -719,6 +720,7 @@ impl Tool for LaunchAppTool {
                 restore_foreground_polling_best_effort(
                     target_foreground_addr,
                     spawned_pid_for_restore,
+                    input_activity,
                 )
                 .await;
             });

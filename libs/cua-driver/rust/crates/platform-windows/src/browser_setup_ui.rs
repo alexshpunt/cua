@@ -299,8 +299,8 @@ unsafe fn invoke(element_ptr: usize, description: &str) -> Result<(), BrowserRef
 
 fn input_may_be_unread(error: &anyhow::Error) -> bool {
     error
-        .downcast_ref::<crate::typing_turn::ForegroundNotRestored>()
-        .is_some()
+        .downcast_ref::<crate::typing_turn::ForegroundInputError>()
+        .is_some_and(|error| !crate::typing_turn::restores_previous(error.turn))
 }
 
 fn confirm_setup_navigation(
@@ -365,12 +365,11 @@ fn confirm_setup_navigation(
     })();
 
     // An unread Enter must not follow the user back to their window.
+    *input_may_be_unread |= crate::focus_return::has_unconfirmed_input();
     let restored = if prior.0.is_null() || prior == target || *input_may_be_unread {
         true
     } else {
-        let (restored, injected) = force_setup_foreground(prior);
-        *injected_global_input |= injected;
-        restored
+        unsafe { crate::input::force_foreground_attached(prior) }
     };
     if !restored {
         return Err(BrowserRefusal::new(
@@ -484,7 +483,10 @@ impl SetupUiHandle {
     }
 
     pub fn close_for_success(mut self) -> Result<Option<bool>, BrowserRefusal> {
-        if !self.opened_setup_page {
+        if !self.opened_setup_page
+            || self.input_may_be_unread
+            || crate::focus_return::has_unconfirmed_input()
+        {
             return Ok(None);
         }
         let proven = native_nodes(self.hwnd).is_ok_and(|nodes| {
@@ -512,6 +514,9 @@ impl SetupUiHandle {
                 return Err(self.abort(error));
             }
         }
+        if self.input_may_be_unread || crate::focus_return::has_unconfirmed_input() {
+            return Ok(None);
+        }
         self.opened_setup_page = false;
         Ok(Some(true))
     }
@@ -524,8 +529,8 @@ impl SetupUiHandle {
         if !self.opened_setup_page {
             return None;
         }
-        if self.input_may_be_unread {
-            return Some(false);
+        if self.input_may_be_unread || crate::focus_return::has_unconfirmed_input() {
+            return None;
         }
         let proven = native_nodes(self.hwnd).is_ok_and(|nodes| {
             let proven = setup_page_proven(&nodes, self.descriptor);
@@ -542,7 +547,11 @@ impl SetupUiHandle {
             }
             Err(error) => self.input_may_be_unread |= input_may_be_unread(error),
         }
-        Some(sent.is_ok())
+        if self.input_may_be_unread || crate::focus_return::has_unconfirmed_input() {
+            None
+        } else {
+            Some(sent.is_ok())
+        }
     }
 }
 

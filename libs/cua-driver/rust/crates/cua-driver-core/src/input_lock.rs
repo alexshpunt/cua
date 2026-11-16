@@ -28,8 +28,36 @@ const POLL: Duration = Duration::from_millis(10);
 struct Holder {
     file: Option<File>,
     turns: usize,
+    generation: u64,
 }
 
+impl Holder {
+    fn start_activity(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+    }
+
+    fn run_if_unchanged<T>(&self, generation: u64, operation: impl FnOnce() -> T) -> Option<T> {
+        (self.generation == generation).then(operation)
+    }
+}
+
+/// Snapshot coordinated desktop activity before scheduling delayed cleanup.
+pub fn activity_generation() -> u64 {
+    holder()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .generation
+}
+
+/// Run synchronous cleanup only if no newer coordinated desktop call has started.
+/// The operation must not acquire the input lock. Starting another call waits
+/// until the operation completes, even when shared-process locking is disabled.
+pub fn run_if_activity_unchanged<T>(generation: u64, operation: impl FnOnce() -> T) -> Option<T> {
+    holder()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .run_if_unchanged(generation, operation)
+}
 fn holder() -> &'static Mutex<Holder> {
     static HOLDER: OnceLock<Mutex<Holder>> = OnceLock::new();
     HOLDER.get_or_init(Mutex::default)
@@ -93,6 +121,10 @@ fn try_take(path: &PathBuf) -> std::io::Result<Attempt> {
 
 /// Wait for the shared lock. `Ok(None)` when the lock is not configured. A stop by the human ends the wait.
 pub async fn acquire() -> Result<Option<InputTurn>, String> {
+    holder()
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner())
+        .start_activity();
     if !configured() {
         return Ok(None);
     }
@@ -127,6 +159,18 @@ async fn acquire_at(path: &PathBuf, wait: Duration) -> Result<InputTurn, String>
 mod tests {
     use super::*;
 
+    #[test]
+    fn delayed_cleanup_cannot_run_after_new_activity() {
+        let mut holder = Holder::default();
+        let original = holder.generation;
+        assert_eq!(holder.run_if_unchanged(original, || 17), Some(17));
+        holder.start_activity();
+        assert_eq!(
+            holder.run_if_unchanged(original, || panic!("stale cleanup ran")),
+            None::<()>
+        );
+        assert_eq!(holder.run_if_unchanged(holder.generation, || 23), Some(23));
+    }
     #[tokio::test]
     async fn turns_nest_in_one_process_and_release_on_the_last_drop() {
         let directory = tempfile::tempdir().unwrap();

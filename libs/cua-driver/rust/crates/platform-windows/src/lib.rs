@@ -70,7 +70,7 @@ pub mod pointer_shape_map;
 pub mod pointer_shape;
 
 /// Install the Windows presence pointer-shape backend (UIA hit-test,
-/// `GetCursorInfo` readout, `SetCursorPos` warp) into
+/// `GetCursorInfo` readout; active warping is unsupported) into
 /// `cua_driver_core::pointer_shape`. Returns false off Windows or when a
 /// backend was already installed.
 pub fn install_pointer_shape_backend() -> bool {

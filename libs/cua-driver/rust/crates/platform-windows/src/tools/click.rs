@@ -90,9 +90,7 @@ enum BackgroundElementClick {
         transport: ActionTransport,
         failed_calls: Vec<ActionTransport>,
     },
-    Inject {
-        x: i32,
-        y: i32,
+    UnsupportedPointer {
         failed_calls: Vec<ActionTransport>,
     },
     Post {
@@ -101,7 +99,9 @@ enum BackgroundElementClick {
         failed_calls: Vec<ActionTransport>,
     },
     /// `uia_only`: no UIA pattern carried the click, so nothing was sent.
-    NoPattern { failed_calls: Vec<ActionTransport> },
+    NoPattern {
+        failed_calls: Vec<ActionTransport>,
+    },
 }
 
 fn background_element_click_result(
@@ -139,6 +139,44 @@ fn background_element_click_result(
     ToolResult::text(message)
         .with_structured(json!({ "path": path, "verified": false, "effect": "unverifiable" }))
         .with_action_record(record)
+}
+
+/// Preserve uncertainty from an attempted semantic action rather than replaying
+/// it through an unsupported background or foreground pointer fallback.
+fn background_pointer_refusal(hwnd: u64, failed_calls: Vec<ActionTransport>) -> ToolResult {
+    use cua_driver_core::action_record::{
+        ActionAttempt, ActionEffect, ActionExecutionRecord, ActualDelivery, RequestedDelivery,
+    };
+    let Some(transport) = failed_calls.last().copied() else {
+        return crate::input::delivery::background_pointer_unavailable_error(
+            hwnd,
+            crate::input::delivery::EventKind::MouseClick,
+        );
+    };
+    let mut record = ActionExecutionRecord::new(
+        ActionEffect::Unverifiable,
+        transport,
+        RequestedDelivery::Background,
+    );
+    record.actual_delivery = Some(ActualDelivery::Background);
+    record.attempts = failed_calls
+        .into_iter()
+        .map(|transport| ActionAttempt {
+            transport,
+            delivery: ActualDelivery::Background,
+            detail: Some("UIA provider action returned an error; its effect is unknown".into()),
+        })
+        .collect();
+    crate::typing_turn::completion_result(
+        ToolResult::error(
+            "The UIA action's effect is unknown. No fallback pointer input was sent because \
+             synthetic background input cannot preserve desktop posture. Inspect the target \
+             before another action; the driver did not replay the click.",
+        )
+        .with_structured(json!({"code":"background_effect_unverifiable","effect":"unverifiable"}))
+        .with_action_record(record),
+        crate::typing_turn::TypingTurn::NotSent,
+    )
 }
 
 pub struct ClickTool {
@@ -499,6 +537,12 @@ impl Tool for ClickTool {
                 .as_ref()
                 .map(|element| (element.kind, element.msaa_role))
             {
+                if delivery == DeliveryMode::Background {
+                    return crate::input::delivery::background_pointer_unavailable_error(
+                        hwnd,
+                        EventKind::MouseClick,
+                    );
+                }
                 const ROLE_BUTTONDROPDOWN: i32 = 0x38;
                 const ROLE_BUTTONMENU: i32 = 0x39;
                 const ROLE_BUTTONDROPDOWNGRID: i32 = 0x3A;
@@ -574,22 +618,14 @@ impl Tool for ClickTool {
                 );
                 let btn_fg = button.clone();
                 let mods_owned = modifiers.clone();
-                let activate = delivery == DeliveryMode::Foreground;
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
                         let mod_refs: Vec<&str> = mods_owned.iter().map(String::as_str).collect();
-                        if activate {
-                            crate::input::send_click_synthesized_active_mods(
-                                hwnd, tx, ty, count, &btn_fg, &mod_refs,
-                            )
-                        } else {
-                            crate::input::send_click_synthesized_mods(
-                                hwnd, tx, ty, count, &btn_fg, &mod_refs,
-                            )
-                            .map(|()| None)
-                        }
+                        crate::input::send_click_synthesized_active_mods(
+                            hwnd, tx, ty, count, &btn_fg, &mod_refs,
+                        )
                     }
                 })
                 .await;
@@ -604,13 +640,6 @@ impl Tool for ClickTool {
                         ),
                         after,
                     ),
-                    Ok(Err(e)) if !activate => {
-                        crate::input::delivery::background_unavailable_error_with_cause(
-                            hwnd,
-                            EventKind::MouseClick,
-                            e.to_string(),
-                        )
-                    }
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
@@ -695,14 +724,17 @@ impl Tool for ClickTool {
                     }
                 })
                 .await;
-                return match expand {
-                    Ok(Ok(())) => ToolResult::text(format!(
-                        "✅ Expanded UIA element [{idx}] via ExpandCollapsePattern."
-                    ))
-                    .with_structured(json!({ "path": "uia_expand_collapse", "verified": false, "effect": "unverifiable" })),
-                    Ok(Err(error)) => ToolResult::error(error.to_string()),
-                    Err(error) => ToolResult::error(format!("Task error: {error}")),
-                };
+                return crate::typing_turn::completion_result(
+                    match expand {
+                        Ok(Ok(())) => ToolResult::text(format!(
+                            "✅ Expanded UIA element [{idx}] via ExpandCollapsePattern."
+                        ))
+                        .with_structured(json!({ "path": "uia_expand_collapse", "verified": false, "effect": "unverifiable" })),
+                        Ok(Err(error)) => ToolResult::error(error.to_string()),
+                        Err(error) => ToolResult::error(format!("Task error: {error}")),
+                    },
+                    crate::typing_turn::TypingTurn::NotSent,
+                );
             }
 
             // delivery_mode:"foreground" — skip UIA Invoke and use SendInput at the
@@ -857,19 +889,13 @@ impl Tool for ClickTool {
             let result = tokio::task::spawn_blocking({ let admitted = admitted.clone(); move || -> anyhow::Result<BackgroundElementClick> {
                 let _admission = &admitted;
                 let mut failed_calls = Vec::new();
-                // Direct Chromium UIA Invoke can return S_OK without firing a
-                // DOM event while occluded. Try the honest coordinate actuator
-                // first: it lands while visible and reports occlusion without
-                // raising the window when hidden.
+                // Direct Chromium Invoke can report a false success. Its old
+                // synthetic fallback cannot guarantee background posture.
                 if delivery == DeliveryMode::Background
                     && !uia_only
                     && crate::input::is_chromium_target_window(hwnd)
                 {
-                    let (cx, cy) = resolve_onscreen_point_with_scroll(
-                        &admitted, hwnd, idx, cx, cy, "clicking",
-                    )
-                    .map_err(|result| anyhow::anyhow!(tool_result_text(result)))?;
-                    return Ok(BackgroundElementClick::Inject { x: cx, y: cy, failed_calls });
+                    return Ok(BackgroundElementClick::UnsupportedPointer { failed_calls });
                 }
                 if use_uia_invoke {
                     // Retain the element out of the cache (AddRef under the
@@ -975,16 +1001,7 @@ impl Tool for ClickTool {
                         EventKind::MouseClick,
                     )
                 {
-                    let (cx, cy) = resolve_onscreen_point_with_scroll(
-                        &admitted,
-                        hwnd,
-                        idx,
-                        cx,
-                        cy,
-                        "clicking",
-                    )
-                    .map_err(|result| anyhow::anyhow!(tool_result_text(result)))?;
-                    return Ok(BackgroundElementClick::Inject { x: cx, y: cy, failed_calls });
+                    return Ok(BackgroundElementClick::UnsupportedPointer { failed_calls });
                 }
                 if admitted.as_ref().is_some_and(|element| element.read_while_minimized) {
                     let (x, y) =
@@ -999,7 +1016,7 @@ impl Tool for ClickTool {
                 Ok(Err(e)) => return ToolResult::error(e.to_string()),
                 Err(e) => return ToolResult::error(format!("Task error: {e}")),
             };
-            let (x, y, failed_calls, inject) = match plan {
+            let (x, y, failed_calls) = match plan {
                 BackgroundElementClick::Semantic {
                     message,
                     transport,
@@ -1023,8 +1040,10 @@ impl Tool for ClickTool {
                         },
                     );
                 }
-                BackgroundElementClick::Inject { x, y, failed_calls } => (x, y, failed_calls, true),
-                BackgroundElementClick::Post { x, y, failed_calls } => (x, y, failed_calls, false),
+                BackgroundElementClick::UnsupportedPointer { failed_calls } => {
+                    return background_pointer_refusal(hwnd, failed_calls);
+                }
+                BackgroundElementClick::Post { x, y, failed_calls } => (x, y, failed_calls),
             };
             // Return to the dispatch task before capturing: task-local recording
             // context does not propagate into the blocking scroll resolver.
@@ -1041,34 +1060,16 @@ impl Tool for ClickTool {
                 let admitted = admitted.clone();
                 move || {
                     let _admission = &admitted;
-                    if inject {
-                        crate::input::inject_click_screen(hwnd, x, y, count, &btn)
-                    } else {
-                        crate::input::post_click_screen(hwnd, x, y, count, &btn)
-                    }
+                    crate::input::post_click_screen(hwnd, x, y, count, &btn)
                 }
             })
             .await;
             match sent {
-                Ok(Ok(())) => {
-                    let (message, transport) = if inject {
-                        (format!("✅ Injected click on [{idx}] (screen ({x},{y}), background, no foreground swap)."),
-                            ActionTransport::WindowsTargetedInjection)
-                    } else {
-                        (
-                            format!("✅ Performed {action_name} on [{idx}] (screen ({x},{y}))."),
-                            ActionTransport::WindowsPostMessage,
-                        )
-                    };
-                    background_element_click_result(message, transport, failed_calls)
-                }
-                Ok(Err(error)) if inject => {
-                    crate::input::delivery::background_unavailable_error_with_cause(
-                        hwnd,
-                        EventKind::MouseClick,
-                        error.to_string(),
-                    )
-                }
+                Ok(Ok(())) => background_element_click_result(
+                    format!("✅ Performed {action_name} on [{idx}] (screen ({x},{y}))."),
+                    ActionTransport::WindowsPostMessage,
+                    failed_calls,
+                ),
                 Ok(Err(error)) => ToolResult::error(error.to_string()),
                 Err(error) => ToolResult::error(format!("Task error: {error}")),
             }
@@ -1221,33 +1222,14 @@ impl Tool for ClickTool {
                     Err(error) => ToolResult::error(format!("Task error: {error}")),
                 };
             }
-            // As above, bypass Chromium's false-positive UIA Invoke and use
-            // the coordinate actuator before attempting any accessibility hit
-            // test. The actuator itself distinguishes visible delivery from a
-            // fully occluded structured refusal.
+            // Do not substitute synthetic background input for Chromium's
+            // false-positive UIA Invoke. Refuse before any pointer input.
             if delivery == DeliveryMode::Background && crate::input::is_chromium_target_window(hwnd)
             {
-                let btn2 = btn.clone();
-                let inj = tokio::task::spawn_blocking({
-                    let admitted = admitted.clone();
-                    move || {
-                        let _admission = &admitted;
-                        crate::input::inject_click_screen(hwnd, sx as i32, sy as i32, count, &btn2)
-                    }
-                })
-                .await;
-                return match inj {
-                    Ok(Ok(())) => ToolResult::text(format!(
-                        "✅ Injected click to pid {pid} at ({sx},{sy}) (background, no foreground swap)."
-                    ))
-                    .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" })),
-                    Ok(Err(error)) => crate::input::delivery::background_unavailable_error_with_cause(
-                        hwnd,
-                        EventKind::MouseClick,
-                        error.to_string(),
-                    ),
-                    Err(error) => ToolResult::error(format!("Task error: {error}")),
-                };
+                return crate::input::delivery::background_pointer_unavailable_error(
+                    hwnd,
+                    EventKind::MouseClick,
+                );
             }
             let use_uia = (btn == "left" || btn == "middle") && count == 1;
             if use_uia {
@@ -1269,40 +1251,23 @@ impl Tool for ClickTool {
                 }
             }
 
-            // UIA completed with a miss or was not applicable. Known dropped surfaces other than direct
-            // Chromium (handled above) get one targeted injection attempt.
+            // UIA completed with a miss or was not applicable. Drop-prone
+            // surfaces have no supported background pointer fallback.
             if delivery == DeliveryMode::Background
                 && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseClick)
             {
-                let btn2 = btn.clone();
-                let inj = tokio::task::spawn_blocking({
-                    let admitted = admitted.clone();
-                    move || {
-                        let _admission = &admitted;
-                        crate::input::inject_click_screen(hwnd, sx as i32, sy as i32, count, &btn2)
-                    }
-                })
-                .await;
-                return match inj {
-                    Ok(Ok(())) => ToolResult::text(format!(
-                        "✅ Injected click to pid {pid} at ({sx},{sy}) (background, no foreground swap)."
-                    ))
-                    .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" })),
-                    Ok(Err(error)) => crate::input::delivery::background_unavailable_error_with_cause(
-                        hwnd,
-                        EventKind::MouseClick,
-                        error.to_string(),
-                    ),
-                    Err(error) => ToolResult::error(format!("Task error: {error}")),
-                };
+                return crate::input::delivery::background_pointer_unavailable_error(
+                    hwnd,
+                    EventKind::MouseClick,
+                );
             }
 
             // delivery_mode:"background", non-dropped + non-UIA click. This
             // includes plain Win32 targets with no invokable UIA element.
             // Attempt PostMessage without a
             // foreground swap; the caller must verify the resulting fixture state.
-            // Foreground was handled at the top, and known dropped surfaces use
-            // the targeted-injection path above.
+            // Foreground was handled at the top; unsupported dropped surfaces
+            // refused above without synthetic input.
 
             // bitmap pixels -> screen (DWM-frame origin + inset). Use
             // post_click_screen so we don't double-ClientToScreen.
@@ -1336,12 +1301,51 @@ impl Tool for ClickTool {
 
 #[cfg(test)]
 mod pixel_click_transport_tests {
-    use super::{finish_pixel_uia_attempt, posted_pixel_click_result};
+    use super::{background_pointer_refusal, finish_pixel_uia_attempt, posted_pixel_click_result};
     use crate::uia::windows_enum::PointInvokeOutcome;
     use cua_driver_core::action_record::{
         ActionExecutionRecord, ActionTransport, ActualDelivery, RequestedDelivery,
     };
 
+    #[test]
+    fn failed_semantic_attempts_do_not_offer_an_unsupported_pointer_replay() {
+        let result = background_pointer_refusal(
+            0,
+            vec![
+                ActionTransport::WindowsUiaInvoke,
+                ActionTransport::WindowsUiaToggle,
+            ],
+        );
+        assert_eq!(result.is_error, Some(true));
+        let structured = result.structured_content.as_ref().unwrap();
+        assert_eq!(structured["code"], "background_effect_unverifiable");
+        assert_eq!(
+            result.input_read,
+            Some(crate::typing_turn::TypingTurn::NotSent)
+        );
+        assert!(structured.get("input_read").is_none());
+        assert!(structured.get("suggestion").is_none());
+        let record = result
+            .action_record
+            .as_ref()
+            .expect("semantic attempt history");
+        assert_eq!(record.attempts.len(), 2);
+        assert_eq!(
+            record.attempts[0].transport,
+            ActionTransport::WindowsUiaInvoke
+        );
+        assert_eq!(
+            record.attempts[1].transport,
+            ActionTransport::WindowsUiaToggle
+        );
+        assert!(record.fallbacks.is_empty());
+        let public =
+            serde_json::to_value(record.public_result().expect("valid action result")).unwrap();
+        assert_eq!(public["effect"], "unverifiable");
+        assert_eq!(public["route"], "accessibility");
+        assert!(public.get("error").is_none());
+        assert!(public.get("escalation").is_none());
+    }
     #[test]
     fn uia_unavailable_errors_advertise_foreground_escalation() {
         use cua_driver_core::action_record::EscalationKind;

@@ -295,6 +295,23 @@ pub fn read_class_name(hwnd: u64) -> String {
     String::from_utf16_lossy(&buf[..n as usize])
 }
 
+/// Unsupported synthetic background routes must refuse before inserting input.
+pub(super) const BACKGROUND_POINTER_UNAVAILABLE: &str =
+    "background_unavailable: synthetic background pointer input can activate the target \
+     or move the human's cursor, and no supported receiver-read witness permits safe \
+     restoration; no input was sent";
+
+/// A known no-input refusal, with the existing foreground-escalation contract.
+pub(crate) fn background_pointer_unavailable_error(
+    hwnd: u64,
+    kind: EventKind,
+) -> cua_driver_core::protocol::ToolResult {
+    crate::typing_turn::completion_result(
+        background_unavailable_error_with_cause(hwnd, kind, BACKGROUND_POINTER_UNAVAILABLE),
+        crate::typing_turn::TypingTurn::NotSent,
+    )
+}
+
 /// Build the structured `background_unavailable` error returned when
 /// `delivery_mode:"background"` would silently drop.
 pub fn background_unavailable_error(
@@ -324,10 +341,9 @@ pub fn background_unavailable_error(
     )
 }
 
-/// Build a structured background refusal while preserving the concrete
-/// actuator failure. This is used after a background coordinate-injection
-/// fallback was attempted and failed, so callers can distinguish a true
-/// occlusion miss from a generic class-level refusal.
+/// Build a background refusal while preserving a concrete pre-input failure.
+/// Call only when no global input was inserted. An inserted prefix must retain
+/// its partial/unverifiable record without offering foreground replay.
 pub fn background_unavailable_error_with_cause(
     hwnd: u64,
     kind: EventKind,

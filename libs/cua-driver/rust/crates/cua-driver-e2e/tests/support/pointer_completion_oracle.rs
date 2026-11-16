@@ -6,6 +6,28 @@
 use super::*;
 use windows::Win32::UI::WindowsAndMessaging::{GetPhysicalCursorPos, SetPhysicalCursorPos};
 
+pub(super) struct PhysicalCoordinates(windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT);
+
+impl PhysicalCoordinates {
+    pub(super) fn enter() -> Self {
+        use windows::Win32::UI::HiDpi::{
+            SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+        };
+        let previous =
+            unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+        assert!(
+            !previous.0.is_null(),
+            "physical-pixel observer context is required"
+        );
+        Self(previous)
+    }
+}
+
+impl Drop for PhysicalCoordinates {
+    fn drop(&mut self) {
+        unsafe { windows::Win32::UI::HiDpi::SetThreadDpiAwarenessContext(self.0) };
+    }
+}
 struct PointerPair {
     driver: McpDriver,
     _temporary: tempfile::TempDir,
@@ -13,6 +35,7 @@ struct PointerPair {
     human_path: PathBuf,
     target_pid: u32,
     target_wid: u64,
+    human_wid: u64,
     target_snapshot: ToolResponse,
     local_canvas: (f64, f64, f64, f64),
     screen_canvas: (f64, f64, f64, f64),
@@ -54,6 +77,7 @@ impl PointerPair {
             human_path,
             target_pid,
             target_wid,
+            human_wid,
             target_snapshot,
             local_canvas,
             screen_canvas,
@@ -147,6 +171,7 @@ fn run_pointer_owner(
     ]);
     let cell_id = case.cell_id.clone();
     execute_case(case, |evidence| {
+        let _coordinates = PhysicalCoordinates::enter();
         let mut pair = PointerPair::launch(&cell_id, busy_ms, trigger);
         *evidence = recording_evidence(pair.driver.recording_dir());
         test(&mut pair);
@@ -163,6 +188,65 @@ fn run_pointer_owner(
     });
 }
 
+#[test]
+#[ignore]
+fn harness_wpf_supported_key_read_returns_the_human_window() {
+    let mut case = native_foreground_case(
+        "wpf",
+        "supported_key_read_return",
+        Targeting::NotApplicable,
+        DriverRoute::WindowsSendInput,
+    );
+    case.oracles
+        .extend([OracleKind::Focus, OracleKind::NoLeakedInput]);
+    let cell_id = case.cell_id.clone();
+    execute_case(case, |evidence| {
+        let _coordinates = PhysicalCoordinates::enter();
+        let mut pair = PointerPair::launch(&cell_id, 0, "held_move");
+        *evidence = recording_evidence(pair.driver.recording_dir());
+        let response = pair.driver.call(
+            "press_key",
+            serde_json::json!({
+                "pid": pair.target_pid, "window_id": pair.target_wid,
+                "key": "f1", "delivery_mode": "foreground"
+            }),
+        );
+        assert!(!response.is_error(), "{}", response.text());
+        assert_eq!(foreground(), pair.human_wid);
+        let finished = pointer_oracle_time_ms();
+        let target = wait_pointer_receiver(&pair.target_path, finished, |state| {
+            state["events"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|event| event["message"] == 0x0101 && event["virtual_key"] == 0x70)
+        });
+        let human = wait_pointer_receiver(&pair.human_path, finished, |_| true);
+        for message in [0x0100, 0x0101] {
+            let count = |state: &serde_json::Value| {
+                state["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|event| event["message"] == message && event["virtual_key"] == 0x70)
+                    .count()
+            };
+            assert_eq!(count(&target), 1, "target key journal: {target}");
+            assert_eq!(count(&human), 0, "key leaked to the human: {human}");
+        }
+        assert_eq!(target["down"], 0);
+        assert_eq!(target["up"], 0);
+        drop(pair);
+        Observation::delivered(
+            vec![
+                OracleKind::FixtureState,
+                OracleKind::Focus,
+                OracleKind::NoLeakedInput,
+            ],
+            Evidence::default(),
+        )
+    });
+}
 #[test]
 #[ignore]
 fn harness_wpf_legacy_click_keeps_unread_pointer_at_target() {
@@ -237,15 +321,9 @@ fn harness_wpf_straight_drag_keeps_unread_release_at_target() {
 #[test]
 #[ignore]
 fn harness_wpf_legacy_wheel_keeps_pointer_over_busy_receiver() {
-    run_pointer_owner("legacy_wheel_unread_posture", 5000, "down", |pair| {
+    run_pointer_owner("legacy_wheel_unread_posture", 1200, "wheel", |pair| {
         let initial = pair.click(0.25);
         assert!(!initial.is_error(), "{}", initial.text());
-        let busy =
-            wait_pointer_receiver(&pair.target_path, 0, |state| state["busy_started"] == true);
-        assert_eq!(
-            busy["busy_finished"], false,
-            "receiver already finished: {busy}"
-        );
         let (x, y) = pair.local_point(0.75);
         let response = pair.driver.call(
             "scroll",
@@ -273,8 +351,8 @@ fn harness_wpf_legacy_wheel_keeps_pointer_over_busy_receiver() {
             .position(|event| event["kind"] == "wheel")
             .expect("target wheel");
         assert!(
-            busy_end < wheel,
-            "wheel bypassed the busy receiver: {target}"
+            wheel < busy_end,
+            "receiver did not run its wheel workload: {target}"
         );
         assert_eq!(events[wheel]["wheel_delta"], -120);
         assert_eq!(events[wheel]["foreground_window"], pair.target_wid);
@@ -306,6 +384,7 @@ fn harness_wpf_native_pointer_tools_keep_their_measured_posture() {
                 input["unit"] = serde_json::json!("wheel_detents");
             }
             let response = pair.driver.call(action, input);
+            assert!(!response.is_error(), "{}", response.text());
             let finished_ms = pointer_oracle_time_ms();
             pair.assert_posture(0.75);
             let target = wait_pointer_receiver(&pair.target_path, finished_ms, |state| {

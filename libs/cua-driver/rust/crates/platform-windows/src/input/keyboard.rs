@@ -34,7 +34,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{GetForegroundWindow, SetForegroundWindow};
 
-use crate::typing_turn::{restores_previous, ForegroundNotRestored, TypingTurn};
+use crate::typing_turn::{restores_previous, ForegroundInputError, TypingTurn};
 use crate::win32::{foreground_matches_target_or_owned_window, windows::ForegroundTarget};
 use cua_driver_core::type_pacing;
 
@@ -513,9 +513,9 @@ pub fn post_key(hwnd: u64, key: &str, modifiers: &[&str]) -> Result<()> {
 ///
 /// `SendInput` puts the synthesized events on the **system input queue** —
 /// the same queue `GetKeyState` reads from — so `Ctrl+S` is properly detected
-/// as an accelerator. The trade-off is a brief foreground swap (focus theft),
-/// which we mitigate by saving the previous foreground HWND and restoring it
-/// after the keystrokes are flushed.
+/// as an accelerator. This requires foreground activation. Returning the
+/// previous foreground requires supported evidence covering every inserted
+/// event, with no earlier unconfirmed prefix.
 ///
 /// Windows may refuse the foreground swap (`SetForegroundWindow` is
 /// restricted when not driven by user input), and UIPI drops input sent to a
@@ -584,11 +584,14 @@ pub(crate) fn send_key_synthesized_after_focus(
         prior,
         observable,
         focus,
-        |attachment, _, turn| {
+        |attachment, ft, turn| {
             let read = match attachment {
-                Some(attachment) => {
-                    attachment.send_and_await_read(&events, Some(&keys), Duration::from_secs(2))
-                }
+                Some(attachment) => attachment.send_and_await_read(
+                    &events,
+                    Some(&keys),
+                    ft,
+                    Duration::from_secs(2),
+                )?,
                 None => insert_unobservable(&events),
             };
             *turn = turn.combine(read.turn());
@@ -612,9 +615,10 @@ pub(crate) fn send_key_synthesized_after_focus(
 /// Foreground-delivery text entry: the `delivery_mode:"foreground"` rung for
 /// `type_text`. Symmetric with [`send_key_synthesized`] — briefly fronts the
 /// target, types `text` as SendInput Unicode (`KEYEVENTF_UNICODE`, so every
-/// codepoint lands regardless of keyboard layout), then restores the prior
-/// foreground. This is only reached on the explicit `delivery_mode:"foreground"`
-/// rung (background never fronts); it does NOT silently fall back to
+/// codepoint lands regardless of keyboard layout). Foreground return requires
+/// supported read evidence covering the complete inserted stream. This is only
+/// reached on the explicit `delivery_mode:"foreground"` rung (background never
+/// fronts); it does NOT silently fall back to
 /// PostMessage: if the foreground swap is rejected
 /// or the input is blocked, it bails with the same diagnostic
 /// `send_key_synthesized` returns, so the caller gets an honest error instead
@@ -725,8 +729,9 @@ pub(crate) fn send_text_synthesized_paced_after_focus(
                     Some(attachment) => attachment.send_and_await_read(
                         &events,
                         keys.as_deref(),
+                        ft,
                         Duration::from_secs(2),
-                    ),
+                    )?,
                     None => insert_unobservable(&events),
                 };
                 *turn = turn.combine(read.turn());
@@ -769,6 +774,25 @@ fn wait_for_exact_foreground(target: HWND, timeout: Duration) -> bool {
     }
 }
 
+/// Synchronize pre-input activation, not input delivery. Foreground activation
+/// crosses input queues asynchronously; joining while its nudge is pending can
+/// prevent the receiver from retrieving input until we detach.
+pub(crate) fn activation_ready(target: HWND) -> bool {
+    use windows::Win32::UI::WindowsAndMessaging::{SendMessageTimeoutW, SMTO_ABORTIFHUNG, WM_NULL};
+    let mut result = 0usize;
+    unsafe {
+        SendMessageTimeoutW(
+            target,
+            WM_NULL,
+            WPARAM(0),
+            LPARAM(0),
+            SMTO_ABORTIFHUNG,
+            500,
+            Some(&mut result),
+        )
+        .0 != 0
+    }
+}
 /// The foreground window when it is embedded in `target` (see
 /// [`crate::win32::embedded_in_target`]): keys and text for the target go to it.
 fn embedded_foreground(target: HWND) -> Option<HWND> {
@@ -786,7 +810,7 @@ fn embedded_foreground(target: HWND) -> Option<HWND> {
 /// external Win32/UIA state instead of inferred from API return values or a
 /// fixed settle delay. The body records in `turn` what it inserted; the prior
 /// foreground is restored only as [`restores_previous`] allows, and a failed
-/// turn that keeps it returns [`ForegroundNotRestored`].
+/// turn that keeps it returns [`ForegroundInputError`].
 fn with_confirmed_foreground(
     target: HWND,
     operation: &str,
@@ -795,38 +819,48 @@ fn with_confirmed_foreground(
     focus: impl FnOnce() -> Result<TypingTurn>,
     body: impl FnOnce(Option<&InputQueueAttachment>, ForegroundTarget, &mut TypingTurn) -> Result<()>,
 ) -> Result<TypingTurn> {
-    let prior = if crate::focus_return::has_unconfirmed_input() {
-        prior.combine(TypingTurn::Unobservable)
-    } else {
-        prior
-    };
     let previous = unsafe { GetForegroundWindow() };
     let embedded = embedded_foreground(target).is_some();
     if !embedded {
         let _ = unsafe { crate::input::force_foreground_assisted(target) };
     }
+    // Foreground assistance can insert its own unlock key. That prefix also
+    // needs read evidence, including when activation fails before the body.
+    let prior = if crate::focus_return::has_unconfirmed_input() {
+        prior.combine(TypingTurn::Unobservable)
+    } else {
+        prior
+    };
     if !embedded && !wait_for_exact_foreground(target, Duration::from_millis(500)) {
         let actual = unsafe { GetForegroundWindow() };
         if !previous.0.is_null() && previous != target && restores_previous(prior) {
             let _ = unsafe { SetForegroundWindow(previous) };
         }
-        bail!(
-            "foreground_unavailable: Windows did not confirm exact target HWND {:?} for {operation} \
-             within 500 ms (actual foreground HWND {:?}); no requested input was sent.",
-            target.0,
-            actual.0
-        );
+        return Err(ForegroundInputError {
+            error: anyhow::anyhow!(
+                "foreground_unavailable: Windows did not confirm exact target HWND {:?} for {operation} \
+                 within 500 ms (actual foreground HWND {:?}); no requested input was sent.",
+                target.0,
+                actual.0
+            ),
+            turn: prior,
+        }
+        .into());
     }
     let Some(foreground_target) = crate::win32::capture_foreground_target(target.0 as usize as u64)
     else {
         if !previous.0.is_null() && previous != target && restores_previous(prior) {
             let _ = unsafe { SetForegroundWindow(previous) };
         }
-        bail!(
-            "foreground_unavailable: exact target HWND {:?} disappeared before {operation}; \
-             no requested input was sent",
-            target.0
-        );
+        return Err(ForegroundInputError {
+            error: anyhow::anyhow!(
+                "foreground_unavailable: exact target HWND {:?} disappeared before {operation}; \
+                 no requested input was sent",
+                target.0
+            ),
+            turn: prior,
+        }
+        .into());
     };
 
     // A focus callback reports whether it inserted global input. Attach only
@@ -856,7 +890,11 @@ fn with_confirmed_foreground(
                 actual.0
             );
         }
-        if observable && restores_previous(turn) && !crate::focus_return::has_unconfirmed_input() {
+        if observable
+            && restores_previous(turn)
+            && !crate::focus_return::has_unconfirmed_input()
+            && activation_ready(actual)
+        {
             attachment = InputQueueAttachment::attach(actual);
         }
         let reader = attachment
@@ -865,9 +903,12 @@ fn with_confirmed_foreground(
         body(reader, foreground_target, &mut turn)
     })();
     if let Err(error) = &result {
-        if let Some(kept) = error.downcast_ref::<ForegroundNotRestored>() {
+        if let Some(kept) = error.downcast_ref::<ForegroundInputError>() {
             turn = turn.combine(kept.turn);
         }
+    }
+    if crate::focus_return::has_unconfirmed_input() {
+        turn = turn.combine(TypingTurn::Unobservable);
     }
     let actual = unsafe { GetForegroundWindow() };
     if !foreground_matches_target_or_owned_window(foreground_target, actual.0 as usize as u64) {
@@ -878,7 +919,7 @@ fn with_confirmed_foreground(
         crate::focus_return::note_unconfirmed_input();
         return result
             .map(|()| turn)
-            .map_err(|error| ForegroundNotRestored { error, turn }.into());
+            .map_err(|error| ForegroundInputError { error, turn }.into());
     }
     // The outer lease returns the human's remembered window, not necessarily
     // the window that happened to be foreground before this call.
@@ -889,7 +930,9 @@ fn with_confirmed_foreground(
     {
         let _ = unsafe { SetForegroundWindow(previous) };
     }
-    result.map(|()| turn)
+    result
+        .map(|()| turn)
+        .map_err(|error| ForegroundInputError { error, turn }.into())
 }
 
 #[derive(Clone, Copy)]
@@ -911,8 +954,9 @@ impl UnitRead {
     }
 }
 
-/// A short insertion releases only keys whose DOWN was actually inserted.
-fn release_inserted_keys(events: &[INPUT], inserted: usize) {
+/// Release only keys whose DOWN was inserted, without replaying an inserted UP.
+/// Returns whether every owned release was inserted.
+pub(crate) fn release_inserted_keys(events: &[INPUT], inserted: usize) -> bool {
     let mut held: Vec<KEYBDINPUT> = Vec::new();
     for event in events.iter().take(inserted) {
         let key = unsafe { event.Anonymous.ki };
@@ -934,9 +978,9 @@ fn release_inserted_keys(events: &[INPUT], inserted: usize) {
             }
         })
         .collect();
-    if !releases.is_empty() {
-        let _ = unsafe { SendInput(&releases, std::mem::size_of::<INPUT>() as i32) };
-    }
+    releases.is_empty()
+        || unsafe { SendInput(&releases, std::mem::size_of::<INPUT>() as i32) } as usize
+            == releases.len()
 }
 
 fn insert_unobservable(events: &[INPUT]) -> UnitRead {
@@ -982,6 +1026,18 @@ fn chord_read_split(events: &[INPUT], keys: &[VIRTUAL_KEY]) -> Option<usize> {
         })
         .then_some(split)
 }
+fn service_own_messages() {
+    use windows::Win32::UI::WindowsAndMessaging::{PeekMessageW, MSG, PM_NOREMOVE};
+    let mut message = MSG::default();
+    let _ = unsafe { PeekMessageW(&mut message, None, 0, 0, PM_NOREMOVE) };
+}
+
+fn keyboard_state() -> Option<[u8; 256]> {
+    let mut state = [0u8; 256];
+    unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardState(&mut state) }
+        .is_ok()
+        .then_some(state)
+}
 /// The caller's thread attached to the foreground thread's input queue for
 /// the duration of one foreground input transaction; detaches on drop.
 pub(crate) struct InputQueueAttachment {
@@ -997,6 +1053,9 @@ impl InputQueueAttachment {
         if target_thread == 0 || target_thread == own_thread {
             return None;
         }
+        // Establish our queue and service our own pending sent messages before
+        // joining; PeekMessage does not retrieve the other thread's messages.
+        service_own_messages();
         unsafe { AttachThreadInput(own_thread, target_thread, true) }
             .as_bool()
             .then_some(Self {
@@ -1009,58 +1068,107 @@ impl InputQueueAttachment {
         self.target_thread == unsafe { GetWindowThreadProcessId(foreground, None) }
     }
 
-    /// Observe documented DOWN and UP states for one chord. UP is inserted
-    /// only after DOWN was observed, so a short pulse cannot disappear between
-    /// samples. Toggle parity is not a supported witness for arbitrary keys.
+    /// Observe the requested chord's DOWN and UP states on its attached reader.
+    /// UP is inserted only after DOWN was observed. An unrelated message or
+    /// another reader's state never acknowledges the inserted prefix.
     fn send_and_await_read(
         &self,
         events: &[INPUT],
         keys: Option<&[VIRTUAL_KEY]>,
+        target: ForegroundTarget,
         timeout: Duration,
-    ) -> UnitRead {
-        use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
+    ) -> Result<UnitRead> {
+        let check_reader = || -> Result<()> {
+            service_own_messages();
+            if let Err(error) = crate::human_input::check() {
+                return Err(ForegroundInputError {
+                    error: anyhow::anyhow!(error),
+                    turn: TypingTurn::Unobservable,
+                }
+                .into());
+            }
+            let foreground = unsafe { GetForegroundWindow() };
+            if !foreground_matches_target_or_owned_window(target, foreground.0 as usize as u64) {
+                return Err(ForegroundInputError {
+                    error: anyhow::anyhow!("foreground_lost: stopped before another key phase"),
+                    turn: TypingTurn::Lost,
+                }
+                .into());
+            }
+            if !self.matches_foreground(foreground) {
+                return Err(ForegroundInputError {
+                    error: anyhow::anyhow!(
+                        "input_read_unobservable: the foreground receiver changed input thread; \
+                         requested input was not replayed"
+                    ),
+                    turn: TypingTurn::Unobservable,
+                }
+                .into());
+            }
+            Ok(())
+        };
+        check_reader()?;
         let observable = keys.filter(|keys| {
             chord_read_split(events, keys).is_some()
-                && keys
-                    .iter()
-                    .all(|key| unsafe { GetKeyState(key.0 as i32) } >= 0)
+                && keyboard_state()
+                    .is_some_and(|state| keys.iter().all(|key| state[key.0 as usize] & 0x80 == 0))
         });
         let Some(keys) = observable else {
-            return insert_unobservable(events);
+            return Ok(insert_unobservable(events));
         };
         let split = keys.len();
         let deadline = Instant::now() + timeout;
         let sent = unsafe { SendInput(&events[..split], std::mem::size_of::<INPUT>() as i32) };
         if sent as usize != split {
             release_inserted_keys(events, sent as usize);
-            return UnitRead::Short(sent);
+            return Ok(UnitRead::Short(sent));
         }
-        let wait_for = |down: bool| loop {
-            if keys
-                .iter()
-                .all(|key| (unsafe { GetKeyState(key.0 as i32) } < 0) == down)
-            {
-                return true;
+        let wait_for = |down: bool| -> Result<Option<bool>> {
+            loop {
+                check_reader()?;
+                let Some(state) = keyboard_state() else {
+                    return Ok(None);
+                };
+                if keys
+                    .iter()
+                    .all(|key| (state[key.0 as usize] & 0x80 != 0) == down)
+                {
+                    return Ok(Some(true));
+                }
+                if Instant::now() >= deadline {
+                    return Ok(Some(false));
+                }
+                sleep(Duration::from_millis(1));
             }
-            if Instant::now() >= deadline {
-                return false;
-            }
-            sleep(Duration::from_millis(1));
         };
-        if !wait_for(true) {
+        let down_read = match wait_for(true) {
+            Ok(Some(false)) => {
+                release_inserted_keys(events, split);
+                return Ok(UnitRead::Stalled);
+            }
+            Ok(read) => read,
+            Err(error) => {
+                release_inserted_keys(events, split);
+                return Err(error);
+            }
+        };
+        if let Err(error) = check_reader() {
             release_inserted_keys(events, split);
-            return UnitRead::Stalled;
+            return Err(error);
         }
         let sent = unsafe { SendInput(&events[split..], std::mem::size_of::<INPUT>() as i32) };
         if sent as usize != events.len() - split {
             release_inserted_keys(events, split + sent as usize);
-            return UnitRead::Short(split as u32 + sent);
+            return Ok(UnitRead::Short(split as u32 + sent));
         }
-        if wait_for(false) {
-            UnitRead::Read
-        } else {
-            UnitRead::Stalled
+        if down_read.is_none() {
+            return Ok(UnitRead::Unobservable);
         }
+        Ok(match wait_for(false)? {
+            Some(true) => UnitRead::Read,
+            Some(false) => UnitRead::Stalled,
+            None => UnitRead::Unobservable,
+        })
     }
 }
 

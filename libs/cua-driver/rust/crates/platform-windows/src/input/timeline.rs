@@ -300,10 +300,10 @@ impl Backend for Native {
         &mut self,
         keys: &[String],
         buttons: &[Button],
-        pen: Option<(i32, i32, Pen)>,
+        _pen: Option<(i32, i32, Pen)>,
     ) -> Result<(), String> {
         let mut errors = Vec::new();
-        if let Some((x, y, p)) = pen {
+        if let Some((x, y, p)) = self.held_pen {
             if let Err(error) = self
                 .pen_event(POINTER_FLAG_UP | POINTER_FLAG_INRANGE, x, y, p)
                 .and_then(|()| self.pen_event(POINTER_FLAG_UPDATE, x, y, p))

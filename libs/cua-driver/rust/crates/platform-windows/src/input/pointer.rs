@@ -452,6 +452,15 @@ fn run_operation<R>(
                     "Exact target did not become foreground",
                 ));
             }
+            // The foreground queue changes before cross-thread activation is
+            // processed. Complete activation before testing which window covers
+            // the point. This pre-input fence does not acknowledge queued input.
+            if !super::keyboard::activation_ready(HWND(native.hwnd as *mut _)) {
+                return Err(failure(
+                    "foreground_unavailable",
+                    "Exact target activation did not complete before pointer delivery",
+                ));
+            }
         }
         let report = execute(&mut native);
         if let Some(confirmed) = native.delivered_point {

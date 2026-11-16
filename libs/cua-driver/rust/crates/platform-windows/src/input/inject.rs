@@ -1,21 +1,12 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Cua AI, Inc.
 
-//! Coordinate-routed pen/touch input for background pointer actions.
+//! Foreground guards and background pointer capability boundaries.
 //!
-//! UIA and fixed-HWND PostMessage do not support every application. Synthetic
-//! pointer input reaches the visible window at a screen point without an
-//! explicit foreground transition or z-order raise. Occluded targets refuse
-//! before injection rather than raising another window.
-//!
-//! `NoActivateGuard` suppresses click activation while injection runs. A target
-//! can still activate itself asynchronously, and legacy touch/pen promotion can
-//! move the hardware cursor. Injection success does not confirm receiver reads.
-//! These routes never race unread input with a timed foreground/cursor restore;
-//! callers must report the unobservable read and any background-posture limit.
-//!
-//! Left/right taps use a synthetic pen. Left drags use touch; right drags use
-//! a barrel-held pen. Middle-button injection is unsupported.
+//! Semantic UIA and fixed-HWND PostMessage routes remain available. Synthetic
+//! background pen/touch can self-activate the target or promote to the human's
+//! cursor, with no supported read witness permitting safe restoration. Refuse
+//! those routes before mutating the desktop or inserting any input.
 
 use anyhow::{bail, Result};
 use core::ffi::c_void;
@@ -23,39 +14,20 @@ use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
 
-use windows::Win32::Foundation::{HANDLE, HWND, POINT, RECT};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-use windows::Win32::UI::Controls::{
-    CreateSyntheticPointerDevice, DestroySyntheticPointerDevice, HSYNTHETICPOINTERDEVICE,
-    POINTER_FEEDBACK_DEFAULT, POINTER_TYPE_INFO, POINTER_TYPE_INFO_0,
-};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     keybd_event, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
 };
-use windows::Win32::UI::Input::Pointer::{
-    InjectSyntheticPointerInput, POINTER_FLAG_DOWN, POINTER_FLAG_INCONTACT, POINTER_FLAG_INRANGE,
-    POINTER_FLAG_UP, POINTER_FLAG_UPDATE, POINTER_INFO, POINTER_PEN_INFO, POINTER_TOUCH_INFO,
-};
 use windows::Win32::UI::Shell::{IVirtualDesktopManager, VirtualDesktopManager};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetAncestor, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId, IsWindow,
-    LockSetForegroundWindow, SetForegroundWindow, SetWindowLongPtrW, WindowFromPoint, GA_ROOT,
-    GWL_EXSTYLE, LSFW_LOCK, LSFW_UNLOCK, PT_PEN, PT_TOUCH, WS_EX_NOACTIVATE,
+    GetAncestor, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId,
+    LockSetForegroundWindow, SetForegroundWindow, SetWindowLongPtrW, GA_ROOT, GWL_EXSTYLE,
+    LSFW_LOCK, LSFW_UNLOCK, WS_EX_NOACTIVATE,
 };
-
-unsafe fn inject_unconfirmed_pointer(
-    device: HSYNTHETICPOINTERDEVICE,
-    events: &[POINTER_TYPE_INFO],
-) -> windows::core::Result<()> {
-    let result = unsafe { InjectSyntheticPointerInput(device, events) };
-    if result.is_ok() {
-        crate::focus_return::note_unconfirmed_input();
-    }
-    result
-}
 
 #[derive(Default)]
 struct ForegroundLockState {
@@ -125,10 +97,12 @@ pub(crate) unsafe fn force_foreground_attached(target: HWND) -> bool {
     let my_tid = GetCurrentThreadId();
     let mut pid = 0u32;
     let cur_tid = GetWindowThreadProcessId(cur, Some(&mut pid));
-    let attached = cur_tid != 0 && cur_tid != my_tid;
-    if attached {
-        let _ = AttachThreadInput(my_tid, cur_tid, true);
-    }
+    // Attaching resets key state. An explicit activation may proceed, but
+    // must not reset the receiver state of an earlier unconfirmed prefix.
+    let attached = cur_tid != 0
+        && cur_tid != my_tid
+        && !crate::focus_return::has_unconfirmed_input()
+        && AttachThreadInput(my_tid, cur_tid, true).as_bool();
     let _ = SetForegroundWindow(target);
     if attached {
         let _ = AttachThreadInput(my_tid, cur_tid, false);
@@ -145,6 +119,9 @@ pub(crate) unsafe fn force_foreground_assisted(target: HWND) -> (bool, bool) {
     }
 
     const VK_NONAME: u8 = 0xFC;
+    // keybd_event has no insertion or receiver-read receipt. Its unlock pulse
+    // cannot authorize automatic restoration or a later queue attachment.
+    crate::focus_return::note_unconfirmed_input();
     unsafe {
         keybd_event(VK_NONAME, 0, KEYBD_EVENT_FLAGS(0), 0);
         keybd_event(VK_NONAME, 0, KEYEVENTF_KEYUP, 0);
@@ -245,153 +222,16 @@ fn on_current_task_view_desktop(root: HWND) -> bool {
     }
 }
 
-/// PEN_FLAG_BARREL (winuser.h) — pen barrel button held == secondary (right)
-/// button. `penFlags` is a raw u32 in the bindings, so use the literal.
-const PEN_FLAG_BARREL: u32 = 0x00000001;
-
-// (Removed ZorderGuard.) The macOS-aligned contract forbids a `background`
-// actuation from raising/restacking the target: coordinate-routed pen/touch
-// only lands on the topmost VISIBLE window, so an occluded target is reported
-// as `background_unavailable` (see `target_visible_at_point`) and the agent
-// escalates to `delivery_mode:"foreground"` instead of the driver raising it.
-
-/// One down→up **pen** tap at screen `(sx, sy)`. When `barrel` is set the pen's
-/// barrel button is held for the contact, which the system maps to a secondary
-/// (right) click — both for `WM_POINTER`-aware apps (Chromium/WPF/UWP) and via
-/// pen→mouse promotion for legacy Win32. A fresh synthetic pen device is
-/// created and destroyed per tap (right/middle clicks are rare).
-fn pen_taps(sx: i32, sy: i32, barrel: bool, count: usize) -> Result<()> {
-    unsafe {
-        let dev = CreateSyntheticPointerDevice(PT_PEN, 1, POINTER_FEEDBACK_DEFAULT)
-            .map_err(|e| anyhow::anyhow!("CreateSyntheticPointerDevice(PEN): {e}"))?;
-        let pen_flags = if barrel { PEN_FLAG_BARREL } else { 0 };
-        let mk = |flags| POINTER_TYPE_INFO {
-            r#type: PT_PEN,
-            Anonymous: POINTER_TYPE_INFO_0 {
-                penInfo: POINTER_PEN_INFO {
-                    pointerInfo: POINTER_INFO {
-                        pointerType: PT_PEN,
-                        pointerId: 0,
-                        pointerFlags: flags,
-                        sourceDevice: HANDLE::default(),
-                        hwndTarget: HWND::default(),
-                        ptPixelLocation: POINT { x: sx, y: sy },
-                        ..Default::default()
-                    },
-                    penFlags: pen_flags,
-                    penMask: 0,
-                    pressure: 512,
-                    rotation: 0,
-                    tiltX: 0,
-                    tiltY: 0,
-                },
-            },
-        };
-        let down = mk(POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT);
-        let up = mk(POINTER_FLAG_UP);
-        // Reuse the SAME synthetic device for every tap. A double/triple click
-        // is two/three down-up cycles from one digitizer; creating a fresh
-        // device per tap (the old loop) fails the next
-        // CreateSyntheticPointerDevice in quick succession — which is exactly
-        // why background double_click on Chromium errored. See #1984.
-        let mut result: Result<()> = Ok(());
-        let n = count.max(1);
-        for i in 0..n {
-            let r1 = inject_unconfirmed_pointer(dev, &[down]);
-            sleep(Duration::from_millis(25));
-            let r2 = inject_unconfirmed_pointer(dev, &[up]);
-            if let Err(e) = r1.and(r2) {
-                result = Err(anyhow::anyhow!("inject_unconfirmed_pointer(pen): {e}"));
-                break;
-            }
-            if i + 1 < n {
-                sleep(Duration::from_millis(70));
-            }
-        }
-        DestroySyntheticPointerDevice(dev);
-        result?;
-    }
-    Ok(())
-}
-
-/// Inject a click at screen coordinates `(sx, sy)` without an explicit
-/// foreground swap or z-order raise. The visible target is held non-activatable
-/// during injection. Pointer promotion and asynchronous self-activation remain
-/// observable background-posture limits; no timer authorizes restoration.
-///
-/// - `left`  → synthetic-pen primary tap (proven path; promoted to a left click
-///   for non-pointer-aware apps, and accepted directly by Chromium/WPF/UWP).
-/// - `right` → synthetic-pen tap with the barrel button held (secondary click).
-/// - `middle`→ unsupported (no clean pointer mapping); returns `Err` so the
-///   caller can fall back to its existing routing / structured error.
-///
-/// We use the same `CreateSyntheticPointerDevice`/`InjectSyntheticPointerInput`
-/// path for both buttons — `InjectTouchInput` proved unreliable for left-clicks
-/// on Chromium content (returned errors), whereas synthetic-pen injection lands
-/// reliably and routes by coordinate with no foreground dependency.
+/// Refuse legacy background synthetic clicks before any desktop mutation.
+/// Use a semantic UIA route, a supported fixed-HWND post, or explicit foreground input.
 pub fn inject_click_screen(
-    target: u64,
-    sx: i32,
-    sy: i32,
-    count: usize,
-    button: &str,
+    _target: u64,
+    _sx: i32,
+    _sy: i32,
+    _count: usize,
+    _button: &str,
 ) -> Result<()> {
-    if target == 0 {
-        bail!("inject_click_screen: null target window");
-    }
-    let target_h = HWND(target as *mut _);
-    unsafe {
-        if !IsWindow(target_h).as_bool() {
-            bail!("inject_click_screen: invalid or stale target HWND");
-        }
-    }
-    if let Some(msg) = crate::input::post_message_blocked_by_uipi(target) {
-        // Higher-integrity target: injection into its queue is blocked too.
-        bail!(msg);
-    }
-
-    let barrel = match button {
-        "left" => false,
-        "right" => true,
-        other => bail!("background injection supports left/right buttons only (got {other:?})"),
-    };
-
-    // macOS-aligned contract: a `background` actuation NEVER fronts or raises
-    // (mirrors macOS CGEvent-to-pid, which never touches z-order/focus). Synthetic
-    // pen/touch is coordinate-routed to the TOP-MOST VISIBLE window at the point,
-    // so if the target is occluded there we'd silently click the occluder. We do
-    // NOT raise to win the hit-test (that's the foreground rung's job, which the
-    // agent opts into). Instead bail — the caller surfaces `background_unavailable`
-    // and the agent escalates to `delivery_mode:"foreground"`.
-    if unsafe { !target_visible_at_point(target_h, sx, sy) } {
-        bail!(
-            "background coordinate injection cannot reach this target at ({sx},{sy}) \
-             — it is occluded by another window (raising it would break the \
-             no-foreground contract). Escalate to delivery_mode:\"foreground\"."
-        );
-    }
-    // Make the target non-activatable without raising it. Injection confirms
-    // insertion only; do not reassert another foreground while the pen release
-    // may still be unread. Callers must report the unobservable read outcome.
-    let _noact = NoActivateGuard::arm(target_h);
-    // One synthetic device does all `count` taps (single/double/triple click).
-    pen_taps(sx, sy, barrel, count)
-}
-
-/// True when `target`'s top-level root is the window actually visible at screen
-/// point `(sx, sy)` — i.e. coordinate-routed pen/touch there would land on it
-/// rather than an occluder. Used to enforce the macOS-aligned rule that a
-/// `background` actuation never raises: when this is false the injection bails
-/// and the tool returns `background_unavailable` (escalate to foreground).
-/// The foreground SendInput drag uses the same check before its button-down.
-pub(crate) unsafe fn target_visible_at_point(target: HWND, sx: i32, sy: i32) -> bool {
-    let top = WindowFromPoint(POINT { x: sx, y: sy });
-    if top.0.is_null() {
-        return false;
-    }
-    let top_root = GetAncestor(top, GA_ROOT);
-    let target_root = GetAncestor(target, GA_ROOT);
-    !top_root.0.is_null() && top_root == target_root
+    bail!(super::delivery::BACKGROUND_POINTER_UNAVAILABLE)
 }
 
 /// True when screen point `(x, y)` lies within `hwnd`'s window rectangle.
@@ -639,220 +479,18 @@ mod task_view_desktop_tests {
     }
 }
 
-/// One pen press-drag-release from screen `(sx0,sy0)` to `(sx1,sy1)`, with
-/// `steps` interpolated in-contact UPDATE points between the down and the up.
-/// A single synthetic pen device is created for the whole stroke. The barrel
-/// button is held when `barrel` is set (secondary-button drag).
-fn pen_drag(sx0: i32, sy0: i32, sx1: i32, sy1: i32, steps: usize, barrel: bool) -> Result<()> {
-    unsafe {
-        let dev = CreateSyntheticPointerDevice(PT_PEN, 1, POINTER_FEEDBACK_DEFAULT)
-            .map_err(|e| anyhow::anyhow!("CreateSyntheticPointerDevice(PEN): {e}"))?;
-        let pen_flags = if barrel { PEN_FLAG_BARREL } else { 0 };
-        let mk = |flags, x: i32, y: i32| POINTER_TYPE_INFO {
-            r#type: PT_PEN,
-            Anonymous: POINTER_TYPE_INFO_0 {
-                penInfo: POINTER_PEN_INFO {
-                    pointerInfo: POINTER_INFO {
-                        pointerType: PT_PEN,
-                        pointerId: 0,
-                        pointerFlags: flags,
-                        sourceDevice: HANDLE::default(),
-                        hwndTarget: HWND::default(),
-                        ptPixelLocation: POINT { x, y },
-                        ..Default::default()
-                    },
-                    penFlags: pen_flags,
-                    penMask: 0,
-                    pressure: 512,
-                    rotation: 0,
-                    tiltX: 0,
-                    tiltY: 0,
-                },
-            },
-        };
-        // Press at the start.
-        let down = mk(
-            POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
-            sx0,
-            sy0,
-        );
-        let mut res = inject_unconfirmed_pointer(dev, &[down]);
-        // Interpolated in-contact moves so frameworks that gate drag-tracking on
-        // motion (rather than a single down→up) see a continuous stroke.
-        let steps = steps.max(1);
-        for i in 1..=steps {
-            sleep(Duration::from_millis(8));
-            let t = i as f64 / steps as f64;
-            let x = sx0 + ((sx1 - sx0) as f64 * t).round() as i32;
-            let y = sy0 + ((sy1 - sy0) as f64 * t).round() as i32;
-            let mv = mk(
-                POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
-                x,
-                y,
-            );
-            res = res.and(inject_unconfirmed_pointer(dev, &[mv]));
-        }
-        // Release at the end.
-        sleep(Duration::from_millis(8));
-        let up = mk(POINTER_FLAG_UP, sx1, sy1);
-        res = res.and(inject_unconfirmed_pointer(dev, &[up]));
-        DestroySyntheticPointerDevice(dev);
-        res.map_err(|e| anyhow::anyhow!("inject_unconfirmed_pointer(pen drag): {e}"))?;
-    }
-    Ok(())
-}
-
-/// A persistent synthetic touch digitizer, kept for the process lifetime so
-/// pointer-aware targets can bind to one device. Legacy mouse promotion can
-/// still move the hardware cursor; a standing device is not a read witness.
-static TOUCH_DEV: Mutex<isize> = Mutex::new(0);
-
-/// One touch press-drag-release via the persistent [`TOUCH_DEV`], serialized
-/// across sessions. Pointer-aware targets consume touch directly; legacy
-/// promotion may move the hardware cursor, which stays with the target.
-fn touch_drag(sx0: i32, sy0: i32, sx1: i32, sy1: i32, steps: usize) -> Result<()> {
-    let mut dev_guard = TOUCH_DEV.lock().unwrap_or_else(|e| e.into_inner());
-    unsafe {
-        // Non-pointer-aware windows may promote touch to mouse and move the
-        // system cursor. There is no external read witness for that promoted
-        // stream, so leave its final posture instead of racing a queued UP with
-        // a cursor warp. Callers must report this background-route limitation.
-        let dev = if *dev_guard != 0 {
-            HSYNTHETICPOINTERDEVICE(*dev_guard as *mut c_void)
-        } else {
-            let d = CreateSyntheticPointerDevice(PT_TOUCH, 1, POINTER_FEEDBACK_DEFAULT)
-                .map_err(|e| anyhow::anyhow!("CreateSyntheticPointerDevice(TOUCH): {e}"))?;
-            *dev_guard = d.0 as isize;
-            d
-        };
-        let mk = |flags, x: i32, y: i32| POINTER_TYPE_INFO {
-            r#type: PT_TOUCH,
-            Anonymous: POINTER_TYPE_INFO_0 {
-                touchInfo: POINTER_TOUCH_INFO {
-                    pointerInfo: POINTER_INFO {
-                        pointerType: PT_TOUCH,
-                        pointerId: 0,
-                        pointerFlags: flags,
-                        sourceDevice: HANDLE::default(),
-                        hwndTarget: HWND::default(),
-                        ptPixelLocation: POINT { x, y },
-                        ..Default::default()
-                    },
-                    touchFlags: 0,
-                    touchMask: 0,
-                    rcContact: RECT {
-                        left: x - 2,
-                        top: y - 2,
-                        right: x + 2,
-                        bottom: y + 2,
-                    },
-                    rcContactRaw: RECT {
-                        left: x - 2,
-                        top: y - 2,
-                        right: x + 2,
-                        bottom: y + 2,
-                    },
-                    orientation: 0,
-                    pressure: 512,
-                },
-            },
-        };
-        // Keep the existing bounded contact cadence. This timing is not a
-        // receiver-read acknowledgment and does not permit pointer restoration.
-        let down = mk(
-            POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
-            sx0,
-            sy0,
-        );
-        let mut res = inject_unconfirmed_pointer(dev, &[down]);
-        let steps = steps.clamp(1, 3);
-        for i in 1..=steps {
-            sleep(Duration::from_millis(2));
-            let t = i as f64 / steps as f64;
-            let x = sx0 + ((sx1 - sx0) as f64 * t).round() as i32;
-            let y = sy0 + ((sy1 - sy0) as f64 * t).round() as i32;
-            let mv = mk(
-                POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
-                x,
-                y,
-            );
-            res = res.and(inject_unconfirmed_pointer(dev, &[mv]));
-        }
-        sleep(Duration::from_millis(2));
-        let up = mk(POINTER_FLAG_UP, sx1, sy1);
-        res = res.and(inject_unconfirmed_pointer(dev, &[up]));
-        // Keep any promoted pointer with the target. Injection is not evidence
-        // that the receiver has retrieved the contact or promoted mouse UP.
-        // device intentionally NOT destroyed — see TOUCH_DEV.
-        res.map_err(|e| anyhow::anyhow!("inject_unconfirmed_pointer(touch drag): {e}"))?;
-    }
-    Ok(())
-}
-
-/// Inject a press-drag-release at screen coordinates without an explicit
-/// foreground swap or z-order raise. Left uses touch and right uses a barrel-held
-/// pen. The target is held non-activatable during insertion. Legacy promotion
-/// can move the cursor, and asynchronous activation can outlive the call;
-/// callers must report those limits without a timed restoration.
+/// Refuse legacy background synthetic drags before any desktop mutation.
+/// Foreground timeline pen input is a separate, explicit delivery route.
 pub fn inject_drag_screen(
-    target: u64,
-    sx0: i32,
-    sy0: i32,
-    sx1: i32,
-    sy1: i32,
-    steps: usize,
-    button: &str,
+    _target: u64,
+    _sx0: i32,
+    _sy0: i32,
+    _sx1: i32,
+    _sy1: i32,
+    _steps: usize,
+    _button: &str,
 ) -> Result<()> {
-    if target == 0 {
-        bail!("inject_drag_screen: null target window");
-    }
-    let target_h = HWND(target as *mut _);
-    unsafe {
-        if !IsWindow(target_h).as_bool() {
-            bail!("inject_drag_screen: invalid or stale target HWND");
-        }
-    }
-    if let Some(msg) = crate::input::post_message_blocked_by_uipi(target) {
-        bail!(msg);
-    }
-    let barrel = match button {
-        "left" => false,
-        "right" => true,
-        other => bail!("background injection supports left/right buttons only (got {other:?})"),
-    };
-    // macOS-aligned contract: a `background` drag NEVER fronts/raises. WPF's
-    // Wisp stylus stack only PROCESSES injected input while the window is the
-    // ACTIVE foreground (verified by RE) — and background is not allowed to
-    // force that — so a WPF drag is simply undeliverable in background. Bail so
-    // the tool returns background_unavailable (escalate to foreground).
-    if crate::input::delivery::is_wpf_target_window(target) {
-        bail!(
-            "background drag is not deliverable to a WPF target — its Wisp stylus \
-             stack only processes injected input while the window is foreground, \
-             which background must not force. Escalate to delivery_mode:\"foreground\"."
-        );
-    }
-    // Coordinate-routed touch/pen lands on the topmost VISIBLE window at the
-    // start point. If the target is occluded there, bail rather than raise it.
-    if unsafe { !target_visible_at_point(target_h, sx0, sy0) } {
-        bail!(
-            "background drag cannot reach this target at the start point ({sx0},{sy0}) \
-             — it is occluded by another window. Escalate to delivery_mode:\"foreground\"."
-        );
-    }
-    // Left drag → touch contact (coordinate-routed). Right/barrel drag has no
-    // touch equivalent, so fall back to a pen (rare).
-    let stroke = |()| {
-        if barrel {
-            pen_drag(sx0, sy0, sx1, sy1, steps, true)
-        } else {
-            touch_drag(sx0, sy0, sx1, sy1, steps)
-        }
-    };
-    // Prevent click activation without raising the target. Do not reassert a
-    // different foreground while injected or promoted input may still be unread.
-    let _noact = NoActivateGuard::arm(target_h);
-    stroke(())
+    bail!(super::delivery::BACKGROUND_POINTER_UNAVAILABLE)
 }
 
 #[cfg(test)]

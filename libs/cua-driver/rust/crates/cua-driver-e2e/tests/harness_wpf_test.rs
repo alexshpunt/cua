@@ -1858,11 +1858,11 @@ fn wait_pointer_receiver(
 #[test]
 #[ignore]
 fn harness_wpf_pointer_release_precedes_focus_return() {
+    let _coordinates = pointer_completion_oracle::PhysicalCoordinates::enter();
     for tool in ["held_path", "hold_keys", "input_timeline"] {
-        // Pointer input has no supported whole-stream read witness, even on the
-        // fast receiver. A fresh keyboard control checks that confirmed input can
-        // return focus; an unrelated successor must not clear pointer uncertainty.
-        for (busy_ms, pump_keyboard) in [(0, false), (1200, false), (1200, true), (3000, false)] {
+        // Start with a busy receiver so the old implementation fails on its
+        // unread release, not only on the unobservable fast-row return policy.
+        for (busy_ms, pump_keyboard) in [(1200, false), (0, false), (1200, true), (3000, false)] {
             let mut case = native_foreground_case(
                 "wpf",
                 &format!("{tool}_focus_return_{busy_ms}ms_keyboard_{pump_keyboard}"),
@@ -1905,29 +1905,6 @@ fn harness_wpf_pointer_release_precedes_focus_return() {
                     "receivers need independent UI threads"
                 );
                 focus_harness(&mut driver, human_pid, human_wid);
-                if busy_ms == 0 {
-                    let key = driver.call(
-                        "press_key",
-                        serde_json::json!({
-                            "pid": target_pid, "window_id": target_wid,
-                            "key": "f1", "delivery_mode": "foreground"
-                        }),
-                    );
-                    assert!(!key.is_error(), "fresh keyboard control: {}", key.text());
-                    assert_eq!(
-                        unsafe { GetForegroundWindow() }.0 as usize as u64,
-                        human_wid,
-                        "a supported key-read witness must still permit focus return: {}",
-                        key.text()
-                    );
-                    let read =
-                        wait_pointer_receiver(&target_path, 0, |state| {
-                            state["events"].as_array().unwrap().iter().any(|event| {
-                                event["message"] == 0x0101 && event["virtual_key"] == 0x70
-                            })
-                        });
-                    assert_eq!(read["down"], 0, "keyboard control sent no pointer input");
-                }
                 let human = snapshot(&mut driver, human_pid, human_wid);
                 let human_index = ax::element_index_by_id(human.tree_text(), "pointer-canvas")
                     .expect("human pointer canvas");
@@ -2036,7 +2013,7 @@ fn harness_wpf_pointer_release_precedes_focus_return() {
                     response.text()
                 );
                 let target_state = wait_pointer_receiver(&target_path, finished_ms, |state| {
-                    busy_ms == 0 || state["busy_finished"] == true
+                    state["up"] == 1 && (busy_ms == 0 || state["busy_finished"] == true)
                 });
                 let human_state = wait_pointer_receiver(&human_path, finished_ms, |_| true);
                 assert_eq!(target_state["down"], 1, "target state: {target_state}");
