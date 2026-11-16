@@ -186,6 +186,20 @@ not handed to the previously active window. Pointer actions also use PX where
 the tool contract requires coordinates. Current `set_value` rows declare
 background delivery and attach desktop-side-effect oracles.
 
+`harness_wpf_pointer_release_precedes_focus_return` owns queued pointer release
+across focus return for held paths, key holds with pointer work, and input timelines.
+Its opt-in WPF pointer receivers run in separate processes with overlapping canvases.
+The application journals DOWN, held moves, UP, activation and capture state to
+independent JSON files. Each tool has four rows: fast, 1,200 ms blocked,
+1,200 ms selectively pumping only keyboard messages, and 3,000 ms blocked.
+The first three require focus to return only after the target handles UP.
+The 3,000 ms row starts without a prior input action and exceeds the bounded
+read wait: foreground must stay with the target and the public action effect
+must be `partial`, without retrying input. Its next explicit action must return
+the original human window after the receiver recovers. Every row requires one
+target DOWN/UP per action and no extra input in the human receiver. The ordinary
+WPF harness layout is unchanged.
+
 ## Harness E2E: macOS
 
 | Harness | Source test | Coverage |

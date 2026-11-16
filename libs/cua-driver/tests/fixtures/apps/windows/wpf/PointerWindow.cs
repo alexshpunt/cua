@@ -1,0 +1,213 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text.Json;
+using System.Threading;
+using System.Windows;
+using System.Windows.Automation;
+using System.Windows.Automation.Peers;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Interop;
+using System.Windows.Media;
+using System.Windows.Threading;
+
+namespace CuaTestHarness.Wpf;
+
+/// <summary>
+/// An opt-in pointer receiver with an observable, bounded UI-thread workload.
+/// Its timer publishes application state independently from Driver receipts.
+/// Ordinary fixture launches do not create this window.
+/// </summary>
+public sealed class PointerWindow : Window
+{
+    public const string StateEnv = "CUA_WPF_POINTER_STATE";
+    public const string RoleEnv = "CUA_WPF_POINTER_ROLE";
+    public const string BusyEnv = "CUA_WPF_POINTER_BUSY_MS";
+    public const string PumpEnv = "CUA_WPF_POINTER_PUMP_KEYS";
+    private const int MaximumEvents = 10000;
+    private readonly string _statePath;
+    private readonly string _role;
+    private readonly PointerSurface _surface = new();
+    private readonly List<object> _events = new();
+    private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
+    private int _busyMs, _down, _up, _heldMoves, _droppedEvents;
+    private bool _ready, _busyStarted, _busyFinished;
+    private readonly bool _pumpKeyboard;
+    private Point? _pressedAt;
+    private ulong _windowId;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMessage
+    {
+        public IntPtr Window;
+        public uint Message;
+        public UIntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public NativePoint Point;
+        public uint Reserved;
+    }
+    [DllImport("user32.dll")]
+    private static extern bool PeekMessage(out NativeMessage message, IntPtr window, uint first, uint last, uint remove);
+    [DllImport("user32.dll")]
+    private static extern bool TranslateMessage(ref NativeMessage message);
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref NativeMessage message);
+
+    public PointerWindow(string statePath, string role, int busyMs, bool pumpKeyboard)
+    {
+        if (role is not ("human" or "target")) throw new ArgumentException("Pointer role must be human or target.");
+        if (busyMs is < 0 or > 5000) throw new ArgumentOutOfRangeException(nameof(busyMs));
+        _statePath = Path.GetFullPath(statePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(_statePath)!);
+        _role = role;
+        _busyMs = busyMs;
+        _pumpKeyboard = pumpKeyboard;
+        Title = $"CuaTestHarness WPF Pointer {role}";
+        Left = 80;
+        Top = 80;
+        Width = 780;
+        Height = 520;
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        var root = new StackPanel { Margin = new Thickness(16) };
+        root.Children.Add(_surface);
+        root.Children.Add(new TextBlock { Text = "Work on the first held pointer move (milliseconds)", Margin = new Thickness(0, 12, 0, 4) });
+        var workload = new TextBox { Text = busyMs.ToString(), Width = 120, HorizontalAlignment = HorizontalAlignment.Left };
+        AutomationProperties.SetAutomationId(workload, "pointer-work-ms");
+        AutomationProperties.SetName(workload, "Pointer move work in milliseconds");
+        workload.TextChanged += (_, _) =>
+        {
+            if (int.TryParse(workload.Text, out var value) && value is >= 0 and <= 5000) _busyMs = value;
+        };
+        root.Children.Add(workload);
+        Content = root;
+        _surface.MouseLeftButtonDown += (_, e) =>
+        {
+            _down++;
+            _pressedAt = e.GetPosition(_surface);
+            Record("down", e);
+            // This plain canvas does not capture the mouse. The gesture stays inside
+            // it; moving the cursor or another window above it before UP is read
+            // can therefore divert the unread release, as in a composition canvas.
+        };
+        _surface.MouseMove += (_, e) =>
+        {
+            if (e.LeftButton != MouseButtonState.Pressed) return;
+            _heldMoves++;
+            Record("held_move", e);
+            var point = e.GetPosition(_surface);
+            if (!_busyStarted && _busyMs > 0 && _pressedAt is Point start && (point - start).Length > 1)
+            {
+                _busyStarted = true;
+                Record("busy_start", e);
+                if (_pumpKeyboard)
+                {
+                    var end = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + _busyMs;
+                    while (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < end)
+                    {
+                        // A legitimate filtered pump can retrieve the keyboard sentinel
+                        // while leaving an earlier mouse UP unread.
+                        while (PeekMessage(out var message, IntPtr.Zero, 0x0100, 0x0109, 1))
+                        {
+                            Record("keyboard", message: message.Message, virtualKey: message.WParam.ToUInt64());
+                            TranslateMessage(ref message);
+                            DispatchMessage(ref message);
+                        }
+                        Thread.Sleep(10);
+                    }
+                }
+                else Thread.Sleep(_busyMs);
+                _busyFinished = true;
+                Record("busy_end", e);
+            }
+        };
+        _surface.MouseLeftButtonUp += (_, e) => { _up++; Record("up", e); };
+        _surface.GotMouseCapture += (_, e) => Record("capture_gained", e);
+        _surface.LostMouseCapture += (_, e) => Record("capture_lost", e);
+        Activated += (_, _) => Record("activated");
+        Deactivated += (_, _) => Record("deactivated");
+        Loaded += (_, _) =>
+        {
+            _windowId = unchecked((ulong)new WindowInteropHelper(this).Handle.ToInt64());
+            _ready = true;
+            Record("ready");
+            Publish();
+            _timer.Start();
+        };
+        _timer.Tick += (_, _) => Publish();
+        Closed += (_, _) => { _timer.Stop(); Record("closed"); Publish(); };
+    }
+
+    private void Record(string kind, MouseEventArgs? mouse = null, uint? message = null, ulong? virtualKey = null)
+    {
+        if (_events.Count == MaximumEvents) { _droppedEvents++; return; }
+        Point? position = mouse?.GetPosition(_surface);
+        _events.Add(new
+        {
+            kind,
+            message,
+            virtual_key = virtualKey,
+            utc_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            x = position?.X,
+            y = position?.Y,
+            left_button = mouse?.LeftButton == MouseButtonState.Pressed,
+            captured = Mouse.Captured == _surface,
+            foreground_window = unchecked((ulong)GetForegroundWindow().ToInt64()),
+        });
+    }
+
+    private void Publish()
+    {
+        var state = new
+        {
+            schema = "cua.wpf_pointer_receiver.v1",
+            role = _role,
+            ready = _ready,
+            pid = Environment.ProcessId,
+            window_id = _windowId,
+            published_utc_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            busy_ms = _busyMs,
+            pump_keyboard = _pumpKeyboard,
+            busy_started = _busyStarted,
+            busy_finished = _busyFinished,
+            down = _down,
+            up = _up,
+            held_moves = _heldMoves,
+            dropped_events = _droppedEvents,
+            events = _events,
+        };
+        var temporary = $"{_statePath}.{Environment.ProcessId}.tmp";
+        File.WriteAllText(temporary, JsonSerializer.Serialize(state));
+        File.Move(temporary, _statePath, true);
+    }
+
+    private sealed class PointerSurface : Canvas
+    {
+        public PointerSurface()
+        {
+            Width = 600;
+            Height = 300;
+            HorizontalAlignment = HorizontalAlignment.Left;
+            Background = Brushes.White;
+            AutomationProperties.SetAutomationId(this, "pointer-canvas");
+            AutomationProperties.SetName(this, "Pointer canvas");
+        }
+
+        protected override AutomationPeer OnCreateAutomationPeer() => new SurfacePeer(this);
+
+        private sealed class SurfacePeer : FrameworkElementAutomationPeer
+        {
+            public SurfacePeer(PointerSurface owner) : base(owner) { }
+            protected override AutomationControlType GetAutomationControlTypeCore() => AutomationControlType.Group;
+            protected override string GetClassNameCore() => "PointerReceiver";
+            protected override bool IsControlElementCore() => true;
+        }
+    }
+}
