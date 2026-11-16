@@ -1,10 +1,18 @@
 # What this fork changes
 
-This fork integrates the full upstream [trycua/cua](https://github.com/trycua/cua) 0.38 history while retaining the Windows Cua Driver extensions used by [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use). Upstream code retains its original authorship and license.
+This fork integrates the full upstream [trycua/cua](https://github.com/trycua/cua) history through Cua Driver 0.52.0 (upstream `main` at `ca6a6434`) while retaining the Windows Cua Driver extensions used by [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use). Upstream code retains its original authorship and license.
 
-The current source of Pi Agent Computer Use selects Windows Cua Driver 0.38.0 built from commit `9cf5b9f70d7da0127ac01384ac575afd354ef23e`, attached to the [`pi-runtime-0.38.0-9cf5b9f7` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.38.0-9cf5b9f7). These unsigned AMD64 binaries were built on GitHub's Windows runner with a static CRT. The package pins and checks the SHA-256 of every file before starting the driver. This does not establish UIAccess deployment, elevated/UWP support or physical display coverage.
+The current source of Pi Agent Computer Use selects Windows Cua Driver 0.52.0 built from commit `3cf8455bfbd5b5b20231b4f24de7b6b6ad2c0322`, attached to the [`pi-runtime-0.52.0-3cf8455b` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.52.0-3cf8455b). These unsigned AMD64 binaries were built on GitHub's Windows runner with a static CRT. The package pins and checks the SHA-256 of every file before starting the driver. This does not establish UIAccess deployment, elevated/UWP support or physical display coverage.
 
-This build includes the typed SDK, canonical-success validation, harness and consumer-lock source fixes merged after `505d090e`. The earlier `505d090e` release remains immutable; those fixes are delivered through the new build, not retroactively added to its binaries. Shared SDK methods use canonical contract platform metadata: Windows-only extensions are absent from Linux/macOS runtime discovery. The native macOS desktop matrix was not rerun for this follow-up.
+Where upstream and the fork change the same behavior, this build keeps both:
+
+- The desktop lane is upstream's `DesktopLease`: a call waits behind a worker that outlived its call for at most 12 s, then refuses with `input_busy`. The fork's native workers keep the lease until they stop.
+- Typed input is batched as upstream does, with the fork's layout keystrokes and stop checks. When Windows has not confirmed that the target read inserted input, the target stays in front (upstream #6779), and focus return leaves it there too.
+- `move_pointer` and `scroll_at` keep their own closed receipts instead of upstream's `ActionResult`; each reports an explicit `effect`.
+- The HTTP transport requires the `Mcp-Session-Id` that `initialize` returns.
+- The Windows tools follow upstream's one-module-per-tool layout; `hold_keys` and `input_timeline` have their own modules.
+
+The native macOS desktop matrix was not rerun for this build.
 
 ## Input
 
