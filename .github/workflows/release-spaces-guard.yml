@@ -17,6 +17,8 @@ permissions:
 
 jobs:
   guard:
+    # Upstream maintenance; it only adds noise in the fork.
+    if: github.repository == 'trycua/cua'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

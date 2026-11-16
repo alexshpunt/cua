@@ -28,6 +28,8 @@ concurrency:
 
 jobs:
   alert:
+    # Upstream maintenance; it only adds noise in the fork.
+    if: github.repository == 'trycua/cua'
     name: label and comment on conflicting PRs
     runs-on: ubuntu-latest
     timeout-minutes: 10
