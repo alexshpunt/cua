@@ -22,6 +22,8 @@ concurrency:
 
 jobs:
   report:
+    # Upstream maintenance; it only adds noise in the fork.
+    if: github.repository == 'trycua/cua'
     name: weekly CI speed issue
     runs-on: ubuntu-latest
     timeout-minutes: 20
