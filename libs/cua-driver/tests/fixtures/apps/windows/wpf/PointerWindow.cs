@@ -114,6 +114,7 @@ public sealed class PointerWindow : Window
                 WorkIfTriggered("held_move", e);
         };
         _surface.MouseLeftButtonUp += (_, e) => { _up++; Record("up", e); };
+        PreviewMouseWheel += (_, e) => Record("preview_wheel", e, message: 0x020A, wheelDelta: e.Delta);
         _surface.MouseWheel += (_, e) =>
         {
             _wheel++;
@@ -146,6 +147,8 @@ public sealed class PointerWindow : Window
     {
         if (message is >= 0x0100 and <= 0x0109)
             Record("keyboard", message: (uint)message, virtualKey: unchecked((ulong)wParam.ToInt64()));
+        if (message == 0x020A)
+            Record("native_wheel", message: (uint)message, wheelDelta: unchecked((short)(wParam.ToInt64() >> 16)));
         return IntPtr.Zero;
     }
 
