@@ -9,7 +9,7 @@ use cua_driver_core::{
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use super::drag::path_refusal;
+use super::drag::{complete_held_input, path_refusal};
 use super::impl_::{bitmap_to_screen, resolve_cursor_key, screenshot_scale, ToolState};
 
 // ── hold_keys ─────────────────────────────────────────────────────────────────
@@ -91,9 +91,10 @@ impl Tool for HoldKeysTool {
         })
         .await;
         match result {
-            Ok((hold, Ok(report))) => {
-                report.into_tool_result(&hold, started.elapsed().as_millis() as u64)
-            }
+            Ok((hold, Ok((report, completion)))) => complete_held_input(
+                report.into_tool_result(&hold, started.elapsed().as_millis() as u64),
+                completion,
+            ),
             Ok((_, Err(error))) => {
                 path_refusal(error.split(':').next().unwrap_or("input_failed"), &error)
             }
@@ -108,7 +109,10 @@ impl Tool for HoldKeysTool {
                     RequestedDelivery::Foreground,
                 );
                 record.actual_delivery = Some(ActualDelivery::Unknown);
-                ToolResult::error(format!("Key-hold worker failed; prefix and release unconfirmed. Do not replay: {error}")).with_action_record(record)
+                complete_held_input(
+                    ToolResult::error(format!("Key-hold worker failed; prefix and release unconfirmed. Do not replay: {error}")).with_action_record(record),
+                    crate::typing_turn::TypingTurn::Undrained,
+                )
             }
         }
     }

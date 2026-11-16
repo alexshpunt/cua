@@ -583,7 +583,8 @@ impl Tool for FocusReturnGuard {
     }
 
     async fn invoke(&self, args: Value) -> ToolResult {
-        let lease = match foreground_input_window(&self.inner.def().name, &args) {
+        let window = foreground_input_window(&self.inner.def().name, &args);
+        let lease = match window {
             Some(window_id) if crate::focus_return::enabled() => {
                 tokio::task::spawn_blocking(move || crate::focus_return::begin(window_id))
                     .await
@@ -592,17 +593,28 @@ impl Tool for FocusReturnGuard {
             }
             _ => None,
         };
+        let before = crate::focus_return::unconfirmed_generation();
         let mut result = self.inner.invoke(args).await;
-        // Input the target has not read yet would reach whichever window is in front, so a
-        // call that kept the target in front for that reason keeps it there (#4477).
-        let unread_input_kept = result
-            .structured_content
-            .as_ref()
-            .and_then(|structured| structured.get("foreground_restored"))
-            .and_then(Value::as_bool)
-            == Some(false);
-        if let Some(lease) = lease.filter(|_| !unread_input_kept) {
-            if let Ok(Some(line)) = tokio::task::spawn_blocking(move || lease.finish()).await {
+        let inserted_unconfirmed = crate::focus_return::unconfirmed_generation() != before;
+        // Missing read knowledge is not permission to return unread global input
+        // to the human. Even a kept lease must finish and remember the human.
+        let allow_restore = !inserted_unconfirmed && confirmed_input_read(&result);
+        if !allow_restore && (window.is_some() || has_input_completion(&result)) {
+            crate::focus_return::note_unconfirmed_input();
+        }
+        if (window.is_some() || inserted_unconfirmed)
+            && !allow_restore
+            && !has_input_completion(&result)
+        {
+            result = crate::typing_turn::completion_result(
+                result,
+                crate::typing_turn::TypingTurn::Unobservable,
+            );
+        }
+        if let Some(lease) = lease {
+            if let Ok(Some(line)) =
+                tokio::task::spawn_blocking(move || lease.finish(allow_restore)).await
+            {
                 result
                     .content
                     .push(cua_driver_core::protocol::Content::text(line));
@@ -610,6 +622,31 @@ impl Tool for FocusReturnGuard {
         }
         result
     }
+}
+
+fn has_input_completion(result: &ToolResult) -> bool {
+    result
+        .structured_content
+        .as_ref()
+        .and_then(|structured| structured.get("input_read"))
+        .is_some()
+}
+
+fn confirmed_input_read(result: &ToolResult) -> bool {
+    let Some(structured) = result.structured_content.as_ref() else {
+        return false;
+    };
+    if structured
+        .get("foreground_restored")
+        .and_then(Value::as_bool)
+        == Some(false)
+    {
+        return false;
+    }
+    matches!(
+        structured.get("input_read").and_then(Value::as_str),
+        Some("not_sent" | "read")
+    )
 }
 
 /// Schema of the `uia_only` argument shared by `click` and `scroll`.
@@ -1182,7 +1219,7 @@ pub(crate) fn focus_cached_element_for_foreground(
     hwnd: u64,
     element_index: usize,
     click_point: Option<(i32, i32)>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<crate::typing_turn::TypingTurn> {
     // `fg_bypass` is a background-only shield: for Chromium it disables the
     // top-level HWND while UIA runs so the provider cannot self-activate. A
     // disabled foreground window immediately loses foreground on Windows,
@@ -1196,14 +1233,28 @@ pub(crate) fn focus_cached_element_for_foreground(
     if set_focus.is_ok()
         && wait_for_cached_element_keyboard_focus(admitted, std::time::Duration::from_millis(350))
     {
-        return Ok(());
+        return Ok(crate::typing_turn::TypingTurn::NotSent);
     }
 
     if let Some((x, y)) = click_point {
-        crate::input::send_click_synthesized_active_mods(hwnd, x, y, 1, "left", &[])?;
+        crate::input::send_click_synthesized_active_mods(hwnd, x, y, 1, "left", &[]).map_err(
+            |error| crate::typing_turn::ForegroundNotRestored {
+                error,
+                turn: crate::typing_turn::TypingTurn::Unobservable,
+            },
+        )?;
         if wait_for_cached_element_keyboard_focus(admitted, std::time::Duration::from_millis(500)) {
-            return Ok(());
+            return Ok(crate::typing_turn::TypingTurn::Unobservable);
         }
+        return Err(crate::typing_turn::ForegroundNotRestored {
+            error: anyhow::anyhow!(
+                "foreground_unavailable: focus click was inserted, but Windows did not confirm \
+                 keyboard focus on exact UIA element [{element_index}] in HWND 0x{hwnd:x}; \
+                 no keyboard input was sent"
+            ),
+            turn: crate::typing_turn::TypingTurn::Unobservable,
+        }
+        .into());
     }
 
     let detail = set_focus
@@ -1225,49 +1276,29 @@ pub(crate) fn focus_cached_element_for_foreground(
 // `GetWindowStateTool` — that's where the actual screenshot machinery
 // lives now.
 
-/// Chromium/Electron windows silently drop `PostMessage` mouse events — their
-/// input thread only honors SendInput-origin events (#1623). `ClickTool`
-/// auto-routes Chromium targets through SendInput, but `DoubleClickTool` /
-/// `RightClickTool` did not, so element/pixel gestures on Electron apps
-/// (Obsidian, VS Code, Slack, …) reached `post_click_screen` and no-op'd
-/// silently. This mirrors that short-circuit for those tools (#1984): when
-/// `hwnd` is a Chromium window, deliver `count` clicks of `button` at screen
-/// `(sx, sy)` via SendInput with async foreground restore and return
-/// `Some(result)`. Returns `None` for non-Chromium targets so the caller
-/// proceeds to its normal PostMessage path.
+/// Refuse legacy non-activating global input on Chromium. A fixed wait cannot
+/// safely restore foreground or z-order while the target may still have unread
+/// pointer input. Other targets keep their fixed-HWND PostMessage route.
 pub(crate) async fn chromium_click_short_circuit(
     hwnd: u64,
-    sx: i32,
-    sy: i32,
-    count: usize,
-    button: &str,
-    pid: u32,
-    gesture: &str,
+    _sx: i32,
+    _sy: i32,
+    _count: usize,
+    _button: &str,
+    _pid: u32,
+    _gesture: &str,
 ) -> Option<ToolResult> {
     let is_chromium =
         tokio::task::spawn_blocking(move || crate::input::is_chromium_target_window(hwnd))
             .await
             .unwrap_or(false);
-    if !is_chromium {
-        return None;
-    }
-    // Capture the pre-click foreground so the poller can restore it even if
-    // Chromium re-activates itself from a renderer-side handler (same pattern
-    // and rationale as the ClickTool Chromium branch).
-    let prev_fg_addr =
-        unsafe { windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize };
-    let button_owned = button.to_string();
-    let send_result = tokio::task::spawn_blocking(move || {
-        crate::input::send_click_synthesized(hwnd, sx, sy, count, &button_owned)
-    })
-    .await;
-    tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
-    Some(match send_result {
-        Ok(Ok(())) => ToolResult::text(format!(
-            "✅ Sent {gesture} via SendInput to pid {pid} at screen ({sx},{sy}) (Chromium target)."
-        )),
-        Ok(Err(e)) => ToolResult::error(e.to_string()),
-        Err(e) => ToolResult::error(format!("Task error: {e}")),
+    is_chromium.then(|| {
+        crate::input::delivery::background_unavailable_error_with_cause(
+            hwnd,
+            crate::input::delivery::EventKind::MouseClick,
+            "non-activating global pointer input has no supported receiver-read witness; \
+             no input was sent",
+        )
     })
 }
 

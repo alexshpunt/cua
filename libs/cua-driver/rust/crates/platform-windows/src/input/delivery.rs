@@ -16,11 +16,11 @@
 //!   the default because cua-driver's value proposition is that input never
 //!   steals foreground — surfacing an honest error beats silently fronting.
 //!
-//! - `foreground` — SendInput with a brief `SetForegroundWindow(target)`
-//!   swap, restoring the prior foreground after the events flush. Brief
-//!   flash unless the target was already foreground. The agent's explicit
-//!   last resort, and the only rung that reaches Chromium-content / GTK-
-//!   button / VCL-accelerator targets reliably.
+//! - `foreground` — explicit activation and system-queue input. Restore only
+//!   with supported receiver-read evidence for every inserted event and no
+//!   earlier unconfirmed prefix. Otherwise retain target posture and report
+//!   uncertainty without replay. Motion, wheel, pen and opaque key batches
+//!   have no supported whole-stream witness.
 //!
 //! The legacy Windows-only `auto` mode (silent SendInput fallback) was
 //! removed in the macOS-alignment pass: it could front without the caller
@@ -82,9 +82,10 @@ pub fn delivery_mode_schema() -> Value {
          raised. For targets whose input stack silently drops posted events \
          (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) \
          the tool returns a structured background_unavailable error rather than \
-         fronting. 'foreground' is the explicit escalation: a brief \
-         SetForegroundWindow swap + SendInput, restoring the prior foreground \
-         afterward. \
+         fronting. 'foreground' explicitly activates the target and inserts input. \
+         Restoration requires supported receiver-read evidence for all inserted events, \
+         including earlier unconfirmed input. Otherwise the target keeps foreground \
+         and pointer posture, with uncertainty reported and no replay. \
          IMPORTANT: 'background' is not a hint to weigh — it is the mandatory \
          first attempt. Do NOT pass 'foreground' preemptively because a target \
          'looks like' GTK/Chromium/Electron; the DRIVER decides when background \
@@ -305,7 +306,8 @@ pub fn background_unavailable_error(
         "Background delivery is not available for target window class \
          '{class}' on this event kind ({}). Retry this action with \
          delivery_mode:\"foreground\"; Cua Driver will activate the target for \
-         the action and restore the previous foreground afterward.",
+         the action. Restoration requires supported receiver-read evidence; \
+         otherwise the target retains foreground and pointer posture.",
         kind.name()
     );
     // Windows analog of the macOS escalation signal: this surface drops
@@ -345,7 +347,8 @@ pub fn background_unavailable_error_with_cause(
         "Background delivery is not available for target window class \
          '{class}' on this event kind ({}): {cause}. Retry this action with \
          delivery_mode:\"foreground\"; Cua Driver will activate the target for \
-         the action and restore the previous foreground afterward.",
+         the action. Restoration requires supported receiver-read evidence; \
+         otherwise the target retains foreground and pointer posture.",
         kind.name()
     );
     cua_driver_core::delivery::background_unavailable_result(

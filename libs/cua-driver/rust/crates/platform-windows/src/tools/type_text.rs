@@ -119,13 +119,16 @@ impl Tool for TypeTextTool {
             })
             .await
             {
-                Ok(Ok(())) => ToolResult::text(format!(
-                    "Typed {text_len} character(s) into the foreground application (scope:desktop)."
-                ))
-                .with_structured(json!({
-                    "scope": "desktop", "path": "SendInput", "characters": text_len,
-                    "effect": "unverifiable"
-                })),
+                Ok(Ok(turn)) => crate::typing_turn::completion_result(
+                    ToolResult::text(format!(
+                        "Typed {text_len} character(s) into the foreground application (scope:desktop)."
+                    ))
+                    .with_structured(json!({
+                        "scope": "desktop", "path": "SendInput", "characters": text_len,
+                        "effect": "unverifiable"
+                    })),
+                    turn,
+                ),
                 Ok(Err(error)) => crate::typing_turn::foreground_input_error(error),
                 Err(error) => ToolResult::error(format!("desktop type task failed: {error}")),
             };
@@ -337,6 +340,7 @@ impl Tool for TypeTextTool {
                         hwnd,
                         &text_fg,
                         fg_delay_ms,
+                        crate::typing_turn::TypingTurn::NotSent,
                         || {
                             if let Some((idx, point)) = focus_target {
                                 focus_cached_element_for_foreground(
@@ -344,26 +348,28 @@ impl Tool for TypeTextTool {
                                     hwnd,
                                     idx,
                                     Some(point),
-                                )?;
+                                )
+                            } else {
+                                Ok(crate::typing_turn::TypingTurn::NotSent)
                             }
-                            Ok(())
                         },
                     )
                 }
             })
             .await;
             return match r {
-                Ok(Ok(())) => ToolResult::text(format!(
-                    "✅ Typed {text_len} char(s) on pid {raw_pid} via SendInput (delivery_mode:foreground)."
-                ))
-                .with_structured(serde_json::json!({
-                    "path": "key_events",
-                    "characters": text_len,
-                    // Foreground SendInput delivered, but with no read-back the
-                    // driver can't confirm the effect → unverifiable. No escalation:
-                    // foreground IS the escalated rung (mirrors macOS PATH_KEY_EVENTS_FG).
-                    "effect": "unverifiable",
-                })),
+                Ok(Ok(turn)) => crate::typing_turn::completion_result(
+                    ToolResult::text(format!(
+                        "✅ Typed {text_len} char(s) on pid {raw_pid} via SendInput (delivery_mode:foreground)."
+                    ))
+                    .with_structured(serde_json::json!({
+                        "path": "key_events",
+                        "characters": text_len,
+                        // Receiver-read evidence is not proof of the app effect.
+                        "effect": "unverifiable",
+                    })),
+                    turn,
+                ),
                 Ok(Err(e)) => crate::typing_turn::foreground_input_error(e),
                 Err(e)     => ToolResult::error(format!("Task error: {e}")),
             };

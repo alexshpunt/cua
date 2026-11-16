@@ -319,6 +319,7 @@ impl Backend for NativePointer {
                 "SendInput inserted 0/1 movement events",
             ));
         }
+        crate::focus_return::note_unconfirmed_input();
         self.arrival_pending = true;
         Ok(())
     }
@@ -390,6 +391,7 @@ impl cua_driver_core::scroll::Backend for NativePointer {
                 "SendInput inserted 0/1 wheel events",
             ));
         }
+        crate::focus_return::note_unconfirmed_input();
         Ok(())
     }
 }

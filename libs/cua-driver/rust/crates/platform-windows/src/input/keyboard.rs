@@ -521,8 +521,10 @@ pub fn post_key(hwnd: u64, key: &str, modifiers: &[&str]) -> Result<()> {
 /// restricted when not driven by user input), and UIPI drops input sent to a
 /// higher-integrity target. Both are detected and reported as errors; no
 /// input is sent to an unconfirmed window.
-pub fn send_key_synthesized(hwnd: u64, key: &str, modifiers: &[&str]) -> Result<()> {
-    send_key_synthesized_after_focus(hwnd, key, modifiers, || Ok(()))
+pub(crate) fn send_key_synthesized(hwnd: u64, key: &str, modifiers: &[&str]) -> Result<TypingTurn> {
+    send_key_synthesized_after_focus(hwnd, key, modifiers, TypingTurn::NotSent, || {
+        Ok(TypingTurn::NotSent)
+    })
 }
 
 /// Foreground key delivery with a target-specific focus step performed only
@@ -530,14 +532,15 @@ pub fn send_key_synthesized(hwnd: u64, key: &str, modifiers: &[&str]) -> Result<
 ///
 /// Element-addressed callers use this to avoid the activation/focus race:
 /// UIA `SetFocus` before `SetForegroundWindow` can be overwritten by the
-/// ensuing activation. The callback may establish and verify child focus; no
-/// input is inserted when either foreground or child-focus confirmation fails.
-pub fn send_key_synthesized_after_focus(
+/// ensuing activation. The callback establishes and verifies child focus. No
+/// keyboard input is inserted when confirmation fails; any focus click is tracked.
+pub(crate) fn send_key_synthesized_after_focus(
     hwnd: u64,
     key: &str,
     modifiers: &[&str],
-    focus: impl FnOnce() -> Result<()>,
-) -> Result<()> {
+    prior: TypingTurn,
+    focus: impl FnOnce() -> Result<TypingTurn>,
+) -> Result<TypingTurn> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(hwnd as *mut _);
     if target.0.is_null() {
@@ -553,7 +556,9 @@ pub fn send_key_synthesized_after_focus(
     }
     let (key_vk, key_scan) = match resolve_press(target, key, modifiers)? {
         Press::Key { vk, scan } => (vk, scan),
-        Press::Text(ch) => return send_text_synthesized_after_focus(hwnd, &ch.to_string(), focus),
+        Press::Text(ch) => {
+            return send_text_synthesized_after_focus(hwnd, &ch.to_string(), prior, focus)
+        }
     };
     let mod_vks: Vec<VIRTUAL_KEY> = modifiers.iter().filter_map(|m| modifier_vk(m)).collect();
 
@@ -570,23 +575,38 @@ pub fn send_key_synthesized_after_focus(
         events.push(key_input(*mvk, true));
     }
 
-    with_confirmed_foreground(target, "key delivery", focus, |_, _, turn| unsafe {
-        let sent = SendInput(&events, std::mem::size_of::<INPUT>() as i32);
-        if sent > 0 {
-            *turn = TypingTurn::Undrained;
-        }
-        if sent as usize != events.len() {
-            bail!(
-                "SendInput inserted only {sent} of {} events. Windows blocked the \
-                 rest: the target runs at a higher integrity level than the \
-                 Driver (UIPI), or the input desktop is locked or showing a \
-                 secure prompt. To drive an elevated app, run the Driver \
-                 elevated (the default autostart daemon is).",
-                events.len()
-            );
-        }
-        Ok(())
-    })
+    let mut keys = mod_vks;
+    keys.push(key_vk);
+    let observable = chord_read_split(&events, &keys).is_some();
+    with_confirmed_foreground(
+        target,
+        "key delivery",
+        prior,
+        observable,
+        focus,
+        |attachment, _, turn| {
+            let read = match attachment {
+                Some(attachment) => {
+                    attachment.send_and_await_read(&events, Some(&keys), Duration::from_secs(2))
+                }
+                None => insert_unobservable(&events),
+            };
+            *turn = turn.combine(read.turn());
+            match read {
+                UnitRead::Read | UnitRead::Unobservable => Ok(()),
+                UnitRead::Short(sent) => bail!(
+                    "SendInput inserted only {sent} of {} events. No input was retried; inspect \
+                     the target before repeating the action.",
+                    events.len()
+                ),
+                UnitRead::Stalled => bail!(
+                    "input_delivery_stalled: Windows did not confirm reading the requested key \
+                     pulses within 2000 ms. They were inserted and may still appear in the target. \
+                     Nothing was retried."
+                ),
+            }
+        },
+    )
 }
 
 /// Foreground-delivery text entry: the `delivery_mode:"foreground"` rung for
@@ -600,31 +620,32 @@ pub fn send_key_synthesized_after_focus(
 /// `send_key_synthesized` returns, so the caller gets an honest error instead
 /// of a false success. Required for VCL/LibreOffice document grids and other
 /// targets where PostMessage WM_CHAR is silently dropped.
-/// Attached delivery sends batches of UTF-16 units and keys, each read-confirmed.
-pub fn send_text_synthesized(hwnd: u64, text: &str) -> Result<()> {
-    send_text_synthesized_after_focus(hwnd, text, || Ok(()))
+/// Receiver-read completion is returned separately from successful insertion.
+pub(crate) fn send_text_synthesized(hwnd: u64, text: &str) -> Result<TypingTurn> {
+    send_text_synthesized_after_focus(hwnd, text, TypingTurn::NotSent, || Ok(TypingTurn::NotSent))
 }
 
 /// Foreground Unicode delivery with child focus established after exact
 /// top-level activation and before `SendInput`.
-pub fn send_text_synthesized_after_focus(
+pub(crate) fn send_text_synthesized_after_focus(
     hwnd: u64,
     text: &str,
-    focus: impl FnOnce() -> Result<()>,
-) -> Result<()> {
-    send_text_synthesized_paced_after_focus(hwnd, text, type_pacing::DEFAULT_DELAY_MS, focus)
+    prior: TypingTurn,
+    focus: impl FnOnce() -> Result<TypingTurn>,
+) -> Result<TypingTurn> {
+    send_text_synthesized_paced_after_focus(hwnd, text, type_pacing::DEFAULT_DELAY_MS, prior, focus)
 }
 
 /// [`send_text_synthesized_after_focus`] with the `delay_ms` contract: 0 sends
-/// batches of up to [`type_pacing::BATCH_UNITS`] units per SendInput (each
-/// batch read-confirmed through the drain sentinel), a positive value sends
+/// batches of up to [`type_pacing::BATCH_UNITS`] units per SendInput; a positive value sends
 /// one unit at a time and pauses `delay_ms` after each.
-pub fn send_text_synthesized_paced_after_focus(
+pub(crate) fn send_text_synthesized_paced_after_focus(
     hwnd: u64,
     text: &str,
     delay_ms: u64,
-    focus: impl FnOnce() -> Result<()>,
-) -> Result<()> {
+    prior: TypingTurn,
+    focus: impl FnOnce() -> Result<TypingTurn>,
+) -> Result<TypingTurn> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(hwnd as *mut _);
     if target.0.is_null() {
@@ -656,91 +677,83 @@ pub fn send_text_synthesized_paced_after_focus(
         == 1;
     let units = keyed(text_units(text), layout, caps_lock);
     if units.is_empty() {
-        return Ok(());
+        return Ok(prior);
     }
     let n = units.len();
+    let ranges = if type_pacing::is_batched(delay_ms) {
+        type_pacing::plan_chunks(&unit_kinds(&units), type_pacing::BATCH_UNITS)
+    } else {
+        (0..n).map(|i| i..i + 1).collect()
+    };
+    let observable = ranges.iter().all(|range| {
+        let batch = &units[range.clone()];
+        batch_pulse_keys(batch)
+            .is_some_and(|keys| chord_read_split(&batch_events(batch), &keys).is_some())
+    });
 
-    with_confirmed_foreground(target, "text delivery", focus, |att, ft, turn| unsafe {
-        if let Some(att) = att {
-            let ranges = if type_pacing::is_batched(delay_ms) {
-                type_pacing::plan_chunks(&unit_kinds(&units), type_pacing::BATCH_UNITS)
-            } else {
-                (0..n).map(|i| i..i + 1).collect()
-            };
+    with_confirmed_foreground(
+        target,
+        "text delivery",
+        prior,
+        observable,
+        focus,
+        |attachment, ft, turn| {
             for range in ranges {
                 let k = range.start;
-                let batch = &units[range.clone()];
                 if let Err(stop) = crate::human_input::check() {
                     bail!(
-                        "{stop} Stopped after {k} of {n} text units were read; the remaining {} \
+                        "{stop} Stopped after inserting {k} of {n} text units; the remaining {} \
                          were not sent.",
                         n - k
                     );
                 }
-                let actual = GetForegroundWindow();
+                let actual = unsafe { GetForegroundWindow() };
                 if !foreground_matches_target_or_owned_window(ft, actual.0 as usize as u64) {
                     *turn = TypingTurn::Lost;
                     bail!(
-                        "foreground_lost: foreground moved to HWND {h:?} after {k} of {n} \
-                         text units were read; the remaining {remaining} were not sent. \
-                         Nothing was retried; inspect the target before sending the rest.",
+                        "foreground_lost: foreground moved to HWND {h:?} after inserting {k} of \
+                         {n} text units; the remaining {remaining} were not sent. Nothing was \
+                         retried; inspect the target before sending the rest.",
                         h = actual.0,
                         remaining = n - k,
                     );
                 }
+                let batch = &units[range.clone()];
                 let events = batch_events(batch);
-                let read = att.send_and_await_read(&events, Duration::from_secs(2));
-                *turn = match read {
-                    UnitRead::Read => TypingTurn::Drained,
-                    UnitRead::Short(0) => *turn,
-                    UnitRead::Short(_) | UnitRead::Stalled => TypingTurn::Undrained,
+                let keys = batch_pulse_keys(batch);
+                let read = match attachment {
+                    Some(attachment) => attachment.send_and_await_read(
+                        &events,
+                        keys.as_deref(),
+                        Duration::from_secs(2),
+                    ),
+                    None => insert_unobservable(&events),
                 };
+                *turn = turn.combine(read.turn());
                 let first = k + 1;
                 let last = range.end;
                 match read {
-                    UnitRead::Read => {}
+                    UnitRead::Read | UnitRead::Unobservable => {}
                     UnitRead::Short(sent) => bail!(
                         "SendInput inserted only {sent} of {total} key events for text units \
-                         {first}..{last} of {n} ({k} earlier units were read). Windows blocked \
-                         the rest: the target runs at a higher integrity level than the Driver \
-                         (UIPI), or the input desktop is locked or showing a secure prompt. To \
-                         drive an elevated app, run the Driver elevated (the default autostart \
-                         daemon is).",
+                         {first}..{last} of {n}; {k} earlier units were inserted. No input was \
+                         retried; inspect the target before sending the rest.",
                         total = events.len()
                     ),
                     UnitRead::Stalled => bail!(
-                        "text_delivery_stalled: the target did not read text units {first}..{last} \
-                         of {n} within 2000 ms; {k} earlier units were read. Those units were \
-                         inserted and may still appear in the target. Nothing was retried; \
-                         inspect the target before sending the rest.",
+                        "text_delivery_stalled: Windows did not confirm reading the requested \
+                         key pulses for text units {first}..{last} of {n} within 2000 ms; {k} \
+                         earlier units were inserted. Those units may still appear in the target. \
+                         Nothing was retried; inspect the target before sending the rest."
                     ),
                 }
                 if delay_ms > 0 && last < n {
                     sleep(Duration::from_millis(delay_ms));
                 }
             }
-            return Ok(());
-        }
-        let mut events = Vec::with_capacity(n * 2);
-        for unit in &units {
-            events.extend(unit_keys(unit));
-        }
-        let sent = SendInput(&events, std::mem::size_of::<INPUT>() as i32);
-        if sent > 0 {
-            *turn = TypingTurn::Undrained;
-        }
-        if sent as usize != events.len() {
-            bail!(
-                "SendInput inserted only {sent} of {} key events. Windows blocked \
-                 the rest: the target runs at a higher integrity level than the \
-                 Driver (UIPI), or the input desktop is locked or showing a \
-                 secure prompt. To drive an elevated app, run the Driver \
-                 elevated (the default autostart daemon is).",
-                events.len()
-            );
-        }
-        Ok(())
-    })
+            Ok(())
+        },
+    )
 }
 
 fn wait_for_exact_foreground(target: HWND, timeout: Duration) -> bool {
@@ -774,12 +787,19 @@ fn embedded_foreground(target: HWND) -> Option<HWND> {
 /// fixed settle delay. The body records in `turn` what it inserted; the prior
 /// foreground is restored only as [`restores_previous`] allows, and a failed
 /// turn that keeps it returns [`ForegroundNotRestored`].
-fn with_confirmed_foreground<T>(
+fn with_confirmed_foreground(
     target: HWND,
     operation: &str,
-    focus: impl FnOnce() -> Result<()>,
-    body: impl FnOnce(Option<&InputQueueAttachment>, ForegroundTarget, &mut TypingTurn) -> Result<T>,
-) -> Result<T> {
+    prior: TypingTurn,
+    observable: bool,
+    focus: impl FnOnce() -> Result<TypingTurn>,
+    body: impl FnOnce(Option<&InputQueueAttachment>, ForegroundTarget, &mut TypingTurn) -> Result<()>,
+) -> Result<TypingTurn> {
+    let prior = if crate::focus_return::has_unconfirmed_input() {
+        prior.combine(TypingTurn::Unobservable)
+    } else {
+        prior
+    };
     let previous = unsafe { GetForegroundWindow() };
     let embedded = embedded_foreground(target).is_some();
     if !embedded {
@@ -787,45 +807,42 @@ fn with_confirmed_foreground<T>(
     }
     if !embedded && !wait_for_exact_foreground(target, Duration::from_millis(500)) {
         let actual = unsafe { GetForegroundWindow() };
-        if !previous.0.is_null() && previous != target {
+        if !previous.0.is_null() && previous != target && restores_previous(prior) {
             let _ = unsafe { SetForegroundWindow(previous) };
         }
         bail!(
             "foreground_unavailable: Windows did not confirm exact target HWND {:?} for {operation} \
-             within 500 ms (actual foreground HWND {:?}). Windows refused the foreground \
-             change, usually because another window holds the foreground lock; no input \
-             was sent. Retry, or use background delivery where the target accepts it.",
+             within 500 ms (actual foreground HWND {:?}); no requested input was sent.",
             target.0,
             actual.0
         );
     }
-
     let Some(foreground_target) = crate::win32::capture_foreground_target(target.0 as usize as u64)
     else {
-        if !previous.0.is_null() && previous != target {
+        if !previous.0.is_null() && previous != target && restores_previous(prior) {
             let _ = unsafe { SetForegroundWindow(previous) };
         }
         bail!(
             "foreground_unavailable: exact target HWND {:?} disappeared before {operation}; \
-             no input was sent",
+             no requested input was sent",
             target.0
         );
     };
 
-    let mut attachment: Option<InputQueueAttachment> = None;
-    let mut turn = TypingTurn::NotSent;
-    let mut result = (|| {
-        focus()?;
+    // A focus callback reports whether it inserted global input. Attach only
+    // after a no-input focus step; never reset an earlier pointer prefix's state.
+    let mut attachment = None;
+    let mut turn = prior;
+    let result = (|| {
+        turn = turn.combine(focus()?);
         let deadline = Instant::now() + Duration::from_millis(250);
         let actual = loop {
             let actual = unsafe { GetForegroundWindow() };
             if foreground_matches_target_or_owned_window(
                 foreground_target,
                 actual.0 as usize as u64,
-            ) {
-                break actual;
-            }
-            if Instant::now() >= deadline {
+            ) || Instant::now() >= deadline
+            {
                 break actual;
             }
             sleep(Duration::from_millis(10));
@@ -833,75 +850,147 @@ fn with_confirmed_foreground<T>(
         if !foreground_matches_target_or_owned_window(foreground_target, actual.0 as usize as u64) {
             bail!(
                 "foreground_unavailable: exact target HWND {:?}, a verified same-process \
-                 owned window or a window embedded in the target was not foreground while \
-                 preparing {operation} \
-                 (actual foreground HWND {:?}); no input was sent",
+                 owned window or embedded window was not foreground while preparing \
+                 {operation} (actual foreground HWND {:?}); no keyboard input was sent",
                 target.0,
                 actual.0
             );
         }
-        // Attach before inserting anything: attaching resets the shared key
-        // state, which must not race with modifiers the body is about to send.
-        attachment = InputQueueAttachment::attach(actual);
-        body(attachment.as_ref(), foreground_target, &mut turn)
+        if observable && restores_previous(turn) && !crate::focus_return::has_unconfirmed_input() {
+            attachment = InputQueueAttachment::attach(actual);
+        }
+        let reader = attachment
+            .as_ref()
+            .filter(|attachment| attachment.matches_foreground(actual));
+        body(reader, foreground_target, &mut turn)
     })();
-
-    // Keep the target foreground until its thread has read every inserted
-    // event; restoring earlier hands the unread tail to another window (#4477).
-    // Paced text already saw each unit read, so it skips the final drain.
-    if result.is_ok() && turn != TypingTurn::Drained {
-        turn = match attachment.as_ref() {
-            Some(attachment) if attachment.wait_for_drain(Duration::from_secs(2)) => {
-                TypingTurn::Drained
-            }
-            Some(_) => {
-                result = Err(anyhow::anyhow!(
-                    "input_delivery_stalled: Windows did not confirm that the target read the \
-                     {operation} input within 2000 ms. It was inserted and may still appear in \
-                     the target. Nothing was retried; inspect the target before repeating it."
-                ));
-                TypingTurn::Undrained
-            }
-            None => {
-                sleep(Duration::from_millis(40));
-                TypingTurn::Settled
-            }
-        };
+    if let Err(error) = &result {
+        if let Some(kept) = error.downcast_ref::<ForegroundNotRestored>() {
+            turn = turn.combine(kept.turn);
+        }
+    }
+    let actual = unsafe { GetForegroundWindow() };
+    if !foreground_matches_target_or_owned_window(foreground_target, actual.0 as usize as u64) {
+        turn = turn.combine(TypingTurn::Lost);
     }
     drop(attachment);
     if !restores_previous(turn) {
-        // Marked even when the target was already in front: a caller that
-        // fronted it (browser setup) must not restore its own prior window.
-        return result.map_err(|error| ForegroundNotRestored { error, turn }.into());
+        crate::focus_return::note_unconfirmed_input();
+        return result
+            .map(|()| turn)
+            .map_err(|error| ForegroundNotRestored { error, turn }.into());
     }
-    // Under a focus return lease, the tool layer hands the foreground to the human's window
-    // instead, and keeps it with the target while a menu or popup the keys opened is still open.
-    if !previous.0.is_null() && previous != target && !crate::focus_return::active() {
+    // The outer lease returns the human's remembered window, not necessarily
+    // the window that happened to be foreground before this call.
+    if !previous.0.is_null()
+        && previous != target
+        && !crate::focus_return::active()
+        && !crate::focus_return::has_unconfirmed_input()
+    {
         let _ = unsafe { SetForegroundWindow(previous) };
     }
-    result
+    result.map(|()| turn)
 }
 
-/// Unassigned virtual key used as a harmless input-drain sentinel (the same
-/// "mask key" convention AutoHotkey uses): applications do not bind it and it
-/// produces no character.
-const DRAIN_SENTINEL_VK: VIRTUAL_KEY = VIRTUAL_KEY(0xE8);
-
+#[derive(Clone, Copy)]
 enum UnitRead {
     Read,
+    Unobservable,
     Short(u32),
     Stalled,
 }
 
+impl UnitRead {
+    fn turn(self) -> TypingTurn {
+        match self {
+            Self::Read => TypingTurn::Drained,
+            Self::Unobservable => TypingTurn::Unobservable,
+            Self::Short(0) => TypingTurn::NotSent,
+            Self::Short(_) | Self::Stalled => TypingTurn::Undrained,
+        }
+    }
+}
+
+/// A short insertion releases only keys whose DOWN was actually inserted.
+fn release_inserted_keys(events: &[INPUT], inserted: usize) {
+    let mut held: Vec<KEYBDINPUT> = Vec::new();
+    for event in events.iter().take(inserted) {
+        let key = unsafe { event.Anonymous.ki };
+        let same = |held: &KEYBDINPUT| held.wVk == key.wVk && held.wScan == key.wScan;
+        if key.dwFlags.0 & KEYEVENTF_KEYUP.0 == 0 {
+            held.push(key);
+        } else if let Some(index) = held.iter().rposition(same) {
+            held.remove(index);
+        }
+    }
+    let releases: Vec<INPUT> = held
+        .into_iter()
+        .rev()
+        .map(|mut key| {
+            key.dwFlags |= KEYEVENTF_KEYUP;
+            INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 { ki: key },
+            }
+        })
+        .collect();
+    if !releases.is_empty() {
+        let _ = unsafe { SendInput(&releases, std::mem::size_of::<INPUT>() as i32) };
+    }
+}
+
+fn insert_unobservable(events: &[INPUT]) -> UnitRead {
+    let sent = unsafe { SendInput(events, std::mem::size_of::<INPUT>() as i32) };
+    if sent as usize != events.len() {
+        release_inserted_keys(events, sent as usize);
+        UnitRead::Short(sent)
+    } else {
+        UnitRead::Unobservable
+    }
+}
+
+/// Read evidence is limited to one isolated DOWN/UP pulse per distinct key.
+/// Repeated keys and Unicode packets have no distinct per-unit state identity
+/// in a single insertion. Neither case may authorize foreground restoration.
+fn unique_pulse_keys(keys: &[VIRTUAL_KEY]) -> bool {
+    keys.iter()
+        .enumerate()
+        .all(|(index, key)| key.0 != 0 && !keys[..index].contains(key))
+}
+
+/// A bounded chord has distinct keys, all DOWNs first and their matching UPs
+/// in reverse order. Other streams keep their original insertion and remain
+/// unobservable rather than being reordered to manufacture a witness.
+fn chord_read_split(events: &[INPUT], keys: &[VIRTUAL_KEY]) -> Option<usize> {
+    if keys.is_empty() || !unique_pulse_keys(keys) || events.len() != keys.len() * 2 {
+        return None;
+    }
+    let split = keys.len();
+    let mut paired = events[..split].iter().zip(events[split..].iter().rev());
+    paired
+        .all(|(down, up)| {
+            if down.r#type != INPUT_KEYBOARD || up.r#type != INPUT_KEYBOARD {
+                return false;
+            }
+            let down = unsafe { down.Anonymous.ki };
+            let up = unsafe { up.Anonymous.ki };
+            down.dwFlags.0 & (KEYEVENTF_KEYUP.0 | KEYEVENTF_UNICODE.0) == 0
+                && up.dwFlags.0 & KEYEVENTF_KEYUP.0 != 0
+                && down.wVk == up.wVk
+                && down.wScan == up.wScan
+                && (up.dwFlags.0 & !KEYEVENTF_KEYUP.0) == down.dwFlags.0
+        })
+        .then_some(split)
+}
 /// The caller's thread attached to the foreground thread's input queue for
 /// the duration of one foreground input transaction; detaches on drop.
-struct InputQueueAttachment {
+pub(crate) struct InputQueueAttachment {
     own_thread: u32,
     target_thread: u32,
 }
 
 impl InputQueueAttachment {
-    fn attach(foreground: HWND) -> Option<Self> {
+    pub(crate) fn attach(foreground: HWND) -> Option<Self> {
         use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
         let target_thread = unsafe { GetWindowThreadProcessId(foreground, None) };
         let own_thread = unsafe { GetCurrentThreadId() };
@@ -916,55 +1005,61 @@ impl InputQueueAttachment {
             })
     }
 
-    /// Block until the foreground thread has retrieved all input inserted so
-    /// far, bounded by `timeout`. A sentinel key press is appended behind the
-    /// caller's events; while attached, `GetKeyState` reflects the shared
-    /// queue's synchronous key state, whose toggle bit flips only when the
-    /// target thread reads the sentinel key-down.
-    fn wait_for_drain(&self, timeout: Duration) -> bool {
+    fn matches_foreground(&self, foreground: HWND) -> bool {
+        self.target_thread == unsafe { GetWindowThreadProcessId(foreground, None) }
+    }
+
+    /// Observe documented DOWN and UP states for one chord. UP is inserted
+    /// only after DOWN was observed, so a short pulse cannot disappear between
+    /// samples. Toggle parity is not a supported witness for arbitrary keys.
+    fn send_and_await_read(
+        &self,
+        events: &[INPUT],
+        keys: Option<&[VIRTUAL_KEY]>,
+        timeout: Duration,
+    ) -> UnitRead {
         use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
-        let toggled = || unsafe { GetKeyState(DRAIN_SENTINEL_VK.0 as i32) } & 1;
-        let before = toggled();
-        let sentinel = [sentinel_key_input(false), sentinel_key_input(true)];
-        let sent = unsafe { SendInput(&sentinel, std::mem::size_of::<INPUT>() as i32) };
-        if sent as usize != sentinel.len() {
-            sleep(Duration::from_millis(40));
-            return false;
-        }
+        let observable = keys.filter(|keys| {
+            chord_read_split(events, keys).is_some()
+                && keys
+                    .iter()
+                    .all(|key| unsafe { GetKeyState(key.0 as i32) } >= 0)
+        });
+        let Some(keys) = observable else {
+            return insert_unobservable(events);
+        };
+        let split = keys.len();
         let deadline = Instant::now() + timeout;
-        loop {
-            if toggled() != before {
+        let sent = unsafe { SendInput(&events[..split], std::mem::size_of::<INPUT>() as i32) };
+        if sent as usize != split {
+            release_inserted_keys(events, sent as usize);
+            return UnitRead::Short(sent);
+        }
+        let wait_for = |down: bool| loop {
+            if keys
+                .iter()
+                .all(|key| (unsafe { GetKeyState(key.0 as i32) } < 0) == down)
+            {
                 return true;
             }
             if Instant::now() >= deadline {
-                tracing::warn!(
-                    "foreground input drain: target thread did not consume the sentinel within {} ms",
-                    timeout.as_millis()
-                );
                 return false;
             }
-            sleep(Duration::from_millis(5));
+            sleep(Duration::from_millis(1));
+        };
+        if !wait_for(true) {
+            release_inserted_keys(events, split);
+            return UnitRead::Stalled;
         }
-    }
-
-    /// Insert `events`, then yield until the sentinel key-up is read or `timeout`.
-    fn send_and_await_read(&self, events: &[INPUT], timeout: Duration) -> UnitRead {
-        use windows::Win32::UI::Input::KeyboardAndMouse::GetKeyState;
-        let before = unsafe { GetKeyState(DRAIN_SENTINEL_VK.0 as i32) } & 1;
-        let sent = unsafe { SendInput(events, std::mem::size_of::<INPUT>() as i32) };
-        if (sent as usize) < events.len() {
-            return UnitRead::Short(sent);
+        let sent = unsafe { SendInput(&events[split..], std::mem::size_of::<INPUT>() as i32) };
+        if sent as usize != events.len() - split {
+            release_inserted_keys(events, split + sent as usize);
+            return UnitRead::Short(split as u32 + sent);
         }
-        let deadline = Instant::now() + timeout;
-        loop {
-            let state = unsafe { GetKeyState(DRAIN_SENTINEL_VK.0 as i32) };
-            if (state & 1) != before && state >= 0 {
-                return UnitRead::Read;
-            }
-            if Instant::now() >= deadline {
-                return UnitRead::Stalled;
-            }
-            std::thread::yield_now();
+        if wait_for(false) {
+            UnitRead::Read
+        } else {
+            UnitRead::Stalled
         }
     }
 }
@@ -973,25 +1068,6 @@ impl Drop for InputQueueAttachment {
     fn drop(&mut self) {
         use windows::Win32::System::Threading::AttachThreadInput;
         let _ = unsafe { AttachThreadInput(self.own_thread, self.target_thread, false) };
-    }
-}
-
-fn sentinel_key_input(up: bool) -> INPUT {
-    INPUT {
-        r#type: INPUT_KEYBOARD,
-        Anonymous: INPUT_0 {
-            ki: KEYBDINPUT {
-                wVk: DRAIN_SENTINEL_VK,
-                wScan: 0,
-                dwFlags: if up {
-                    KEYEVENTF_KEYUP
-                } else {
-                    KEYBD_EVENT_FLAGS(0)
-                },
-                time: 0,
-                dwExtraInfo: 0,
-            },
-        },
     }
 }
 
@@ -1095,20 +1171,38 @@ fn unit_keys(unit: &TextUnit) -> Vec<INPUT> {
     }
 }
 
-/// The unit's key events followed by the drain sentinel, inserted by one SendInput.
+/// The unit's requested key events, with no appended helper input.
 #[cfg(test)]
 fn unit_events(unit: &TextUnit) -> Vec<INPUT> {
     batch_events(std::slice::from_ref(unit))
 }
 
-/// One batch's key events followed by one drain sentinel, for a single SendInput.
+/// The distinct requested pulse identities of a batch.
+fn batch_pulse_keys(units: &[TextUnit]) -> Option<Vec<VIRTUAL_KEY>> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{VK_RETURN, VK_SHIFT, VK_TAB};
+    let mut keys = Vec::new();
+    for unit in units {
+        match unit {
+            TextUnit::Packet(_) => return None,
+            TextUnit::Return => keys.push(VK_RETURN),
+            TextUnit::Tab => keys.push(VK_TAB),
+            TextUnit::Key { vk, shift } => {
+                if *shift {
+                    keys.push(VK_SHIFT);
+                }
+                keys.push(*vk);
+            }
+        }
+    }
+    unique_pulse_keys(&keys).then_some(keys)
+}
+
+/// One batch's requested key events, preserving their order.
 fn batch_events(units: &[TextUnit]) -> Vec<INPUT> {
-    let mut events = Vec::with_capacity(units.len() * 4 + 2);
+    let mut events = Vec::with_capacity(units.len() * 4);
     for unit in units {
         events.extend(unit_keys(unit));
     }
-    events.push(sentinel_key_input(false));
-    events.push(sentinel_key_input(true));
     events
 }
 
@@ -1343,6 +1437,68 @@ mod text_unit_tests {
     use super::*;
 
     #[test]
+    fn pulse_read_coverage_rejects_repeated_keys_and_unicode_packets() {
+        let key = |vk, shift| TextUnit::Key {
+            vk: VIRTUAL_KEY(vk),
+            shift,
+        };
+        assert_eq!(
+            batch_pulse_keys(&[key(0x41, false), key(0x42, false)]),
+            Some(vec![VIRTUAL_KEY(0x41), VIRTUAL_KEY(0x42)])
+        );
+        assert_eq!(
+            batch_pulse_keys(&[key(0x41, false), key(0x41, false)]),
+            None
+        );
+        // Distinct characters can still repeat the Shift pulse in one batch.
+        assert_eq!(batch_pulse_keys(&[key(0x41, true), key(0x42, true)]), None);
+        assert_eq!(batch_pulse_keys(&[TextUnit::Packet(0x4E8C)]), None);
+        assert_eq!(
+            batch_pulse_keys(&[TextUnit::Return, TextUnit::Return]),
+            None
+        );
+        assert!(!unique_pulse_keys(&[VIRTUAL_KEY(0)]));
+    }
+
+    #[test]
+    fn only_a_bounded_chord_can_observe_down_before_inserting_up() {
+        let key = |vk, up| scanned_key_input(VIRTUAL_KEY(vk), 0, up);
+        let keys = [VIRTUAL_KEY(0x11), VIRTUAL_KEY(0x41)];
+        assert_eq!(
+            chord_read_split(
+                &[
+                    key(0x11, false),
+                    key(0x41, false),
+                    key(0x41, true),
+                    key(0x11, true)
+                ],
+                &keys
+            ),
+            Some(2)
+        );
+        assert_eq!(
+            chord_read_split(
+                &[
+                    key(0x11, false),
+                    key(0x11, true),
+                    key(0x41, false),
+                    key(0x41, true)
+                ],
+                &keys
+            ),
+            None
+        );
+        assert_eq!(
+            chord_read_split(&[key(0x41, false), key(0x42, true)], &[keys[1]]),
+            None
+        );
+        assert_eq!(
+            chord_read_split(&unit_keys(&TextUnit::Packet(0x4E8C)), &[keys[1]]),
+            None
+        );
+        assert_eq!(chord_read_split(&[], &[]), None);
+    }
+    #[test]
     fn cjk_issue_fixture_is_three_packets() {
         assert!(matches!(
             text_units("二等座").as_slice(),
@@ -1428,8 +1584,8 @@ mod text_unit_tests {
             if let Some(TextUnit::Packet(last)) = batch.last() {
                 assert!(!(0xD800..=0xDBFF).contains(last));
             }
-            // One SendInput per batch: two events per unit plus the sentinel pair.
-            assert_eq!(batch_events(batch).len(), batch.len() * 2 + 2);
+            // Only the requested Unicode pairs are inserted.
+            assert_eq!(batch_events(batch).len(), batch.len() * 2);
         }
         assert_eq!(next, units.len());
     }
@@ -1440,7 +1596,7 @@ mod text_unit_tests {
     }
 
     #[test]
-    fn packet_events_are_unicode_then_sentinel() {
+    fn packet_events_are_only_the_requested_unicode_pair() {
         let events = unit_events(&TextUnit::Packet(0x4E8C));
         let keys: Vec<_> = events
             .iter()
@@ -1452,13 +1608,11 @@ mod text_unit_tests {
         assert_ne!(keys[1].dwFlags.0 & KEYEVENTF_UNICODE.0, 0);
         assert_eq!(keys[0].dwFlags.0 & KEYEVENTF_KEYUP.0, 0);
         assert_ne!(keys[1].dwFlags.0 & KEYEVENTF_KEYUP.0, 0);
-        assert_ne!(keys[3].dwFlags.0 & KEYEVENTF_KEYUP.0, 0);
-        assert_eq!(keys[2].wVk.0, 0xE8);
-        assert_eq!(keys[3].wVk.0, 0xE8);
+        assert_eq!(keys.len(), 2);
     }
 
     #[test]
-    fn a_shifted_key_holds_shift_around_it_then_drains() {
+    fn a_shifted_key_holds_shift_around_only_the_requested_pulse() {
         use windows::Win32::UI::Input::KeyboardAndMouse::VK_SHIFT;
         let events = unit_events(&TextUnit::Key {
             vk: VIRTUAL_KEY(0xBD),
@@ -1468,13 +1622,13 @@ mod text_unit_tests {
             .iter()
             .map(|input| unsafe { input.Anonymous.ki })
             .collect();
-        // key_input sends scan codes; the drain sentinel is a virtual key.
+        // key_input sends scan codes, including the held Shift.
         let scan = |vk: u16| unsafe { MapVirtualKeyW(vk as u32, MAPVK_VK_TO_VSC) } as u16;
         assert_eq!(
             keys[..4].iter().map(|key| key.wScan).collect::<Vec<_>>(),
             [scan(VK_SHIFT.0), scan(0xBD), scan(0xBD), scan(VK_SHIFT.0)]
         );
-        assert_eq!([keys[4].wVk.0, keys[5].wVk.0], [0xE8, 0xE8]);
+        assert_eq!(keys.len(), 4);
         assert!(keys
             .iter()
             .all(|key| key.dwFlags.0 & KEYEVENTF_UNICODE.0 == 0));
@@ -1482,7 +1636,7 @@ mod text_unit_tests {
             keys.iter()
                 .map(|key| key.dwFlags.0 & KEYEVENTF_KEYUP.0 != 0)
                 .collect::<Vec<_>>(),
-            [false, false, true, true, false, true]
+            [false, false, true, true]
         );
     }
 

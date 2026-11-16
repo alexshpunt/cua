@@ -26,15 +26,17 @@ public sealed class PointerWindow : Window
     public const string RoleEnv = "CUA_WPF_POINTER_ROLE";
     public const string BusyEnv = "CUA_WPF_POINTER_BUSY_MS";
     public const string PumpEnv = "CUA_WPF_POINTER_PUMP_KEYS";
+    public const string TriggerEnv = "CUA_WPF_POINTER_BUSY_TRIGGER";
     private const int MaximumEvents = 10000;
     private readonly string _statePath;
     private readonly string _role;
     private readonly PointerSurface _surface = new();
     private readonly List<object> _events = new();
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromMilliseconds(100) };
-    private int _busyMs, _down, _up, _heldMoves, _droppedEvents;
+    private int _busyMs, _down, _up, _moves, _heldMoves, _wheel, _droppedEvents;
     private bool _ready, _busyStarted, _busyFinished;
     private readonly bool _pumpKeyboard;
+    private readonly string _busyTrigger;
     private Point? _pressedAt;
     private ulong _windowId;
 
@@ -70,6 +72,8 @@ public sealed class PointerWindow : Window
         _role = role;
         _busyMs = busyMs;
         _pumpKeyboard = pumpKeyboard;
+        _busyTrigger = Environment.GetEnvironmentVariable(TriggerEnv) ?? "held_move";
+        if (_busyTrigger is not ("held_move" or "down" or "wheel")) throw new ArgumentException("Invalid pointer workload trigger.");
         Title = $"CuaTestHarness WPF Pointer {role}";
         Left = 80;
         Top = 80;
@@ -78,7 +82,7 @@ public sealed class PointerWindow : Window
         WindowStartupLocation = WindowStartupLocation.Manual;
         var root = new StackPanel { Margin = new Thickness(16) };
         root.Children.Add(_surface);
-        root.Children.Add(new TextBlock { Text = "Work on the first held pointer move (milliseconds)", Margin = new Thickness(0, 12, 0, 4) });
+        root.Children.Add(new TextBlock { Text = "Work on the first selected pointer event (milliseconds)", Margin = new Thickness(0, 12, 0, 4) });
         var workload = new TextBox { Text = busyMs.ToString(), Width = 120, HorizontalAlignment = HorizontalAlignment.Left };
         AutomationProperties.SetAutomationId(workload, "pointer-work-ms");
         AutomationProperties.SetName(workload, "Pointer move work in milliseconds");
@@ -93,46 +97,39 @@ public sealed class PointerWindow : Window
             _down++;
             _pressedAt = e.GetPosition(_surface);
             Record("down", e);
+            WorkIfTriggered("down", e);
             // This plain canvas does not capture the mouse. The gesture stays inside
             // it; moving the cursor or another window above it before UP is read
             // can therefore divert the unread release, as in a composition canvas.
         };
         _surface.MouseMove += (_, e) =>
         {
+            _moves++;
+            Record("move", e);
             if (e.LeftButton != MouseButtonState.Pressed) return;
             _heldMoves++;
             Record("held_move", e);
             var point = e.GetPosition(_surface);
-            if (!_busyStarted && _busyMs > 0 && _pressedAt is Point start && (point - start).Length > 1)
-            {
-                _busyStarted = true;
-                Record("busy_start", e);
-                if (_pumpKeyboard)
-                {
-                    var end = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + _busyMs;
-                    while (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < end)
-                    {
-                        // A legitimate filtered pump can retrieve the keyboard sentinel
-                        // while leaving an earlier mouse UP unread.
-                        while (PeekMessage(out var message, IntPtr.Zero, 0x0100, 0x0109, 1))
-                        {
-                            Record("keyboard", message: message.Message, virtualKey: message.WParam.ToUInt64());
-                            TranslateMessage(ref message);
-                            DispatchMessage(ref message);
-                        }
-                        Thread.Sleep(10);
-                    }
-                }
-                else Thread.Sleep(_busyMs);
-                _busyFinished = true;
-                Record("busy_end", e);
-            }
+            if (_pressedAt is Point start && (point - start).Length > 1)
+                WorkIfTriggered("held_move", e);
         };
         _surface.MouseLeftButtonUp += (_, e) => { _up++; Record("up", e); };
+        _surface.MouseWheel += (_, e) =>
+        {
+            _wheel++;
+            Record("wheel", e, message: 0x020A, wheelDelta: e.Delta);
+            WorkIfTriggered("wheel", e);
+            e.Handled = true;
+        };
         _surface.GotMouseCapture += (_, e) => Record("capture_gained", e);
         _surface.LostMouseCapture += (_, e) => Record("capture_lost", e);
         Activated += (_, _) => Record("activated");
         Deactivated += (_, _) => Record("deactivated");
+        SourceInitialized += (_, _) =>
+        {
+            var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
+            source?.AddHook(ObserveNativeMessage);
+        };
         Loaded += (_, _) =>
         {
             _windowId = unchecked((ulong)new WindowInteropHelper(this).Handle.ToInt64());
@@ -145,7 +142,43 @@ public sealed class PointerWindow : Window
         Closed += (_, _) => { _timer.Stop(); Record("closed"); Publish(); };
     }
 
-    private void Record(string kind, MouseEventArgs? mouse = null, uint? message = null, ulong? virtualKey = null)
+    private IntPtr ObserveNativeMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (message is >= 0x0100 and <= 0x0109)
+            Record("keyboard", message: (uint)message, virtualKey: unchecked((ulong)wParam.ToInt64()));
+        return IntPtr.Zero;
+    }
+
+    private void WorkIfTriggered(string trigger, MouseEventArgs mouse)
+    {
+        if (_busyStarted || _busyMs == 0 || trigger != _busyTrigger) return;
+        _busyStarted = true;
+        Record("busy_start", mouse);
+        // Publish before blocking so the independent test can establish that
+        // later global input was inserted while this receiver was busy.
+        Publish();
+        if (_pumpKeyboard)
+        {
+            var end = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + _busyMs;
+            while (DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() < end)
+            {
+                // Filtered retrieval may read keys while older pointer input
+                // remains unread. The native hook journals actual dispatch.
+                while (PeekMessage(out var message, IntPtr.Zero, 0x0100, 0x0109, 1))
+                {
+                    TranslateMessage(ref message);
+                    DispatchMessage(ref message);
+                }
+                Thread.Sleep(10);
+            }
+        }
+        else Thread.Sleep(_busyMs);
+        _busyFinished = true;
+        Record("busy_end", mouse);
+        Publish();
+    }
+
+    private void Record(string kind, MouseEventArgs? mouse = null, uint? message = null, ulong? virtualKey = null, int? wheelDelta = null)
     {
         if (_events.Count == MaximumEvents) { _droppedEvents++; return; }
         Point? position = mouse?.GetPosition(_surface);
@@ -154,6 +187,7 @@ public sealed class PointerWindow : Window
             kind,
             message,
             virtual_key = virtualKey,
+            wheel_delta = wheelDelta,
             utc_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             x = position?.X,
             y = position?.Y,
@@ -175,11 +209,14 @@ public sealed class PointerWindow : Window
             published_utc_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             busy_ms = _busyMs,
             pump_keyboard = _pumpKeyboard,
+            busy_trigger = _busyTrigger,
             busy_started = _busyStarted,
             busy_finished = _busyFinished,
             down = _down,
             up = _up,
+            moves = _moves,
             held_moves = _heldMoves,
+            wheel = _wheel,
             dropped_events = _droppedEvents,
             events = _events,
         };

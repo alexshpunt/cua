@@ -180,9 +180,10 @@ atomically replaced state file, including the target and leakage sentinels.
 The single-line row covers CJK, digits, and emoji; the multiline sample covers
 LF, CR, CRLF, repeated empty lines, and leading/trailing breaks. The oracle
 normalizes line endings only and preserves all other characters and blank
-lines. Foreground delivery keeps the target in front until its thread has
-read every inserted event (a sentinel-key drain), so text after line breaks is
-not handed to the previously active window. Pointer actions also use PX where
+lines. Windows foreground delivery restores focus only with supported evidence
+for every requested key pulse. Unicode packets, repeated-key batches and earlier
+unconfirmed input remain unobservable and keep the target in front; a keyboard
+sentinel does not prove that unrelated input was read. Pointer actions also use PX where
 the tool contract requires coordinates. Current `set_value` rows declare
 background delivery and attach desktop-side-effect oracles.
 
@@ -192,13 +193,14 @@ Its opt-in WPF pointer receivers run in separate processes with overlapping canv
 The application journals DOWN, held moves, UP, activation and capture state to
 independent JSON files. Each tool has four rows: fast, 1,200 ms blocked,
 1,200 ms selectively pumping only keyboard messages, and 3,000 ms blocked.
-The first three require focus to return only after the target handles UP.
-The 3,000 ms row starts without a prior input action and exceeds the bounded
-read wait: foreground must stay with the target and the public action effect
-must be `partial`, without retrying input. Its next explicit action must return
-the original human window after the receiver recovers. Every row requires one
-target DOWN/UP per action and no extra input in the human receiver. The ordinary
-WPF harness layout is unchanged.
+All pointer rows keep foreground and cursor with the target because no supported
+whole-stream pointer read witness exists. Complete insertion stays successful
+with public effect `unverifiable`; missing observability is not a fabricated
+`partial` failure. A fresh key-pulse control verifies that supported read evidence
+still permits restoration. A later keyboard action must not clear the earlier
+pointer uncertainty or replay the gesture. The 3,000 ms row starts without a
+prior input action. Every row requires exactly one target DOWN/UP and no extra
+input in the human receiver. The ordinary WPF harness layout is unchanged.
 
 ## Harness E2E: macOS
 

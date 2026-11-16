@@ -351,13 +351,17 @@ fn confirm_setup_navigation(
         }
 
         *injected_global_input = true;
-        crate::input::keyboard::send_key_synthesized(hwnd, "enter", &[]).map_err(|error| {
-            *input_may_be_unread = self::input_may_be_unread(&error);
-            BrowserRefusal::new(
-                BrowserRefusalCode::BrowserWrongTargetRefused,
-                format!("could not confirm the bounded setup navigation: {error}"),
-            )
-        })
+        crate::input::keyboard::send_key_synthesized(hwnd, "enter", &[])
+            .map(|turn| {
+                *input_may_be_unread |= !crate::typing_turn::restores_previous(turn);
+            })
+            .map_err(|error| {
+                *input_may_be_unread |= self::input_may_be_unread(&error);
+                BrowserRefusal::new(
+                    BrowserRefusalCode::BrowserWrongTargetRefused,
+                    format!("could not confirm the bounded setup navigation: {error}"),
+                )
+            })
     })();
 
     // An unread Enter must not follow the user back to their window.
@@ -495,14 +499,18 @@ impl SetupUiHandle {
             );
             return Err(self.abort(error));
         }
-        if let Err(error) = crate::input::keyboard::send_key_synthesized(self.hwnd, "w", &["ctrl"])
-        {
-            self.input_may_be_unread |= input_may_be_unread(&error);
-            let error = BrowserRefusal::new(
-                BrowserRefusalCode::BrowserWrongTargetRefused,
-                format!("could not close the exact temporary setup tab: {error}"),
-            );
-            return Err(self.abort(error));
+        match crate::input::keyboard::send_key_synthesized(self.hwnd, "w", &["ctrl"]) {
+            Ok(turn) => {
+                self.input_may_be_unread |= !crate::typing_turn::restores_previous(turn);
+            }
+            Err(error) => {
+                self.input_may_be_unread |= input_may_be_unread(&error);
+                let error = BrowserRefusal::new(
+                    BrowserRefusalCode::BrowserWrongTargetRefused,
+                    format!("could not close the exact temporary setup tab: {error}"),
+                );
+                return Err(self.abort(error));
+            }
         }
         self.opened_setup_page = false;
         Ok(Some(true))
@@ -528,8 +536,11 @@ impl SetupUiHandle {
             return Some(false);
         }
         let sent = crate::input::keyboard::send_key_synthesized(self.hwnd, "w", &["ctrl"]);
-        if let Err(error) = &sent {
-            self.input_may_be_unread |= input_may_be_unread(error);
+        match &sent {
+            Ok(turn) => {
+                self.input_may_be_unread |= !crate::typing_turn::restores_previous(*turn);
+            }
+            Err(error) => self.input_may_be_unread |= input_may_be_unread(error),
         }
         Some(sent.is_ok())
     }

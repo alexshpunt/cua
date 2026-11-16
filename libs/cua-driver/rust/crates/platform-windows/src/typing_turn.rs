@@ -6,8 +6,10 @@
 //! Input the target thread has not read yet is read by whichever window is
 //! foreground at that moment (#4477), so restoring the previous window early
 //! hands it the unread tail. A late keystroke in the user's window cannot be
-//! undone; a target left in front costs one click. The rule is modelled in
-//! `.cursor/skills/formally-verify-cua-driver/models/windows_typing.tla`.
+//! undone; a target left in front costs one click. The confirmed keyboard subset
+//! is modelled in `.cursor/skills/formally-verify-cua-driver/models/windows_typing.tla`.
+//! Unobservable streams stay with the target; no later unrelated read acknowledges
+//! their earlier prefix.
 //! Pure, so the table test runs on every host.
 
 /// How a foreground input turn ended, by what is known about inserted input.
@@ -17,9 +19,9 @@ pub(crate) enum TypingTurn {
     NotSent,
     /// The target thread read every inserted event.
     Drained,
-    /// Inserted without a queue attachment, so the read cannot be observed;
-    /// a short fixed settle stands in for the drain.
-    Settled,
+    /// Input was inserted, but no supported witness covers every inserted event.
+    /// A timer or an unrelated sentinel is not a read confirmation.
+    Unobservable,
     /// Inserted events may still be unread: a stalled unit, a short
     /// `SendInput`, or a final drain that timed out.
     Undrained,
@@ -31,9 +33,55 @@ pub(crate) enum TypingTurn {
 /// may be unread, and never from a window that took the foreground itself.
 pub(crate) fn restores_previous(turn: TypingTurn) -> bool {
     match turn {
-        TypingTurn::NotSent | TypingTurn::Drained | TypingTurn::Settled => true,
-        TypingTurn::Undrained | TypingTurn::Lost => false,
+        TypingTurn::NotSent | TypingTurn::Drained => true,
+        TypingTurn::Unobservable | TypingTurn::Undrained | TypingTurn::Lost => false,
     }
+}
+
+impl TypingTurn {
+    /// Compose sequential producers without erasing an earlier unconfirmed prefix.
+    pub(crate) fn combine(self, next: Self) -> Self {
+        use TypingTurn::*;
+        match (self, next) {
+            (Lost, _) | (_, Lost) => Lost,
+            (Undrained, _) | (_, Undrained) => Undrained,
+            (Unobservable, _) | (_, Unobservable) => Unobservable,
+            (Drained, _) | (_, Drained) => Drained,
+            (NotSent, NotSent) => NotSent,
+        }
+    }
+}
+
+/// Carry read knowledge to the focus lease before the public action envelope replaces
+/// internal structured fields. Uncertainty also stays in text for public clients.
+pub(crate) fn completion_result(
+    mut result: cua_driver_core::protocol::ToolResult,
+    turn: TypingTurn,
+) -> cua_driver_core::protocol::ToolResult {
+    let code = match turn {
+        TypingTurn::NotSent => "not_sent",
+        TypingTurn::Drained => "read",
+        TypingTurn::Unobservable => "unobservable",
+        TypingTurn::Undrained => "stalled",
+        TypingTurn::Lost => "lost",
+    };
+    let structured = result
+        .structured_content
+        .get_or_insert_with(|| serde_json::json!({}));
+    structured["input_read"] = serde_json::json!(code);
+    if !restores_previous(turn) {
+        structured["foreground_restored"] = serde_json::json!(false);
+    }
+    if turn == TypingTurn::Unobservable {
+        result
+            .content
+            .push(cua_driver_core::protocol::Content::text(
+                "input_read: unobservable; no supported witness confirms that the target read \
+             every inserted event. Automatic foreground return is suppressed. Nothing was \
+             replayed; inspect the target before repeating the action.",
+            ));
+    }
+    result
 }
 
 /// A failed turn that did not give the previous foreground back. Callers
@@ -91,14 +139,23 @@ mod tests {
             ("unpaced text SendInput short",           Undrained, LEAVE),
             ("final drain timed out",                  Undrained, LEAVE),
             ("every text unit read",                   Drained,   RESTORE),
-            ("final drain read the sentinel",          Drained,   RESTORE),
-            ("no attachment, settle elapsed",          Settled,   RESTORE),
+            ("every requested key pulse read",         Drained,   RESTORE),
+            ("no supported receiver-read witness",     Unobservable, LEAVE),
         ];
         for &(exit, turn, expected) in rows {
             assert_eq!(restores_previous(turn), expected, "{exit}");
         }
     }
 
+    #[test]
+    fn a_later_read_cannot_erase_an_earlier_unconfirmed_prefix() {
+        for earlier in [Unobservable, Undrained, Lost] {
+            assert_eq!(earlier.combine(Drained), earlier);
+            assert_eq!(earlier.combine(NotSent), earlier);
+            assert_eq!(Drained.combine(earlier), earlier);
+        }
+        assert_eq!(NotSent.combine(Drained), Drained);
+    }
     #[test]
     fn an_unrestored_turn_says_so_in_text_and_structure() {
         let stalled = anyhow::anyhow!("text_delivery_stalled: unit 3 of 5 was not read.");

@@ -126,13 +126,16 @@ impl Tool for HotkeyTool {
             })
             .await
             {
-                Ok(Ok(())) => ToolResult::text(format!(
-                    "Sent {key_display} to the foreground application (scope:desktop)."
-                ))
-                .with_structured(json!({
-                    "scope": "desktop", "path": "SendInput", "keys": full_keys,
-                    "effect": "unverifiable"
-                })),
+                Ok(Ok(turn)) => crate::typing_turn::completion_result(
+                    ToolResult::text(format!(
+                        "Sent {key_display} to the foreground application (scope:desktop)."
+                    ))
+                    .with_structured(json!({
+                        "scope": "desktop", "path": "SendInput", "keys": full_keys,
+                        "effect": "unverifiable"
+                    })),
+                    turn,
+                ),
                 Ok(Err(error)) => crate::typing_turn::foreground_input_error(error),
                 Err(error) => ToolResult::error(format!("desktop hotkey task failed: {error}")),
             };
@@ -373,14 +376,21 @@ impl Tool for HotkeyTool {
                 let _admission = &admitted;
                 let m: Vec<&str> = mods.iter().map(String::as_str).collect();
                 if use_send_input {
-                    crate::input::send_key_synthesized_after_focus(hwnd, &key, &m, || {
+                    let prior = if px_focus {
+                        crate::typing_turn::TypingTurn::Unobservable
+                    } else {
+                        crate::typing_turn::TypingTurn::NotSent
+                    };
+                    crate::input::send_key_synthesized_after_focus(hwnd, &key, &m, prior, || {
                         if let Some((idx, point)) = focus_target {
-                            focus_cached_element_for_foreground(&admitted, hwnd, idx, point)?;
+                            focus_cached_element_for_foreground(&admitted, hwnd, idx, point)
+                        } else {
+                            Ok(crate::typing_turn::TypingTurn::NotSent)
                         }
-                        Ok(())
                     })
                 } else {
                     crate::input::post_key(hwnd, &key, &m)
+                        .map(|()| crate::typing_turn::TypingTurn::NotSent)
                 }
             }
         })
@@ -391,10 +401,16 @@ impl Tool for HotkeyTool {
             "PostMessage"
         };
         match result {
-            Ok(Ok(())) => ToolResult::text(format!(
-                "✅ Pressed {key_display} on pid {raw_pid} via {path} \
-                 (Win32 target)."
-            )),
+            Ok(Ok(turn)) => {
+                let result = ToolResult::text(format!(
+                    "✅ Pressed {key_display} on pid {raw_pid} via {path} (Win32 target)."
+                ));
+                if use_send_input {
+                    crate::typing_turn::completion_result(result, turn)
+                } else {
+                    result
+                }
+            }
             Ok(Err(e)) => crate::typing_turn::foreground_input_error(e),
             Err(e) => ToolResult::error(format!("Task error: {e}")),
         }

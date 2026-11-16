@@ -1,34 +1,21 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Cua AI, Inc.
 
-//! Universal background mouse actuator: coordinate-routed pointer/touch
-//! injection that delivers a click to whatever window sits under a screen
-//! point **without** `SetForegroundWindow` and **without** moving the user's
-//! mouse cursor.
+//! Coordinate-routed pen/touch input for background pointer actions.
 //!
-//! Why this exists: the PostMessage path (`mouse::post_click`) is invisible and
-//! never raises, but Chromium/Electron/GTK/WPF content silently ignore posted
-//! synthetic `WM_*BUTTON` messages — their input arrives through the *system
-//! input queue*, not the per-window message queue. The historical fallback for
-//! those was `send_click_synthesized` (SendInput + a `SetForegroundWindow`
-//! swap), which is exactly the visible "flash" we want to eliminate.
+//! UIA and fixed-HWND PostMessage do not support every application. Synthetic
+//! pointer input reaches the visible window at a screen point without an
+//! explicit foreground transition or z-order raise. Occluded targets refuse
+//! before injection rather than raising another window.
 //!
-//! Touch injection routes by coordinate through the system input queue (so
-//! Chromium et al. accept it; the OS promotes it to `WM_*BUTTON` for legacy
-//! Win32 windows that don't consume `WM_POINTER`), and — per the RE in
-//! `docs/windows-background-input-re-plan.md` §4.4 — the kernel injection path
-//! (`NtUserInjectMouseInput`/`NtUserInjectTouchInput`) gates only on a
-//! per-process injection-enable, NOT on the target being foreground. The one
-//! residual is that a tap on an *inactive* top-level window can still trigger
-//! click-activation; we contain that with `NoActivateGuard` (WS_EX_NOACTIVATE)
-//! plus a `force_foreground_attached(prev_fg)` re-assertion of the USER's
-//! foreground afterward. Per the macOS-aligned contract a background actuation
-//! never raises/restacks the target: when coordinate-routed input can't reach
-//! it (occluded at the point), the caller returns `background_unavailable`
-//! rather than raising it (see `target_visible_at_point`).
+//! `NoActivateGuard` suppresses click activation while injection runs. A target
+//! can still activate itself asynchronously, and legacy touch/pen promotion can
+//! move the hardware cursor. Injection success does not confirm receiver reads.
+//! These routes never race unread input with a timed foreground/cursor restore;
+//! callers must report the unobservable read and any background-posture limit.
 //!
-//! Scope: left-button taps (single/double/triple). Right/middle have no clean
-//! touch mapping; callers fall back to their existing routing for those.
+//! Left/right taps use a synthetic pen. Left drags use touch; right drags use
+//! a barrel-held pen. Middle-button injection is unsupported.
 
 use anyhow::{bail, Result};
 use core::ffi::c_void;
@@ -54,11 +41,21 @@ use windows::Win32::UI::Input::Pointer::{
 };
 use windows::Win32::UI::Shell::{IVirtualDesktopManager, VirtualDesktopManager};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetAncestor, GetCursorPos, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId,
-    IsWindow, LockSetForegroundWindow, SetCursorPos, SetForegroundWindow, SetWindowLongPtrW,
-    WindowFromPoint, GA_ROOT, GWL_EXSTYLE, LSFW_LOCK, LSFW_UNLOCK, PT_PEN, PT_TOUCH,
-    WS_EX_NOACTIVATE,
+    GetAncestor, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId, IsWindow,
+    LockSetForegroundWindow, SetForegroundWindow, SetWindowLongPtrW, WindowFromPoint, GA_ROOT,
+    GWL_EXSTYLE, LSFW_LOCK, LSFW_UNLOCK, PT_PEN, PT_TOUCH, WS_EX_NOACTIVATE,
 };
+
+unsafe fn inject_unconfirmed_pointer(
+    device: HSYNTHETICPOINTERDEVICE,
+    events: &[POINTER_TYPE_INFO],
+) -> windows::core::Result<()> {
+    let result = unsafe { InjectSyntheticPointerInput(device, events) };
+    if result.is_ok() {
+        crate::focus_return::note_unconfirmed_input();
+    }
+    result
+}
 
 #[derive(Default)]
 struct ForegroundLockState {
@@ -300,11 +297,11 @@ fn pen_taps(sx: i32, sy: i32, barrel: bool, count: usize) -> Result<()> {
         let mut result: Result<()> = Ok(());
         let n = count.max(1);
         for i in 0..n {
-            let r1 = InjectSyntheticPointerInput(dev, &[down]);
+            let r1 = inject_unconfirmed_pointer(dev, &[down]);
             sleep(Duration::from_millis(25));
-            let r2 = InjectSyntheticPointerInput(dev, &[up]);
+            let r2 = inject_unconfirmed_pointer(dev, &[up]);
             if let Err(e) = r1.and(r2) {
-                result = Err(anyhow::anyhow!("InjectSyntheticPointerInput(pen): {e}"));
+                result = Err(anyhow::anyhow!("inject_unconfirmed_pointer(pen): {e}"));
                 break;
             }
             if i + 1 < n {
@@ -317,11 +314,10 @@ fn pen_taps(sx: i32, sy: i32, barrel: bool, count: usize) -> Result<()> {
     Ok(())
 }
 
-/// Inject a click at **screen** coordinates `(sx, sy)`, routed by the system to
-/// whatever window is under that point — without a foreground swap and without
-/// moving the user's cursor. The target is cloaked for the duration so any
-/// click-activation raise stays invisible, then the user's foreground is
-/// restored.
+/// Inject a click at screen coordinates `(sx, sy)` without an explicit
+/// foreground swap or z-order raise. The visible target is held non-activatable
+/// during injection. Pointer promotion and asynchronous self-activation remain
+/// observable background-posture limits; no timer authorizes restoration.
 ///
 /// - `left`  → synthetic-pen primary tap (proven path; promoted to a left click
 ///   for non-pointer-aware apps, and accepted directly by Chromium/WPF/UWP).
@@ -374,28 +370,12 @@ pub fn inject_click_screen(
              no-foreground contract). Escalate to delivery_mode:\"foreground\"."
         );
     }
-    // Remember who the user had in front so we can re-assert it below.
-    let prev_fg = unsafe { GetForegroundWindow() };
-    // Make the target non-activatable for the click so click-activation can't
-    // steal foreground. No z-order raise.
-    let result = {
-        let _noact = NoActivateGuard::arm(target_h);
-        // One synthetic device does all `count` taps (single/double/triple click).
-        pen_taps(sx, sy, barrel, count)
-    };
-    // `WS_EX_NOACTIVATE` is NOT categorical against a Chromium/Electron content
-    // window that calls `SetForegroundWindow(self)` from its (async) click
-    // handler. Re-assert the USER's foreground (this restores focus where the
-    // user left it — it never raises the target). Short settle + repeat to win
-    // the race against the async self-activation.
-    unsafe {
-        if result.is_ok() && !prev_fg.0.is_null() && prev_fg != target_h {
-            force_foreground_attached(prev_fg);
-            sleep(Duration::from_millis(12));
-            force_foreground_attached(prev_fg);
-        }
-    }
-    result
+    // Make the target non-activatable without raising it. Injection confirms
+    // insertion only; do not reassert another foreground while the pen release
+    // may still be unread. Callers must report the unobservable read outcome.
+    let _noact = NoActivateGuard::arm(target_h);
+    // One synthetic device does all `count` taps (single/double/triple click).
+    pen_taps(sx, sy, barrel, count)
 }
 
 /// True when `target`'s top-level root is the window actually visible at screen
@@ -696,7 +676,7 @@ fn pen_drag(sx0: i32, sy0: i32, sx1: i32, sy1: i32, steps: usize, barrel: bool) 
             sx0,
             sy0,
         );
-        let mut res = InjectSyntheticPointerInput(dev, &[down]);
+        let mut res = inject_unconfirmed_pointer(dev, &[down]);
         // Interpolated in-contact moves so frameworks that gate drag-tracking on
         // motion (rather than a single down→up) see a continuous stroke.
         let steps = steps.max(1);
@@ -710,48 +690,33 @@ fn pen_drag(sx0: i32, sy0: i32, sx1: i32, sy1: i32, steps: usize, barrel: bool) 
                 x,
                 y,
             );
-            res = res.and(InjectSyntheticPointerInput(dev, &[mv]));
+            res = res.and(inject_unconfirmed_pointer(dev, &[mv]));
         }
         // Release at the end.
         sleep(Duration::from_millis(8));
         let up = mk(POINTER_FLAG_UP, sx1, sy1);
-        res = res.and(InjectSyntheticPointerInput(dev, &[up]));
+        res = res.and(inject_unconfirmed_pointer(dev, &[up]));
         DestroySyntheticPointerDevice(dev);
-        res.map_err(|e| anyhow::anyhow!("InjectSyntheticPointerInput(pen drag): {e}"))?;
+        res.map_err(|e| anyhow::anyhow!("inject_unconfirmed_pointer(pen drag): {e}"))?;
     }
     Ok(())
 }
 
-/// A **persistent** synthetic touch digitizer, created once and never
-/// destroyed. This is load-bearing: a transient (per-stroke) device is gone
-/// before WPF's WISP stylus stack can bind to it, so the OS falls back to
-/// legacy touch→mouse promotion — which drags the user's cursor to the
-/// contact. A *standing* digitizer is enumerated as a real tablet, so WPF (and
-/// other stylus/pointer-aware frameworks) consume the contact as touch/stylus
-/// and promote it to mouse INTERNALLY, without the OS moving the system cursor.
+/// A persistent synthetic touch digitizer, kept for the process lifetime so
+/// pointer-aware targets can bind to one device. Legacy mouse promotion can
+/// still move the hardware cursor; a standing device is not a read witness.
 static TOUCH_DEV: Mutex<isize> = Mutex::new(0);
 
-/// One **touch** press-drag-release from screen `(sx0,sy0)` to `(sx1,sy1)` with
-/// `steps` interpolated in-contact moves, via the persistent [`TOUCH_DEV`].
-/// Unlike a pen (an absolute *cursor* device — injecting one drags the user's
-/// mouse pointer along), a touch contact from a standing digitizer is consumed
-/// as touch/stylus and does NOT move the user's cursor. Serialized on the
-/// single shared device (one stroke at a time across all sessions).
+/// One touch press-drag-release via the persistent [`TOUCH_DEV`], serialized
+/// across sessions. Pointer-aware targets consume touch directly; legacy
+/// promotion may move the hardware cursor, which stays with the target.
 fn touch_drag(sx0: i32, sy0: i32, sx1: i32, sy1: i32, steps: usize) -> Result<()> {
     let mut dev_guard = TOUCH_DEV.lock().unwrap_or_else(|e| e.into_inner());
     unsafe {
-        // A non-pointer-aware window (WPF) makes the OS promote the PRIMARY touch
-        // contact to a mouse event, which drags the system cursor to the contact
-        // — and the OS gates delivery on the cursor actually reaching it, so the
-        // move can't be prevented from a background process (pinning/clipping the
-        // cursor just drops the input). What we CAN do is snap the cursor back to
-        // exactly where the user left it the instant the stroke ends, so the net
-        // displacement is zero and (with a fast, few-step stroke) the excursion
-        // is a brief flick rather than a sustained drag. Pointer-aware targets
-        // (Chromium) never promote, so the cursor never moves and this restore is
-        // a harmless no-op.
-        let mut cpos = POINT::default();
-        let have_cpos = GetCursorPos(&mut cpos).is_ok();
+        // Non-pointer-aware windows may promote touch to mouse and move the
+        // system cursor. There is no external read witness for that promoted
+        // stream, so leave its final posture instead of racing a queued UP with
+        // a cursor warp. Callers must report this background-route limitation.
         let dev = if *dev_guard != 0 {
             HSYNTHETICPOINTERDEVICE(*dev_guard as *mut c_void)
         } else {
@@ -792,16 +757,14 @@ fn touch_drag(sx0: i32, sy0: i32, sx1: i32, sy1: i32, steps: usize) -> Result<()
                 },
             },
         };
-        // Fast stroke: line-tool canvases only need down→up (the segment is the
-        // straight line between them), so a few in-contact frames with a tiny
-        // dwell is plenty — and the shorter the stroke, the briefer the cursor
-        // excursion before we snap it back.
+        // Keep the existing bounded contact cadence. This timing is not a
+        // receiver-read acknowledgment and does not permit pointer restoration.
         let down = mk(
             POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
             sx0,
             sy0,
         );
-        let mut res = InjectSyntheticPointerInput(dev, &[down]);
+        let mut res = inject_unconfirmed_pointer(dev, &[down]);
         let steps = steps.clamp(1, 3);
         for i in 1..=steps {
             sleep(Duration::from_millis(2));
@@ -813,35 +776,24 @@ fn touch_drag(sx0: i32, sy0: i32, sx1: i32, sy1: i32, steps: usize) -> Result<()
                 x,
                 y,
             );
-            res = res.and(InjectSyntheticPointerInput(dev, &[mv]));
+            res = res.and(inject_unconfirmed_pointer(dev, &[mv]));
         }
         sleep(Duration::from_millis(2));
         let up = mk(POINTER_FLAG_UP, sx1, sy1);
-        res = res.and(InjectSyntheticPointerInput(dev, &[up]));
-        // Snap the cursor back to where the user left it. The OS processes the
-        // promoted mouse messages slightly after injection, so a single restore
-        // right after the `up` can be overrun by that late move — settle briefly,
-        // then restore, and restore once more to win the race. No-op for
-        // pointer-aware targets (Chromium) that never moved the cursor.
-        if have_cpos {
-            let _ = SetCursorPos(cpos.x, cpos.y);
-            sleep(Duration::from_millis(12));
-            let _ = SetCursorPos(cpos.x, cpos.y);
-        }
+        res = res.and(inject_unconfirmed_pointer(dev, &[up]));
+        // Keep any promoted pointer with the target. Injection is not evidence
+        // that the receiver has retrieved the contact or promoted mouse UP.
         // device intentionally NOT destroyed — see TOUCH_DEV.
-        res.map_err(|e| anyhow::anyhow!("InjectSyntheticPointerInput(touch drag): {e}"))?;
+        res.map_err(|e| anyhow::anyhow!("inject_unconfirmed_pointer(touch drag): {e}"))?;
     }
     Ok(())
 }
 
-/// Inject a press-drag-release at **screen** coordinates, routed by the system
-/// to whatever window is under the path — without a foreground swap and without
-/// moving the user's cursor. This is the background fallback for canvases whose
-/// content (Chromium/WPF/GTK) silently drops a PostMessage drag: synthetic-pen
-/// input arrives through the system input queue and is accepted directly
-/// (Chromium/WPF) or promoted to mouse for legacy Win32. `left` → primary
-/// stroke, `right` → barrel-held secondary stroke; the target is held
-/// non-activatable + cloaked so any transient raise stays invisible.
+/// Inject a press-drag-release at screen coordinates without an explicit
+/// foreground swap or z-order raise. Left uses touch and right uses a barrel-held
+/// pen. The target is held non-activatable during insertion. Legacy promotion
+/// can move the cursor, and asynchronous activation can outlive the call;
+/// callers must report those limits without a timed restoration.
 pub fn inject_drag_screen(
     target: u64,
     sx0: i32,
@@ -888,7 +840,6 @@ pub fn inject_drag_screen(
              — it is occluded by another window. Escalate to delivery_mode:\"foreground\"."
         );
     }
-    let prev_fg = unsafe { GetForegroundWindow() };
     // Left drag → touch contact (coordinate-routed). Right/barrel drag has no
     // touch equivalent, so fall back to a pen (rare).
     let stroke = |()| {
@@ -898,18 +849,10 @@ pub fn inject_drag_screen(
             touch_drag(sx0, sy0, sx1, sy1, steps)
         }
     };
-    // Chromium/GTK: pointer-aware, process injection in the background — hold
-    // non-activatable (no raise), inject, then re-assert the user's foreground.
-    let r = {
-        let _noact = NoActivateGuard::arm(target_h);
-        stroke(())
-    };
-    unsafe {
-        if !prev_fg.0.is_null() && prev_fg != target_h {
-            force_foreground_attached(prev_fg);
-        }
-    }
-    r
+    // Prevent click activation without raising the target. Do not reassert a
+    // different foreground while injected or promoted input may still be unread.
+    let _noact = NoActivateGuard::arm(target_h);
+    stroke(())
 }
 
 #[cfg(test)]

@@ -89,13 +89,16 @@ impl Tool for PressKeyTool {
             })
             .await
             {
-                Ok(Ok(())) => ToolResult::text(format!(
-                    "Sent {key_display} to the foreground application (scope:desktop)."
-                ))
-                .with_structured(json!({
-                    "scope": "desktop", "path": "SendInput", "key": key_display,
-                    "effect": "unverifiable"
-                })),
+                Ok(Ok(turn)) => crate::typing_turn::completion_result(
+                    ToolResult::text(format!(
+                        "Sent {key_display} to the foreground application (scope:desktop)."
+                    ))
+                    .with_structured(json!({
+                        "scope": "desktop", "path": "SendInput", "key": key_display,
+                        "effect": "unverifiable"
+                    })),
+                    turn,
+                ),
                 Ok(Err(error)) => crate::typing_turn::foreground_input_error(error),
                 Err(error) => ToolResult::error(format!("desktop key task failed: {error}")),
             };
@@ -300,19 +303,29 @@ impl Tool for PressKeyTool {
                 move || {
                     let _admission = &admitted;
                     let m: Vec<&str> = mods.iter().map(String::as_str).collect();
-                    crate::input::send_key_synthesized_after_focus(hwnd, &key, &m, || {
-                        if let Some((idx, point)) = focus_target {
-                            focus_cached_element_for_foreground(&admitted, hwnd, idx, point)?;
-                        }
-                        Ok(())
-                    })
+                    crate::input::send_key_synthesized_after_focus(
+                        hwnd,
+                        &key,
+                        &m,
+                        crate::typing_turn::TypingTurn::NotSent,
+                        || {
+                            if let Some((idx, point)) = focus_target {
+                                focus_cached_element_for_foreground(&admitted, hwnd, idx, point)
+                            } else {
+                                Ok(crate::typing_turn::TypingTurn::NotSent)
+                            }
+                        },
+                    )
                 }
             })
             .await;
             return match send_result {
-                Ok(Ok(())) => ToolResult::text(format!(
-                    "✅ Sent {key_display} via SendInput on pid {raw_pid} (delivery_mode:foreground)."
-                )),
+                Ok(Ok(turn)) => crate::typing_turn::completion_result(
+                    ToolResult::text(format!(
+                        "✅ Sent {key_display} via SendInput on pid {raw_pid} (delivery_mode:foreground)."
+                    )),
+                    turn,
+                ),
                 Ok(Err(e)) => crate::typing_turn::foreground_input_error(e),
                 Err(e)     => ToolResult::error(format!("Task error: {e}")),
             };

@@ -60,6 +60,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 #[path = "support/foreground_text_oracle.rs"]
 mod foreground_text_oracle;
+#[path = "support/pointer_completion_oracle.rs"]
+mod pointer_completion_oracle;
 use foreground_text_oracle::{ascii_escape, normalize_line_endings, stable_text};
 
 // ── harness launcher ─────────────────────────────────────────────────────────
@@ -1783,6 +1785,7 @@ fn launch_pointer_receiver(
     role: &str,
     busy_ms: u32,
     pump_keyboard: bool,
+    trigger: &str,
 ) -> (u32, u64) {
     let mut command = Command::new(harness_exe());
     command
@@ -1792,6 +1795,7 @@ fn launch_pointer_receiver(
         .env_remove("CUA_WPF_TASK_DENSITY")
         .env("CUA_WPF_POINTER_STATE", state_path)
         .env("CUA_WPF_POINTER_ROLE", role)
+        .env("CUA_WPF_POINTER_BUSY_TRIGGER", trigger)
         .env("CUA_WPF_POINTER_BUSY_MS", busy_ms.to_string())
         .env(
             "CUA_WPF_POINTER_PUMP_KEYS",
@@ -1855,8 +1859,9 @@ fn wait_pointer_receiver(
 #[ignore]
 fn harness_wpf_pointer_release_precedes_focus_return() {
     for tool in ["held_path", "hold_keys", "input_timeline"] {
-        // The fast row rejects a blanket workaround that disables focus return.
-        // The busy row requires the target's queued UP to reach that target first.
+        // Pointer input has no supported whole-stream read witness, even on the
+        // fast receiver. A fresh keyboard control checks that confirmed input can
+        // return focus; an unrelated successor must not clear pointer uncertainty.
         for (busy_ms, pump_keyboard) in [(0, false), (1200, false), (1200, true), (3000, false)] {
             let mut case = native_foreground_case(
                 "wpf",
@@ -1885,14 +1890,44 @@ fn harness_wpf_pointer_release_precedes_focus_return() {
                     "target",
                     busy_ms,
                     pump_keyboard,
+                    "held_move",
                 );
-                let (human_pid, human_wid) =
-                    launch_pointer_receiver(&mut driver, &human_path, "human", 0, false);
+                let (human_pid, human_wid) = launch_pointer_receiver(
+                    &mut driver,
+                    &human_path,
+                    "human",
+                    0,
+                    false,
+                    "held_move",
+                );
                 assert_ne!(
                     target_pid, human_pid,
                     "receivers need independent UI threads"
                 );
                 focus_harness(&mut driver, human_pid, human_wid);
+                if busy_ms == 0 {
+                    let key = driver.call(
+                        "press_key",
+                        serde_json::json!({
+                            "pid": target_pid, "window_id": target_wid,
+                            "key": "f1", "delivery_mode": "foreground"
+                        }),
+                    );
+                    assert!(!key.is_error(), "fresh keyboard control: {}", key.text());
+                    assert_eq!(
+                        unsafe { GetForegroundWindow() }.0 as usize as u64,
+                        human_wid,
+                        "a supported key-read witness must still permit focus return: {}",
+                        key.text()
+                    );
+                    let read =
+                        wait_pointer_receiver(&target_path, 0, |state| {
+                            state["events"].as_array().unwrap().iter().any(|event| {
+                                event["message"] == 0x0101 && event["virtual_key"] == 0x70
+                            })
+                        });
+                    assert_eq!(read["down"], 0, "keyboard control sent no pointer input");
+                }
                 let human = snapshot(&mut driver, human_pid, human_wid);
                 let human_index = ax::element_index_by_id(human.tree_text(), "pointer-canvas")
                     .expect("human pointer canvas");
@@ -2035,55 +2070,51 @@ fn harness_wpf_pointer_release_precedes_focus_return() {
                     Some(target_wid),
                     "the target must still own foreground when it handles UP: {target_state}"
                 );
-                if busy_ms < 2000 {
-                    assert_eq!(
-                        foreground_after, human_wid,
-                        "a drained receiver must return focus"
-                    );
-                    let down_index = events
-                        .iter()
-                        .position(|event| event["kind"] == "down")
-                        .unwrap();
-                    let deactivated_index = events
-                        .iter()
-                        .enumerate()
-                        .skip(down_index + 1)
-                        .find(|(_, event)| event["kind"] == "deactivated")
-                        .map(|(index, _)| index)
-                        .expect("restored foreground must deactivate the target");
-                    assert!(
-                        up_index < deactivated_index,
-                        "focus returned before UP: {target_state}"
-                    );
-                } else {
-                    // A bounded drain must keep unread input with its target and
-                    // retain the partial outcome through the closed public contract.
-                    assert_eq!(foreground_after, target_wid);
-                    assert_eq!(response.action_effect(), Some("partial"));
+                assert_eq!(foreground_after, target_wid);
+                assert_eq!(response.action_effect(), Some("unverifiable"));
 
-                    // The receiver finished its one-time workload before the next
-                    // explicit action. A drained successor must return the original
-                    // human window, even though the first action kept the target.
-                    let _ = snapshot(&mut driver, target_pid, target_wid);
-                    let successor = driver.call(tool_name, input);
-                    assert!(
-                        !successor.is_error(),
-                        "successor input: {}",
-                        successor.text()
-                    );
-                    assert_eq!(
-                        unsafe { GetForegroundWindow() }.0 as usize as u64,
-                        human_wid
-                    );
-                    let successor_ms = pointer_oracle_time_ms();
-                    let final_target =
-                        wait_pointer_receiver(&target_path, successor_ms, |state| state["up"] == 2);
-                    let final_human = wait_pointer_receiver(&human_path, successor_ms, |_| true);
-                    assert_eq!(final_target["down"], 2);
-                    assert_eq!(final_target["dropped_events"], 0);
-                    assert_eq!(final_human["down"].as_u64(), Some(human_count));
-                    assert_eq!(final_human["up"].as_u64(), Some(human_count));
-                }
+                // The external receiver is healthy again. That does not give the
+                // driver a supported witness for its earlier pointer prefix: a
+                // later keyboard receipt must not authorize automatic restoration.
+                let successor = driver.call(
+                    "press_key",
+                    serde_json::json!({
+                        "pid": target_pid, "window_id": target_wid,
+                        "key": "f2", "delivery_mode": "foreground"
+                    }),
+                );
+                assert!(
+                    !successor.is_error(),
+                    "successor input: {}",
+                    successor.text()
+                );
+                assert_eq!(
+                    unsafe { GetForegroundWindow() }.0 as usize as u64,
+                    target_wid,
+                    "an unrelated successor cannot acknowledge the pointer prefix"
+                );
+                let successor_ms = pointer_oracle_time_ms();
+                let final_target = wait_pointer_receiver(&target_path, successor_ms, |state| {
+                    state["events"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|event| event["message"] == 0x0101 && event["virtual_key"] == 0x71)
+                });
+                let final_human = wait_pointer_receiver(&human_path, successor_ms, |_| true);
+                assert_eq!(
+                    final_target["down"], 1,
+                    "the pointer action was not replayed"
+                );
+                assert_eq!(final_target["up"], 1);
+                assert_eq!(final_target["dropped_events"], 0);
+                assert_eq!(final_human["down"].as_u64(), Some(human_count));
+                assert_eq!(final_human["up"].as_u64(), Some(human_count));
+                assert!(!final_human["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|event| { event["virtual_key"] == 0x70 || event["virtual_key"] == 0x71 }));
                 drop(driver);
                 Observation::delivered(
                     vec![

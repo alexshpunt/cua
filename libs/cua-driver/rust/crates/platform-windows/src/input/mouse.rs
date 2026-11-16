@@ -23,13 +23,22 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     ChildWindowFromPointEx, GetAncestor, GetClassLongPtrW, GetCursorPos, GetForegroundWindow,
-    GetSystemMetrics, GetWindowLongPtrW, PostMessageW, SetCursorPos, SetWindowPos, CS_DBLCLKS,
-    CWP_SKIPDISABLED, CWP_SKIPINVISIBLE, CWP_SKIPTRANSPARENT, GA_ROOT, GCL_STYLE, GWL_EXSTYLE,
-    HWND_NOTOPMOST, HWND_TOP, HWND_TOPMOST, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
-    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, WM_LBUTTONDBLCLK,
-    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE,
-    WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WS_EX_TOPMOST,
+    GetSystemMetrics, PostMessageW, SetCursorPos, CS_DBLCLKS, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
+    CWP_SKIPTRANSPARENT, GA_ROOT, GCL_STYLE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN,
+    WM_RBUTTONUP,
 };
+
+// Global pointer insertion has no supported receiver-read witness. Keep that
+// uncertainty across calls; a later keyboard receipt cannot acknowledge it.
+unsafe fn send_unconfirmed_input(events: &[INPUT], size: i32) -> u32 {
+    let inserted = unsafe { SendInput(events, size) };
+    if inserted > 0 {
+        crate::focus_return::note_unconfirmed_input();
+    }
+    inserted
+}
 
 const MK_LBUTTON: u32 = 0x0001;
 const MK_MBUTTON: u32 = 0x0010;
@@ -477,8 +486,9 @@ pub fn has_chromium_descendant(hwnd: u64) -> bool {
 ///
 /// `SendInput` puts the synthetic mouse events on the **system input queue**,
 /// where Chromium's input filter accepts them. The trade-off is a brief
-/// foreground swap + visible cursor jump (mitigated by saving/restoring the
-/// previous foreground HWND and previous cursor position after the click).
+/// foreground swap + visible cursor jump. This legacy non-activating route
+/// refuses before input because it cannot safely undo its pointer and z-order
+/// changes without a receiver-read witness.
 ///
 /// UIAccess constraint: `SetForegroundWindow` is restricted from non-UIAccess
 /// processes when not driven by user input. The `cua-driver-uia` worker runs
@@ -505,23 +515,18 @@ pub fn send_click_synthesized(
 /// have no keyboard state to hold them, so a `modifier` passed to a background
 /// pixel/element click is necessarily ignored on those rungs.
 pub fn send_click_synthesized_mods(
-    target: u64,
-    sx: i32,
-    sy: i32,
-    count: usize,
-    button: &str,
-    modifiers: &[&str],
+    _target: u64,
+    _sx: i32,
+    _sy: i32,
+    _count: usize,
+    _button: &str,
+    _modifiers: &[&str],
 ) -> Result<()> {
-    send_click_synthesized_mods_impl(
-        target,
-        sx,
-        sy,
-        count,
-        button,
-        modifiers,
-        ClickMode::NonActivating,
+    bail!(
+        "background_unavailable: non-activating SendInput would change pointer and z-order \
+         without a receiver-read witness for safe restoration. No input was sent; use \
+         delivery_mode:\"foreground\"."
     )
-    .map(|_| ())
 }
 
 /// SendInput click for an explicit foreground request. Unlike the historical
@@ -540,7 +545,7 @@ pub fn send_click_synthesized_active_mods(
     button: &str,
     modifiers: &[&str],
 ) -> Result<Option<u64>> {
-    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers, ClickMode::Window)
+    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers)
 }
 
 /// Explicit desktop clicks leave the hardware cursor at the requested point.
@@ -552,15 +557,7 @@ pub fn send_click_synthesized_desktop_mods(
     button: &str,
     modifiers: &[&str],
 ) -> Result<()> {
-    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers, ClickMode::Desktop)
-        .map(|_| ())
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum ClickMode {
-    NonActivating,
-    Window,
-    Desktop,
+    send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers).map(|_| ())
 }
 
 fn send_click_synthesized_mods_impl(
@@ -570,10 +567,8 @@ fn send_click_synthesized_mods_impl(
     count: usize,
     button: &str,
     modifiers: &[&str],
-    mode: ClickMode,
 ) -> Result<Option<u64>> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
-    let activate = mode != ClickMode::NonActivating;
     let target = HWND(target as *mut _);
     if target.0.is_null() {
         bail!("invalid target hwnd");
@@ -657,25 +652,7 @@ fn send_click_synthesized_mods_impl(
     };
 
     unsafe {
-        // Save previous foreground + cursor position so we can restore.
-        let prev_fg = GetForegroundWindow();
-        let mut prev_cursor = POINT::default();
-        let prev_cursor_valid = GetCursorPos(&mut prev_cursor).is_ok();
-
-        // Bring the target to the top of the VISIBLE z-order so the
-        // coordinate-routed SendInput mouse click lands on it — WITHOUT stealing
-        // focus. `SetWindowPos(HWND_TOPMOST, SWP_NOACTIVATE)` is **lock-free**:
-        // it works from a non-UIAccess process even on a maxed foreground-lock
-        // (unlike `SetForegroundWindow`, which the lock denies), and sends no
-        // WM_ACTIVATE. `NoActivateGuard` then keeps the click itself from
-        // activating the target. This is the macOS-aligned "front → act →
-        // restore" for pointer input, done the one Windows way that doesn't
-        // need UIAccess — the technique the OG GTK path used. (Keyboard
-        // foreground still needs *real* focus; only pointer can be z-routed.)
-        // Capture whether the target was ALREADY always-on-top so we don't strip
-        // that state on restore — only demote below if WE promoted it.
-        let was_topmost = (GetWindowLongPtrW(target, GWL_EXSTYLE) as u32) & WS_EX_TOPMOST.0 != 0;
-        if activate && !crate::input::force_foreground_assisted(target).0 {
+        if !crate::input::force_foreground_assisted(target).0 {
             let actual = GetForegroundWindow();
             bail!(
                 "foreground_unavailable: Windows did not activate exact target HWND {:?} \
@@ -684,39 +661,15 @@ fn send_click_synthesized_mods_impl(
                 actual.0
             );
         }
-        let foreground_target = if activate {
-            match crate::win32::capture_foreground_target(target.0 as usize as u64) {
-                Some(target) => Some(target),
-                None => bail!(
-                    "foreground_unavailable: exact target HWND {:?} disappeared before mouse \
-                     input could be sent",
-                    target.0
-                ),
-            }
-        } else {
-            None
-        };
-        let noactivate = (!activate).then(|| crate::input::NoActivateGuard::arm(target));
-        if !activate {
-            let _ = SetWindowPos(
-                target,
-                HWND_TOPMOST,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+        let Some(foreground_target) =
+            crate::win32::capture_foreground_target(target.0 as usize as u64)
+        else {
+            bail!(
+                "foreground_unavailable: exact target HWND {:?} disappeared before mouse \
+                 input could be sent",
+                target.0
             );
-        }
-
-        // Move the cursor so the OS hover state matches before the click; the
-        // MOUSEEVENTF_MOVE input ensures Chromium's input filter sees a
-        // coordinated move event.
-        // Foreground lets the SendInput move below carry the pointer there: a warped
-        // cursor makes that move empty, and WinUI drop-down buttons then ignore the press.
-        if !activate {
-            let _ = SetCursorPos(sx, sy);
-        }
+        };
 
         // Hold modifier keys (ctrl/shift/alt/win) across the click — the macOS
         // `modifier` surface. Pressed via the system input queue so apps that
@@ -727,7 +680,7 @@ fn send_click_synthesized_mods_impl(
         let occluded = crate::input::occlusion::check_point(target.0 as usize as u64, sx, sy).err();
         let mut sent_ok = true;
         if occluded.is_none() && !mod_downs.is_empty() {
-            let sent = SendInput(&mod_downs, std::mem::size_of::<INPUT>() as i32);
+            let sent = send_unconfirmed_input(&mod_downs, std::mem::size_of::<INPUT>() as i32);
             sent_ok = sent as usize == mod_downs.len();
             sleep(Duration::from_millis(5));
         }
@@ -750,7 +703,7 @@ fn send_click_synthesized_mods_impl(
                 if index > 0 {
                     sleep(Duration::from_millis(if index == 1 { 30 } else { 15 }));
                 }
-                sent += SendInput(
+                sent += send_unconfirmed_input(
                     std::slice::from_ref(event),
                     std::mem::size_of::<INPUT>() as i32,
                 );
@@ -766,58 +719,18 @@ fn send_click_synthesized_mods_impl(
 
         // Release any held modifiers (reverse order) before restoring z-order.
         if occluded.is_none() && !mod_ups.is_empty() {
-            let released = SendInput(&mod_ups, std::mem::size_of::<INPUT>() as i32);
+            let released = send_unconfirmed_input(&mod_ups, std::mem::size_of::<INPUT>() as i32);
             if released as usize != mod_ups.len() {
                 // A second release attempt is safe and reduces the chance of a
                 // partially inserted chord leaving system modifier state held.
-                let _ = SendInput(&mod_ups, std::mem::size_of::<INPUT>() as i32);
+                let _ = send_unconfirmed_input(&mod_ups, std::mem::size_of::<INPUT>() as i32);
                 sent_ok = false;
             }
         }
 
-        // Let the target process mouse-up before any background-route restore.
-        // Retained-mode frameworks establish capture/focus on mouse-down and can
-        // lose the click if the real cursor is warped away while those queued
-        // messages are still being dispatched.
-        // Foreground restores nothing afterwards; 40 ms lets the target take the
-        // release before the foreground check below.
-        sleep(Duration::from_millis(40));
-        if !was_topmost && !activate {
-            let _ = SetWindowPos(
-                target,
-                HWND_NOTOPMOST,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-            );
-        }
-        if !activate {
-            if !prev_fg.0.is_null() && prev_fg != target {
-                let _ = SetWindowPos(
-                    prev_fg,
-                    HWND_TOP,
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-                );
-            }
-            if prev_cursor_valid {
-                let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
-            }
-        } else if mode == ClickMode::Window && prev_cursor_valid {
-            // Restore our injected movement, but leave a later user/app move alone.
-            let mut current_cursor = POINT::default();
-            if GetCursorPos(&mut current_cursor).is_ok()
-                && cursor_still_at_injected_click(current_cursor.x, current_cursor.y, sx, sy)
-            {
-                let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
-            }
-        }
-        drop(noactivate);
+        // SendInput success confirms insertion, not receiver retrieval. Keep
+        // pointer and foreground with the target: a timed restore can divert
+        // the queued release. The tool reports that the read is unobservable.
         if let Some(occluded) = occluded {
             return Err(occluded.into());
         }
@@ -827,34 +740,31 @@ fn send_click_synthesized_mods_impl(
                  foreground click."
             );
         }
-        if activate {
-            let snapshot = foreground_target.expect("foreground target captured before input");
-            // A click that closes its target hands the foreground to another window of
-            // its app; Windows may take a few milliseconds to do so.
-            let deadline = Instant::now() + Duration::from_millis(300);
-            loop {
-                let actual = GetForegroundWindow().0 as usize as u64;
-                if crate::win32::foreground_after_target_closed(snapshot, actual) {
-                    return Ok(Some(actual));
-                }
-                if crate::win32::foreground_matches_target_or_owned_window(snapshot, actual) {
-                    return Ok(None);
-                }
-                if Instant::now() >= deadline {
-                    bail!(
-                        "foreground_unavailable: exact target HWND {:?}, a verified same-process \
-                         post-action window or a window embedded in the target was not \
-                         foreground after the click \
-                         (actual foreground HWND 0x{actual:x})",
-                        target.0
-                    );
-                }
-                sleep(Duration::from_millis(10));
+        let snapshot = foreground_target;
+        // A click that closes its target hands the foreground to another window of
+        // its app; Windows may take a few milliseconds to do so. This observes the
+        // post-click window identity; it does not confirm receiver retrieval.
+        let deadline = Instant::now() + Duration::from_millis(300);
+        loop {
+            let actual = GetForegroundWindow().0 as usize as u64;
+            if crate::win32::foreground_after_target_closed(snapshot, actual) {
+                return Ok(Some(actual));
             }
+            if crate::win32::foreground_matches_target_or_owned_window(snapshot, actual) {
+                return Ok(None);
+            }
+            if Instant::now() >= deadline {
+                bail!(
+                    "foreground_unavailable: exact target HWND {:?}, a verified same-process \
+                     post-action window or a window embedded in the target was not \
+                     foreground after the click \
+                     (actual foreground HWND 0x{actual:x})",
+                    target.0
+                );
+            }
+            sleep(Duration::from_millis(10));
         }
     }
-
-    Ok(None)
 }
 
 /// Adds the window that took the foreground after a click closed its target to
@@ -891,10 +801,6 @@ pub fn note_foreground_after(
             serde_json::to_string(&title).unwrap_or_default()
         )));
     result
-}
-
-fn cursor_still_at_injected_click(x: i32, y: i32, click_x: i32, click_y: i32) -> bool {
-    x.abs_diff(click_x) <= 2 && y.abs_diff(click_y) <= 2
 }
 
 /// Press-hold-move-release drag via `SendInput`.
@@ -982,15 +888,16 @@ pub fn send_drag_synthesized(
             },
         },
     };
-    let send =
-        |input: INPUT| unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) == 1 };
+    let send = |input: INPUT| unsafe {
+        send_unconfirmed_input(&[input], std::mem::size_of::<INPUT>() as i32) == 1
+    };
     // Release the held modifiers, retrying once like the click path so a
     // partially inserted release does not leave system key state held.
     let release_modifiers = || unsafe {
         let size = std::mem::size_of::<INPUT>() as i32;
         mod_ups.is_empty()
-            || SendInput(&mod_ups, size) as usize == mod_ups.len()
-            || SendInput(&mod_ups, size) as usize == mod_ups.len()
+            || send_unconfirmed_input(&mod_ups, size) as usize == mod_ups.len()
+            || send_unconfirmed_input(&mod_ups, size) as usize == mod_ups.len()
     };
 
     unsafe {
@@ -1005,7 +912,8 @@ pub fn send_drag_synthesized(
     crate::input::occlusion::check_point(target.0 as usize as u64, sx_from, sy_from)?;
     // Hold the modifiers before the press.
     if !mod_downs.is_empty() {
-        let sent = unsafe { SendInput(&mod_downs, std::mem::size_of::<INPUT>() as i32) };
+        let sent =
+            unsafe { send_unconfirmed_input(&mod_downs, std::mem::size_of::<INPUT>() as i32) };
         if sent as usize != mod_downs.len() {
             let _ = release_modifiers();
             bail!(
@@ -1121,8 +1029,9 @@ fn wheel_mouse_data(ticks: i32) -> u32 {
 /// where `mouseData = WHEEL_DELTA * ticks`.
 ///
 /// Unlike [`send_click_synthesized`] this does NOT do a foreground swap: wheel
-/// delivery follows the cursor, so positioning the cursor is sufficient. The
-/// cursor is restored to its previous position afterward.
+/// delivery follows the cursor, so positioning the cursor is sufficient. After
+/// insertion the cursor stays at the target because receiver retrieval cannot
+/// be observed; a timed cursor restore can reroute the queued wheel.
 pub fn send_wheel_synthesized(sx: i32, sy: i32, ticks: i32, horizontal: bool) -> Result<()> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
     let flag = if horizontal {
@@ -1148,21 +1057,29 @@ pub fn send_wheel_synthesized(sx: i32, sy: i32, ticks: i32, horizontal: bool) ->
 
     unsafe {
         let mut prev_cursor = POINT::default();
-        let _ = GetCursorPos(&mut prev_cursor);
+        let prev_cursor_valid = GetCursorPos(&mut prev_cursor).is_ok();
 
         // Wheel routes to the window under the cursor — place it on the target.
-        let _ = SetCursorPos(sx, sy);
+        SetCursorPos(sx, sy)?;
 
         let events = [wheel_input];
-        let sent = SendInput(&events, std::mem::size_of::<INPUT>() as i32);
+        let sent = send_unconfirmed_input(&events, std::mem::size_of::<INPUT>() as i32);
         if sent as usize != events.len() {
-            let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
+            // This one-event insertion sent nothing, so restoring our own move
+            // cannot divert pending wheel input. Preserve any later human move.
+            let mut current = POINT::default();
+            if prev_cursor_valid
+                && GetCursorPos(&mut current).is_ok()
+                && current.x == sx
+                && current.y == sy
+            {
+                let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
+            }
             bail!("SendInput inserted {sent}/{} wheel events", events.len());
         }
 
-        // Brief settle, then restore the cursor.
-        sleep(Duration::from_millis(20));
-        let _ = SetCursorPos(prev_cursor.x, prev_cursor.y);
+        // Successful insertion has no external wheel-read witness. Keep the
+        // cursor over the target rather than redirecting a queued wheel.
     }
 
     Ok(())
@@ -1181,7 +1098,9 @@ pub fn foreground_window() -> Result<u64> {
 /// Move the real OS pointer to a desktop coordinate.
 pub fn move_cursor_desktop(x: i32, y: i32) -> Result<()> {
     unsafe { SetCursorPos(x, y) }
-        .map_err(|error| anyhow::anyhow!("SetCursorPos({x}, {y}) failed: {error}"))
+        .map_err(|error| anyhow::anyhow!("SetCursorPos({x}, {y}) failed: {error}"))?;
+    crate::focus_return::note_unconfirmed_input();
+    Ok(())
 }
 
 /// Classify a `WM_NCHITTEST` result into the non-client regions where a
@@ -1262,20 +1181,6 @@ mod nc_hit_tests {
         assert_eq!(classify_nc_move_resize_hit(3), None); // HTSYSMENU (click, not drag-move)
         assert_eq!(classify_nc_move_resize_hit(-1), None); // HTERROR
         assert_eq!(classify_nc_move_resize_hit(18), None); // HTBORDER (non-resizable edge)
-    }
-}
-
-#[cfg(test)]
-mod cursor_restore_tests {
-    use super::cursor_still_at_injected_click;
-
-    #[test]
-    fn restore_only_while_the_cursor_remains_at_the_injected_point() {
-        assert!(cursor_still_at_injected_click(-100, 200, -100, 200));
-        assert!(cursor_still_at_injected_click(-98, 198, -100, 200));
-        assert!(!cursor_still_at_injected_click(-97, 200, -100, 200));
-        assert!(!cursor_still_at_injected_click(-100, 203, -100, 200));
-        assert!(!cursor_still_at_injected_click(i32::MIN, 0, i32::MAX, 0));
     }
 }
 

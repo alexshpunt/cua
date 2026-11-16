@@ -15,8 +15,8 @@ use std::sync::Arc;
 use super::impl_::{
     bitmap_to_screen, capture_admission_refusal, element_target_rect, is_windowless_desktop_action,
     minimized_element_refusal, overlay_glide_to, overlay_glide_to_target, pin_overlay_above,
-    resolve_cursor_key, resolve_onscreen_point_with_scroll, restore_foreground_polling_best_effort,
-    screenshot_scale, uia_only_refusal, uia_only_schema, winui3_background_gesture, ToolState,
+    resolve_cursor_key, resolve_onscreen_point_with_scroll, screenshot_scale, uia_only_refusal,
+    uia_only_schema, winui3_background_gesture, ToolState,
 };
 
 fn tool_result_text(result: ToolResult) -> String {
@@ -573,9 +573,6 @@ impl Tool for ClickTool {
                     },
                 );
                 let btn_fg = button.clone();
-                let prev_fg_addr = unsafe {
-                    windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize
-                };
                 let mods_owned = modifiers.clone();
                 let activate = delivery == DeliveryMode::Foreground;
                 let send_result = tokio::task::spawn_blocking({
@@ -596,10 +593,6 @@ impl Tool for ClickTool {
                     }
                 })
                 .await;
-                // Background clicks hand the foreground back; explicit foreground keeps the target active.
-                if !activate {
-                    tokio::spawn(restore_foreground_polling_best_effort(prev_fg_addr, pid));
-                }
                 let half = if want_expand { "dropdown" } else { "press" };
                 return match send_result {
                     Ok(Ok(after)) => crate::input::mouse::note_foreground_after(
@@ -611,6 +604,13 @@ impl Tool for ClickTool {
                         ),
                         after,
                     ),
+                    Ok(Err(e)) if !activate => {
+                        crate::input::delivery::background_unavailable_error_with_cause(
+                            hwnd,
+                            EventKind::MouseClick,
+                            e.to_string(),
+                        )
+                    }
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
