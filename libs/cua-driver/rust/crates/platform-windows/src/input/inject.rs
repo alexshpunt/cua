@@ -116,11 +116,24 @@ pub(crate) unsafe fn force_foreground_attached(target: HWND) -> bool {
         } else {
             false
         };
-    let _ = SetForegroundWindow(target);
+    let requested = SetForegroundWindow(target).as_bool();
     if attached {
         let _ = AttachThreadInput(my_tid, cur_tid, false);
     }
-    GetForegroundWindow() == target
+    // Across input queues, successful activation is asynchronous. Wait for its
+    // nudge before rejecting it and inserting an unnecessary unlock key.
+    // This pre-input readiness check never acknowledges inserted input.
+    let ready = !requested || super::keyboard::activation_ready(target);
+    let actual = GetForegroundWindow();
+    tracing::debug!(
+        attached,
+        requested,
+        ready,
+        target = ?target,
+        actual = ?actual,
+        "foreground activation observation"
+    );
+    actual == target
 }
 
 /// Retry an explicit visible foreground transition after a reserved no-name

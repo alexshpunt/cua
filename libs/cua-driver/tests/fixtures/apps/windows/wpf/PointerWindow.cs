@@ -42,6 +42,17 @@ public sealed class PointerWindow : Window
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+    [StructLayout(LayoutKind.Sequential)]
+    private struct GuiThreadInfo
+    {
+        public uint Size, Flags;
+        public IntPtr Active, Focus, Capture, MenuOwner, MoveSize, Caret;
+        public int CaretLeft, CaretTop, CaretRight, CaretBottom;
+    }
+    [DllImport("user32.dll")]
+    private static extern bool GetGUIThreadInfo(uint thread, ref GuiThreadInfo info);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint { public int X, Y; }
@@ -124,6 +135,7 @@ public sealed class PointerWindow : Window
         };
         _surface.GotMouseCapture += (_, e) => Record("capture_gained", e);
         _surface.LostMouseCapture += (_, e) => Record("capture_lost", e);
+        ComponentDispatcher.ThreadFilterMessage += ObserveThreadMessage;
         Activated += (_, _) => Record("activated");
         Deactivated += (_, _) => Record("deactivated");
         SourceInitialized += (_, _) =>
@@ -140,7 +152,19 @@ public sealed class PointerWindow : Window
             _timer.Start();
         };
         _timer.Tick += (_, _) => Publish();
-        Closed += (_, _) => { _timer.Stop(); Record("closed"); Publish(); };
+        Closed += (_, _) =>
+        {
+            ComponentDispatcher.ThreadFilterMessage -= ObserveThreadMessage;
+            _timer.Stop();
+            Record("closed");
+            Publish();
+        };
+    }
+
+    private void ObserveThreadMessage(ref MSG message, ref bool handled)
+    {
+        if (message.message == 0x020A)
+            Record("thread_wheel", message: (uint)message.message, wheelDelta: unchecked((short)(message.wParam.ToInt64() >> 16)));
     }
 
     private IntPtr ObserveNativeMessage(IntPtr window, int message, IntPtr wParam, IntPtr lParam, ref bool handled)
@@ -202,6 +226,8 @@ public sealed class PointerWindow : Window
 
     private void Publish()
     {
+        var gui = new GuiThreadInfo { Size = (uint)Marshal.SizeOf<GuiThreadInfo>() };
+        var guiAvailable = GetGUIThreadInfo(GetCurrentThreadId(), ref gui);
         var state = new
         {
             schema = "cua.wpf_pointer_receiver.v1",
@@ -210,6 +236,13 @@ public sealed class PointerWindow : Window
             pid = Environment.ProcessId,
             window_id = _windowId,
             published_utc_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            gui_thread = new
+            {
+                available = guiAvailable,
+                active = unchecked((ulong)gui.Active.ToInt64()),
+                focus = unchecked((ulong)gui.Focus.ToInt64()),
+                capture = unchecked((ulong)gui.Capture.ToInt64()),
+            },
             busy_ms = _busyMs,
             pump_keyboard = _pumpKeyboard,
             busy_trigger = _busyTrigger,
