@@ -148,7 +148,7 @@ fn prepare_human_with_observed_input(hwnd: u64, point: (i32, i32), state: &std::
         for band in [HWND_TOPMOST, HWND_NOTOPMOST] {
             SetWindowPos(
                 hwnd,
-                band,
+                Some(band),
                 0,
                 0,
                 0,
