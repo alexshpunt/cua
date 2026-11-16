@@ -9,7 +9,6 @@
 //! those routes before mutating the desktop or inserting any input.
 
 use anyhow::{bail, Result};
-use core::ffi::c_void;
 use std::sync::Mutex;
 use std::thread::sleep;
 use std::time::Duration;
@@ -99,10 +98,24 @@ pub(crate) unsafe fn force_foreground_attached(target: HWND) -> bool {
     let cur_tid = GetWindowThreadProcessId(cur, Some(&mut pid));
     // Attaching resets key state. An explicit activation may proceed, but
     // must not reset the receiver state of an earlier unconfirmed prefix.
-    let attached = cur_tid != 0
-        && cur_tid != my_tid
-        && !crate::focus_return::has_unconfirmed_input()
-        && AttachThreadInput(my_tid, cur_tid, true).as_bool();
+    let attached =
+        if cur_tid != 0 && cur_tid != my_tid && !crate::focus_return::has_unconfirmed_input() {
+            // A fresh blocking worker must establish its message queue first.
+            // This runs before attachment, so it cannot inspect the target's input.
+            super::keyboard::service_own_messages();
+            let attached = AttachThreadInput(my_tid, cur_tid, true).as_bool();
+            if !attached {
+                tracing::debug!(
+                    own_thread = my_tid,
+                    foreground_thread = cur_tid,
+                    error = %windows::core::Error::from_win32(),
+                    "foreground queue attachment failed"
+                );
+            }
+            attached
+        } else {
+            false
+        };
     let _ = SetForegroundWindow(target);
     if attached {
         let _ = AttachThreadInput(my_tid, cur_tid, false);

@@ -222,7 +222,24 @@ public sealed class PointerWindow : Window
         };
         var temporary = $"{_statePath}.{Environment.ProcessId}.tmp";
         File.WriteAllText(temporary, JsonSerializer.Serialize(state));
-        File.Move(temporary, _statePath, true);
+        var deadline = Environment.TickCount64 + 1000;
+        while (true)
+        {
+            try
+            {
+                File.Move(temporary, _statePath, true);
+                break;
+            }
+            catch (Exception error) when (
+                error is IOException or UnauthorizedAccessException &&
+                (error.HResult & 0xffff) is 5 or 32 or 33 &&
+                Environment.TickCount64 < deadline)
+            {
+                // Readers and scanners can briefly hold a Windows delete lock.
+                // Retry only the atomic publication, never application input.
+                Thread.Sleep(5);
+            }
+        }
     }
 
     private sealed class PointerSurface : Canvas

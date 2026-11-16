@@ -22,8 +22,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOUSEEVENTF_WHEEL, MOUSEINPUT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    ChildWindowFromPointEx, GetAncestor, GetClassLongPtrW, GetCursorPos, GetForegroundWindow,
-    GetSystemMetrics, PostMessageW, SetCursorPos, CS_DBLCLKS, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
+    ChildWindowFromPointEx, GetAncestor, GetClassLongPtrW, GetForegroundWindow, GetSystemMetrics,
+    PostMessageW, SetCursorPos, CS_DBLCLKS, CWP_SKIPDISABLED, CWP_SKIPINVISIBLE,
     CWP_SKIPTRANSPARENT, GA_ROOT, GCL_STYLE, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
     SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
     WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN,

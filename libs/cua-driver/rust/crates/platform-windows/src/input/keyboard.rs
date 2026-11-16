@@ -1026,7 +1026,7 @@ fn chord_read_split(events: &[INPUT], keys: &[VIRTUAL_KEY]) -> Option<usize> {
         })
         .then_some(split)
 }
-fn service_own_messages() {
+pub(crate) fn service_own_messages() {
     use windows::Win32::UI::WindowsAndMessaging::{PeekMessageW, MSG, PM_NOREMOVE};
     let mut message = MSG::default();
     let _ = unsafe { PeekMessageW(&mut message, None, 0, 0, PM_NOREMOVE) };
