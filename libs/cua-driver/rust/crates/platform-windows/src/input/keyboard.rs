@@ -912,7 +912,16 @@ fn with_confirmed_foreground(
     }
     let actual = unsafe { GetForegroundWindow() };
     if !foreground_matches_target_or_owned_window(foreground_target, actual.0 as usize as u64) {
-        turn = turn.combine(TypingTurn::Lost);
+        turn = turn.combine(
+            if crate::win32::foreground_after_target_closed(
+                foreground_target,
+                actual.0 as usize as u64,
+            ) {
+                TypingTurn::Unobservable
+            } else {
+                TypingTurn::Lost
+            },
+        );
     }
     drop(attachment);
     if !restores_previous(turn) {
@@ -1081,7 +1090,8 @@ impl InputQueueAttachment {
         target: ForegroundTarget,
         timeout: Duration,
     ) -> Result<UnitRead> {
-        let check_reader = || -> Result<()> {
+        let target_closed = std::cell::Cell::new(false);
+        let check_reader = |prefix_inserted: bool| -> Result<()> {
             service_own_messages();
             if let Err(error) = crate::human_input::check() {
                 return Err(ForegroundInputError {
@@ -1091,12 +1101,25 @@ impl InputQueueAttachment {
                 .into());
             }
             let foreground = unsafe { GetForegroundWindow() };
-            if !foreground_matches_target_or_owned_window(target, foreground.0 as usize as u64) {
+            // Dismissing a toolkit dialog may hide it before destruction. Only
+            // an already inserted chord may finish its owned UPs on the known
+            // same-thread successor; no new DOWN is allowed on that successor.
+            let closed_successor = prefix_inserted
+                && crate::win32::foreground_after_target_closed(
+                    target,
+                    foreground.0 as usize as u64,
+                );
+            if !foreground_matches_target_or_owned_window(target, foreground.0 as usize as u64)
+                && !closed_successor
+            {
                 return Err(ForegroundInputError {
                     error: anyhow::anyhow!("foreground_lost: stopped before another key phase"),
                     turn: TypingTurn::Lost,
                 }
                 .into());
+            }
+            if closed_successor && !target_closed.replace(true) {
+                crate::focus_return::note_unconfirmed_input();
             }
             if !self.matches_foreground(foreground) {
                 return Err(ForegroundInputError {
@@ -1110,7 +1133,7 @@ impl InputQueueAttachment {
             }
             Ok(())
         };
-        check_reader()?;
+        check_reader(false)?;
         let observable = keys.filter(|keys| {
             chord_read_split(events, keys).is_some()
                 && keyboard_state()
@@ -1128,7 +1151,7 @@ impl InputQueueAttachment {
         }
         let wait_for = |down: bool| -> Result<Option<bool>> {
             loop {
-                check_reader()?;
+                check_reader(true)?;
                 let Some(state) = keyboard_state() else {
                     return Ok(None);
                 };
@@ -1155,7 +1178,7 @@ impl InputQueueAttachment {
                 return Err(error);
             }
         };
-        if let Err(error) = check_reader() {
+        if let Err(error) = check_reader(true) {
             release_inserted_keys(events, split);
             return Err(error);
         }
@@ -1167,10 +1190,16 @@ impl InputQueueAttachment {
         if down_read.is_none() {
             return Ok(UnitRead::Unobservable);
         }
-        Ok(match wait_for(false)? {
+        let read = match wait_for(false)? {
             Some(true) => UnitRead::Read,
             Some(false) => UnitRead::Stalled,
             None => UnitRead::Unobservable,
+        };
+        // A hidden target's successor never supplies a restoration receipt.
+        Ok(if target_closed.get() && matches!(read, UnitRead::Read) {
+            UnitRead::Unobservable
+        } else {
+            read
         })
     }
 }

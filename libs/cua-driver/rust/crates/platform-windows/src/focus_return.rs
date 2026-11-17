@@ -272,9 +272,8 @@ mod native {
         *ENABLED.get_or_init(crate::human_input::focus_return_configured)
     }
 
-    /// A lease covers the running input: it hands the foreground back when the input is over, so
-    /// the input itself does not. Input without a lease, such as keys addressed only by an element
-    /// token, keeps handing the foreground back to the window that was in front before it.
+    /// A lease owns the conditional return to the remembered human window.
+    /// Input without a lease still obeys the same unconfirmed-prefix guard.
     pub(crate) fn active() -> bool {
         ACTIVE.load(Ordering::Acquire) > 0
     }
@@ -461,7 +460,11 @@ mod native {
                 }
                 open = popups(self.target, self.pid);
                 popup = open_popup(&self.popups_before, &self.kept_before, &open);
-                if popup.is_some() || Instant::now() >= deadline {
+                // A popup already present at entry may still be closing while
+                // the queued key is processed. Give that transition the same
+                // bounded UI-settle window; it is not an input-read receipt.
+                let newly_opened = popup.is_some_and(|hwnd| !self.popups_before.contains(&hwnd));
+                if newly_opened || Instant::now() >= deadline {
                     break;
                 }
                 sleep(Duration::from_millis(15));
