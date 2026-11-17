@@ -66,6 +66,15 @@ impl PointerPair {
         let human_point = fraction_point(human_canvas, 0.25);
         if fresh_key {
             prepare_human_with_observed_input(human_wid, human_point, &human_path);
+            let human_state = wait_pointer_receiver(&human_path, 0, |_| true);
+            assert_eq!(
+                human_state["foreground_permission"]["granted"], true,
+                "{human_state}"
+            );
+            assert_eq!(
+                human_state["foreground_permission"]["pid"].as_u64(),
+                driver.daemon_pid().map(u64::from)
+            );
             driver.start_behavior_recording();
         } else {
             focus_harness(&mut driver, human_pid, human_wid);

@@ -199,10 +199,14 @@ with public effect `unverifiable`; missing observability is not a fabricated
 `partial` failure. The separate
 `pointer_completion_oracle::harness_wpf_supported_key_read_returns_the_human_window`
 owner verifies that a fresh supported key pulse still permits restoration and
-reaches only its receiver. A later keyboard action must not clear the earlier
-pointer uncertainty or replay the gesture. The 3,000 ms row starts without a
-prior input action. Every row requires exactly one target DOWN/UP and no extra
-input in the human receiver. The ordinary WPF harness layout is unchanged.
+reaches only its receiver. Before that control, the owned human receiver reads
+one external setup click and grants only the owned daemon foreground permission
+with `AllowSetForegroundWindow`. Permission is a precondition for activation,
+not evidence of input retrieval; all key and pointer counts remain exact.
+A later keyboard action must not clear the earlier pointer uncertainty or replay
+the gesture. The 3,000 ms row starts without a prior input action. Every row
+requires exactly one target DOWN/UP and no extra input in the human receiver.
+The ordinary WPF harness layout is unchanged.
 The companion `pointer_completion_oracle` owners cover legacy click, straight drag
 and wheel posture, plus the complete `move_pointer`/`scroll_at` no-return contract.
 Cursor oracles use a scoped per-monitor-aware observer and physical screen points.

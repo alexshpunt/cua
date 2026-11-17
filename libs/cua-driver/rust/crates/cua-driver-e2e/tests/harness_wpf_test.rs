@@ -1795,6 +1795,13 @@ fn launch_pointer_receiver(
         .env_remove("CUA_WPF_TASK_DENSITY")
         .env("CUA_WPF_POINTER_STATE", state_path)
         .env("CUA_WPF_POINTER_ROLE", role)
+        .env(
+            "CUA_WPF_POINTER_FOREGROUND_PID",
+            driver
+                .daemon_pid()
+                .expect("owned pointer test daemon")
+                .to_string(),
+        )
         .env("CUA_WPF_POINTER_BUSY_TRIGGER", trigger)
         .env("CUA_WPF_POINTER_BUSY_MS", busy_ms.to_string())
         .env(

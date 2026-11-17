@@ -39,6 +39,20 @@ public sealed class PointerWindow : Window
     private readonly string _busyTrigger;
     private Point? _pressedAt;
     private ulong _windowId;
+    private readonly uint _foregroundPid;
+    private bool _foregroundGranted;
+    private int _foregroundError;
+    private readonly SubclassProc _subclassProc;
+
+    private delegate IntPtr SubclassProc(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, UIntPtr id, UIntPtr data);
+    [DllImport("comctl32.dll")]
+    private static extern bool SetWindowSubclass(IntPtr window, SubclassProc callback, UIntPtr id, UIntPtr data);
+    [DllImport("comctl32.dll")]
+    private static extern bool RemoveWindowSubclass(IntPtr window, SubclassProc callback, UIntPtr id);
+    [DllImport("comctl32.dll")]
+    private static extern IntPtr DefSubclassProc(IntPtr window, uint message, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool AllowSetForegroundWindow(uint pid);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
@@ -81,6 +95,10 @@ public sealed class PointerWindow : Window
         _statePath = Path.GetFullPath(statePath);
         Directory.CreateDirectory(Path.GetDirectoryName(_statePath)!);
         _role = role;
+        var foregroundPid = Environment.GetEnvironmentVariable("CUA_WPF_POINTER_FOREGROUND_PID");
+        if (!string.IsNullOrWhiteSpace(foregroundPid) && !uint.TryParse(foregroundPid, out _foregroundPid))
+            throw new ArgumentException("Foreground permission requires a process identifier.");
+        _subclassProc = ObserveBeforeWpf;
         _busyMs = busyMs;
         _pumpKeyboard = pumpKeyboard;
         _busyTrigger = Environment.GetEnvironmentVariable(TriggerEnv) ?? "held_move";
@@ -124,7 +142,18 @@ public sealed class PointerWindow : Window
             if (_pressedAt is Point start && (point - start).Length > 1)
                 WorkIfTriggered("held_move", e);
         };
-        _surface.MouseLeftButtonUp += (_, e) => { _up++; Record("up", e); };
+        _surface.MouseLeftButtonUp += (_, e) =>
+        {
+            _up++;
+            Record("up", e);
+            if (_role == "human" && _foregroundPid != 0 && GetForegroundWindow() == new WindowInteropHelper(this).Handle)
+            {
+                // The owned foreground receiver explicitly admits the test daemon.
+                // This grants no read evidence and avoids an unrelated unlock-key prefix.
+                _foregroundGranted = AllowSetForegroundWindow(_foregroundPid);
+                _foregroundError = _foregroundGranted ? 0 : Marshal.GetLastWin32Error();
+            }
+        };
         PreviewMouseWheel += (_, e) => Record("preview_wheel", e, message: 0x020A, wheelDelta: e.Delta);
         _surface.MouseWheel += (_, e) =>
         {
@@ -142,6 +171,8 @@ public sealed class PointerWindow : Window
         {
             var source = HwndSource.FromHwnd(new WindowInteropHelper(this).Handle);
             source?.AddHook(ObserveNativeMessage);
+            if (!SetWindowSubclass(new WindowInteropHelper(this).Handle, _subclassProc, new UIntPtr(1), UIntPtr.Zero))
+                throw new InvalidOperationException("The owned receiver could not install its native journal.");
         };
         Loaded += (_, _) =>
         {
@@ -155,10 +186,18 @@ public sealed class PointerWindow : Window
         Closed += (_, _) =>
         {
             ComponentDispatcher.ThreadFilterMessage -= ObserveThreadMessage;
+            RemoveWindowSubclass(new WindowInteropHelper(this).Handle, _subclassProc, new UIntPtr(1));
             _timer.Stop();
             Record("closed");
             Publish();
         };
+    }
+
+    private IntPtr ObserveBeforeWpf(IntPtr window, uint message, IntPtr wParam, IntPtr lParam, UIntPtr id, UIntPtr data)
+    {
+        if (message == 0x020A)
+            Record("pre_wpf_wheel", message: message, wheelDelta: unchecked((short)(wParam.ToInt64() >> 16)));
+        return DefSubclassProc(window, message, wParam, lParam);
     }
 
     private void ObserveThreadMessage(ref MSG message, ref bool handled)
@@ -236,6 +275,7 @@ public sealed class PointerWindow : Window
             pid = Environment.ProcessId,
             window_id = _windowId,
             published_utc_ms = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            foreground_permission = new { pid = _foregroundPid, granted = _foregroundGranted, error = _foregroundError },
             gui_thread = new
             {
                 available = guiAvailable,
