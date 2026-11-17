@@ -1104,14 +1104,20 @@ impl InputQueueAttachment {
             // Dismissing a toolkit dialog may hide it before destruction. Only
             // an already inserted chord may finish its owned UPs on the known
             // same-thread successor; no new DOWN is allowed on that successor.
+            let matches_target =
+                foreground_matches_target_or_owned_window(target, foreground.0 as usize as u64);
             let closed_successor = prefix_inserted
                 && crate::win32::foreground_after_target_closed(
                     target,
                     foreground.0 as usize as u64,
                 );
-            if !foreground_matches_target_or_owned_window(target, foreground.0 as usize as u64)
-                && !closed_successor
-            {
+            // Hide can clear visibility while this exact HWND is still the
+            // foreground on the same receiver thread. Complete only its owned
+            // UPs, without treating that transition as a read receipt.
+            let hidden_target = prefix_inserted
+                && !matches_target
+                && target.is_same_live_window(foreground.0 as usize as u64);
+            if !matches_target && !closed_successor && !hidden_target {
                 return Err(ForegroundInputError {
                     error: anyhow::anyhow!(
                         "foreground_lost: stopped before another key phase \
@@ -1124,7 +1130,7 @@ impl InputQueueAttachment {
                 }
                 .into());
             }
-            if closed_successor && !target_closed.replace(true) {
+            if (closed_successor || hidden_target) && !target_closed.replace(true) {
                 crate::focus_return::note_unconfirmed_input();
             }
             if !self.matches_foreground(foreground) {

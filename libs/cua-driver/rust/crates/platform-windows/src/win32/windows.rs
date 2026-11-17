@@ -262,6 +262,14 @@ pub(crate) struct ForegroundTarget {
     owner: Option<u64>,
 }
 
+impl ForegroundTarget {
+    /// Identity only, including a hidden window still completing deactivation.
+    /// This does not authorize a new DOWN or a foreground restoration.
+    pub(crate) fn is_same_live_window(self, actual: u64) -> bool {
+        self.hwnd == actual && window_owner_pid(actual) == Some(self.pid)
+    }
+}
+
 /// Snapshot the exact target identity and owner before global input is sent.
 pub(crate) fn capture_foreground_target(target: u64) -> Option<ForegroundTarget> {
     let pid = window_owner_pid(target)?;
