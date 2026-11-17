@@ -11,6 +11,7 @@ use std::time::{Duration, Instant};
 
 use cua_driver_core::pointer::{self, Backend, Failure, Report};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
+use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE,
     MOUSEEVENTF_HWHEEL, MOUSEEVENTF_MOVE, MOUSEEVENTF_MOVE_NOCOALESCE, MOUSEEVENTF_VIRTUALDESK,
@@ -461,6 +462,16 @@ fn run_operation<R>(
                     "Exact target activation did not complete before pointer delivery",
                 ));
             }
+            // Foreground/focus and WindowFromPoint can change before DWM's
+            // composed hit-test frame. A wheel over the newly uncovered point
+            // can otherwise reach no receiver despite successful insertion.
+            // This pre-input presentation fence is never receiver-read evidence.
+            unsafe { DwmFlush() }.map_err(|error| {
+                failure(
+                    "foreground_unavailable",
+                    format!("DWM synchronization failed before pointer delivery: {error}"),
+                )
+            })?;
         }
         let report = execute(&mut native);
         if let Some(confirmed) = native.delivered_point {
