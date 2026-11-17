@@ -34,9 +34,7 @@ pub(crate) fn completion_result(
         result
             .content
             .push(cua_driver_core::protocol::Content::text(
-                "input_read: unobservable; no supported witness confirms that the target read \
-             every inserted event. Automatic foreground return is suppressed. Nothing was \
-             replayed; inspect the target before repeating the action.",
+                "Read evidence is unavailable.",
             ));
     }
     result
@@ -54,16 +52,14 @@ fn restoration_note(turn: TypingTurn) -> String {
     if restores_previous(turn) {
         String::new()
     } else {
-        format!(" Focus was not restored: {}", reason(turn))
+        format!(" Pending state: {}", reason(turn))
     }
 }
 fn reason(turn: TypingTurn) -> &'static str {
     if turn == TypingTurn::Lost {
-        "another window took the foreground during the call, and the driver does not take \
-         it back."
+        "External foreground retained."
     } else {
-        "the target window stays in front so input it has not read yet cannot reach the \
-         previously foreground window. Bring that window back once the target settles."
+        "Receiver retained pending read evidence."
     }
 }
 

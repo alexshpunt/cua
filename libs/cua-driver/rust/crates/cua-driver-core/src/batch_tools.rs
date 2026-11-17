@@ -720,7 +720,7 @@ impl Plan {
             "steps": reports,
         });
         let header = match failed_step {
-            None => format!("run_steps: {total}/{total} steps ok"),
+            None => format!("Completed {total}/{total} requested steps"),
             Some(index) => format!(
                 "run_steps: step {} of {total} failed; {} step(s) ran before it, {} not run",
                 index + 1,

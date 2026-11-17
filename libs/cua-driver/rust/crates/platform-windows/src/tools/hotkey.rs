@@ -51,8 +51,7 @@ impl Tool for HotkeyTool {
                 visible to `GetKeyState` / `TranslateAccelerator`, so Win32 apps that bind \
                 accelerators via `TranslateAccelerator` (LibreOffice, FAR, classic Notepad, etc.) \
                 never see the combo as a real accelerator on the PostMessage-only path. \
-                Foreground return requires supported receiver-read evidence for every inserted \
-                event and no older unconfirmed input; otherwise the target stays in front. \
+                The current foreground-input contract applies. \
                 Windows can deny activation under foreground-lock or integrity rules. \
                 Any unconfirmed activation input also prevents automatic foreground return.\n\n\
                 - **Legacy Win32 targets without modifiers** (plain `enter`, `tab`, `f5`, etc.) \

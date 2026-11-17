@@ -164,17 +164,15 @@ fn background_pointer_refusal(hwnd: u64, failed_calls: Vec<ActionTransport>) -> 
         .map(|transport| ActionAttempt {
             transport,
             delivery: ActualDelivery::Background,
-            detail: Some("UIA provider action returned an error; its effect is unknown".into()),
+            detail: Some("Provider call outcome unresolved".into()),
         })
         .collect();
     crate::typing_turn::completion_result(
-        ToolResult::error(
-            "The UIA action's effect is unknown. No fallback pointer input was sent because \
-             synthetic background input cannot preserve desktop posture. Inspect the target \
-             before another action; the driver did not replay the click.",
-        )
-        .with_structured(json!({"code":"background_effect_unverifiable","effect":"unverifiable"}))
-        .with_action_record(record),
+        ToolResult::error("Inspect the unresolved provider action.")
+            .with_structured(
+                json!({"code":"background_effect_unverifiable","effect":"unverifiable"}),
+            )
+            .with_action_record(record),
         crate::typing_turn::TypingTurn::NotSent,
     )
 }

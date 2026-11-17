@@ -88,9 +88,9 @@ impl Report {
                 ),
             });
         }
-        let message = format!("Windows held path: {}/{total} points, pressed={}, released={}, duration_ms={duration_ms}, elapsed_ms={elapsed_ms}. {}",
+        let message = format!("Path report: {}/{total}, down={}, up={}, requested {duration_ms} ms, observed {elapsed_ms} ms. {}",
             self.completed_points, self.pressed, self.released,
-            self.error.as_deref().unwrap_or("Delivery is not proof of the app's result."));
+            self.error.as_deref().unwrap_or("Application state requires observation."));
         // Handled partial delivery is an action outcome. The MCP error arm
         // skips action publication and would discard its completed prefix.
         if self.completed_points == 0 {

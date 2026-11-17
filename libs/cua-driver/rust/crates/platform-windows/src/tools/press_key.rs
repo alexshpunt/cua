@@ -321,13 +321,11 @@ impl Tool for PressKeyTool {
             .await;
             return match send_result {
                 Ok(Ok(turn)) => crate::typing_turn::completion_result(
-                    ToolResult::text(format!(
-                        "✅ Sent {key_display} via SendInput on pid {raw_pid} (delivery_mode:foreground)."
-                    )),
+                    ToolResult::text(format!("Requested {key_display} on process {raw_pid}.")),
                     turn,
                 ),
                 Ok(Err(e)) => crate::typing_turn::foreground_input_error(e),
-                Err(e)     => ToolResult::error(format!("Task error: {e}")),
+                Err(e) => ToolResult::error(format!("Task error: {e}")),
             };
         }
         let result = tokio::task::spawn_blocking({
