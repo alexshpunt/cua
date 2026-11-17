@@ -210,6 +210,13 @@ function createWindow() {
           // occlusion sentinel before taking their desktop snapshot.
           mainWindow.show();
           mainWindow.focus();
+          // Native window enumeration can finish before this final startup show.
+          // Publish readiness after it so Windows minimize tests cannot race it.
+          const hostReadyFile = process.platform === 'win32' && process.env.CUA_E2E_HOST_READY_FILE;
+          if (hostReadyFile) {
+            fs.writeFileSync(`${hostReadyFile}.tmp`, JSON.stringify({ pid: process.pid }), 'utf8');
+            fs.renameSync(`${hostReadyFile}.tmp`, hostReadyFile);
+          }
         }
       }
     })
