@@ -1113,7 +1113,13 @@ impl InputQueueAttachment {
                 && !closed_successor
             {
                 return Err(ForegroundInputError {
-                    error: anyhow::anyhow!("foreground_lost: stopped before another key phase"),
+                    error: anyhow::anyhow!(
+                        "foreground_lost: stopped before another key phase \
+                         (target={target:?}, actual={foreground:?}, \
+                         prefix_inserted={prefix_inserted}, \
+                         receiver_thread_unchanged={}, closed_successor={closed_successor})",
+                        self.matches_foreground(foreground)
+                    ),
                     turn: TypingTurn::Lost,
                 }
                 .into());
