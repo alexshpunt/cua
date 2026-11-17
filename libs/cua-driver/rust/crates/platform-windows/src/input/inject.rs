@@ -123,7 +123,7 @@ pub(crate) unsafe fn force_foreground_attached(target: HWND) -> bool {
     // Across input queues, successful activation is asynchronous. Wait for its
     // nudge before rejecting it and inserting an unnecessary unlock key.
     // This pre-input readiness check never acknowledges inserted input.
-    let ready = !requested || super::keyboard::activation_ready(target);
+    let ready = requested && super::keyboard::activation_ready(target);
     let actual = GetForegroundWindow();
     tracing::debug!(
         attached,

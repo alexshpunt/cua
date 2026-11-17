@@ -397,16 +397,22 @@ async fn observation_inherits_the_window_and_stays_bounded() {
     );
 }
 
-/// `delay_ms` waits once between each pair of steps. The clock is the runtime's paused one, which only moves
-/// when the batch sleeps, so the elapsed time is exactly the pauses it asked for however busy the machine is.
+/// `delay_ms` waits once between each pair of steps. Acquire the real desktop
+/// lane before measuring: parallel dispatch can otherwise advance this runtime's
+/// paused clock while it waits for another test's action.
 #[tokio::test(start_paused = true)]
 async fn pauses_between_steps_but_not_after_the_last() {
     for (steps, pauses) in [(1, 0), (2, 1), (3, 2)] {
         let harness = Harness::new();
+        let desktop = crate::tool::DesktopCall::acquire()
+            .await
+            .expect("acquire the measured action lane");
         let started = tokio::time::Instant::now();
-        harness
-            .run(json!({"delay_ms": 120, "steps": vec![json!({"tool": "click", "args": {"pid": 42}}); steps]}))
+        let result = desktop
+            .scope(harness.run(json!({"delay_ms": 120, "steps": vec![json!({"tool": "click", "args": {"pid": 42}}); steps]})))
             .await;
+        assert_ne!(result.is_error, Some(true), "{}", text(&result));
+        assert_eq!(harness.hits("click"), steps);
         assert_eq!(
             started.elapsed(),
             Duration::from_millis(120 * pauses),
