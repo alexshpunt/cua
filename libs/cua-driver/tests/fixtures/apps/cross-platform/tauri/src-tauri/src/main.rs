@@ -28,10 +28,17 @@ fn fixture_url() -> tauri::Url {
 
 fn main() {
     let journal_url = std::env::var("CUA_E2E_FIXTURE_JOURNAL_URL").unwrap_or_default();
+    let journal_script = format!("window.__CUA_E2E_FIXTURE_JOURNAL_URL = {journal_url:?};");
+    #[cfg(target_os = "windows")]
+    let journal_script = {
+        let focus_url = std::env::var("CUA_E2E_FIXTURE_FOCUS_JOURNAL_URL").unwrap_or_default();
+        format!(
+            "{journal_script}\nwindow.__CUA_E2E_FIXTURE_FOCUS_JOURNAL_URL = {focus_url:?};\n{}",
+            include_str!("focus-diagnostics.js")
+        )
+    };
     let journal_plugin = tauri::plugin::Builder::<tauri::Wry, ()>::new("e2e-journal")
-        .js_init_script(format!(
-            "window.__CUA_E2E_FIXTURE_JOURNAL_URL = {journal_url:?};"
-        ))
+        .js_init_script(journal_script)
         .build();
     tauri::Builder::default()
         .plugin(journal_plugin)
