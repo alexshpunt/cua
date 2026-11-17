@@ -1198,11 +1198,12 @@ fn focus_harness(driver: &mut McpDriver, pid: u32, wid: u64) {
 #[test]
 #[ignore]
 fn harness_wpf_right_click() {
+    let _coordinates = pointer_completion_oracle::PhysicalCoordinates::enter();
     run_foreground_case(
         "right_click",
         Targeting::Ax,
         DriverRoute::WindowsSendInput,
-        Vec::new(),
+        vec![OracleKind::Cursor, OracleKind::Focus],
         |pid, wid, driver| {
             focus_harness(driver, pid, wid);
             let snap = driver.call(
@@ -1244,10 +1245,20 @@ fn harness_wpf_right_click() {
             );
             let mut cursor_after = POINT::default();
             unsafe { GetCursorPos(&mut cursor_after) }.expect("read cursor after click");
+            assert!(!resp.is_error(), "right click failed: {}", resp.text());
+            // No supported receiver-read witness covers the pointer sequence.
+            // Its target posture must survive the response without restoration.
+            assert!(
+                (f64::from(cursor_after.x) - click_x).abs() <= 1.0
+                    && (f64::from(cursor_after.y) - click_y).abs() <= 1.0,
+                "unconfirmed right click moved off its target: ({}, {}) vs ({click_x}, {click_y})",
+                cursor_after.x,
+                cursor_after.y
+            );
             assert_eq!(
-                (cursor_after.x, cursor_after.y),
-                (cursor_before.x, cursor_before.y),
-                "foreground right click left the real cursor at the target"
+                unsafe { GetForegroundWindow() }.0 as usize as u64,
+                wid,
+                "unconfirmed right click returned foreground away from its target"
             );
             println!("right_click: {}", resp.text());
             std::thread::sleep(Duration::from_millis(400));
@@ -1264,7 +1275,7 @@ fn harness_wpf_right_click() {
                 action_lines
             );
             println!("✅ harness_wpf_right_click: last_action=right_click");
-            Vec::new()
+            vec![OracleKind::Cursor, OracleKind::Focus]
         },
     );
 }

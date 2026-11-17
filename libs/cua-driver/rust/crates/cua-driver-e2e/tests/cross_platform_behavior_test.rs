@@ -1760,7 +1760,7 @@ fn shared_case_with_native_hyprland(
     } else if cfg!(target_os = "windows") && delivery_kind == Delivery::Background {
         match (spec.name, action, targeting) {
             ("electron", "right_click" | "double_click" | "drag", _) => {
-                vec![RefusalCode::BackgroundOccluded]
+                vec![RefusalCode::BackgroundUnavailable]
             }
             (
                 "electron",
@@ -1772,7 +1772,7 @@ fn shared_case_with_native_hyprland(
             ("tauri", "hotkey", _) | ("tauri", "scroll", Targeting::Px) => {
                 vec![RefusalCode::BackgroundUnavailable]
             }
-            ("tauri", "drag", Targeting::Px) => vec![RefusalCode::BackgroundOccluded],
+            ("tauri", "drag", Targeting::Px) => vec![RefusalCode::BackgroundUnavailable],
             _ => Vec::new(),
         }
     } else if cfg!(target_os = "macos") && delivery_kind == Delivery::Background {

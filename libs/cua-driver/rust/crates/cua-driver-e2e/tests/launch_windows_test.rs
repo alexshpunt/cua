@@ -16,7 +16,7 @@ use cua_driver_testkit::e2e::{
 use cua_driver_testkit::sentinel::ForegroundSentinel;
 use cua_driver_testkit::{harness_app, spawn_in_job, Driver, McpDriver};
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{IsIconic, ShowWindow, SW_MINIMIZE};
+use windows::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible, ShowWindow, SW_MINIMIZE};
 
 #[path = "support/native_windows.rs"]
 mod native_windows;
@@ -191,9 +191,14 @@ fn launch_app_minimized_preserves_foreground() {
 fn wait_for_window(pid: u32) -> (u64, String) {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
-        if let Some((_, window_id, title)) = native_windows()
-            .into_iter()
-            .find(|(window_pid, _, _)| *window_pid == pid)
+        if let Some((_, window_id, title)) =
+            native_windows()
+                .into_iter()
+                .find(|(window_pid, window_id, title)| {
+                    *window_pid == pid
+                        && title.starts_with("CuaTestHarness Electron [cdp=")
+                        && unsafe { IsWindowVisible(HWND(*window_id as *mut _)) }.as_bool()
+                })
         {
             return (window_id, title);
         }

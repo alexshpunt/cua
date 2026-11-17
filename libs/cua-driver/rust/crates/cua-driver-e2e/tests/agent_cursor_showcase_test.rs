@@ -39,6 +39,8 @@ fn semantic_cursor_showcase_records_session_and_action_states() {
         vec![OracleKind::Pixels],
     );
     execute_case(case, |evidence| {
+        #[cfg(target_os = "windows")]
+        let _coordinates = cua_driver_testkit::observer::windows::PhysicalCoordinates::enter();
         let mut driver = spawn_driver();
         *evidence = recording_evidence(driver.recording_dir());
 
