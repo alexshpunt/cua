@@ -56,6 +56,12 @@ cd libs\cua-driver\tests\fixtures
 .\build\windows.ps1 -Skip winui3
 ```
 
+On Windows, the normal Electron fixture atomically writes `{ "pid": <host pid> }`
+to `CUA_E2E_HOST_READY_FILE` when that environment variable is set. The write
+follows page loading and the final startup `show()`/`focus()`. Native window
+creation alone does not signal that startup is finished; minimize/restore tests
+wait for this receipt before changing the window posture.
+
 Host requirements:
 
 - macOS: Xcode command line tools; Node.js/npm for Electron; Rust for Tauri.
