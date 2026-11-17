@@ -66,6 +66,7 @@ impl NativePath {
         let inserted = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
         if inserted == 1 {
             self.input_pending = true;
+            crate::focus_return::note_unconfirmed_input();
             Ok(())
         } else {
             Err("input_failed: SendInput inserted 0/1 events".into())

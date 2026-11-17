@@ -985,6 +985,9 @@ pub(crate) fn release_inserted_keys(events: &[INPUT], inserted: usize) -> bool {
 
 fn insert_unobservable(events: &[INPUT]) -> UnitRead {
     let sent = unsafe { SendInput(events, std::mem::size_of::<INPUT>() as i32) };
+    if sent > 0 {
+        crate::focus_return::note_unconfirmed_input();
+    }
     if sent as usize != events.len() {
         release_inserted_keys(events, sent as usize);
         UnitRead::Short(sent)

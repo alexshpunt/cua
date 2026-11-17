@@ -53,9 +53,8 @@ impl Tool for HotkeyTool {
                 never see the combo as a real accelerator on the PostMessage-only path. \
                 Foreground return requires supported receiver-read evidence for every inserted \
                 event and no older unconfirmed input; otherwise the target stays in front. \
-                Requires the daemon to have UIAccess integrity so \
-                `SetForegroundWindow` is permitted — the MCP proxy auto-prefers the \
-                `cua-driver-uia.exe` worker pipe when both daemons are running.\n\n\
+                Windows can deny activation under foreground-lock or integrity rules. \
+                Any unconfirmed activation input also prevents automatic foreground return.\n\n\
                 - **Legacy Win32 targets without modifiers** (plain `enter`, `tab`, `f5`, etc.) \
                 route through `PostMessage(WM_KEYDOWN/UP)` — no focus steal, no need to update \
                 modifier state.\n\n\

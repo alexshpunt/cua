@@ -94,6 +94,7 @@ impl Native {
         let inserted = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
         if inserted == 1 {
             self.input_pending.set(true);
+            crate::focus_return::note_unconfirmed_input();
             Ok(())
         } else {
             Err("input_failed: SendInput inserted 0/1 events".into())
@@ -183,6 +184,7 @@ impl Native {
         unsafe { InjectSyntheticPointerInput(device, &[info]) }
             .map_err(|error| format!("input_failed: pen injection: {error}"))?;
         self.input_pending.set(true);
+        crate::focus_return::note_unconfirmed_input();
         if flags.0 & POINTER_FLAG_INCONTACT.0 != 0 {
             self.held_pen = Some((x, y, pen));
         } else if flags.0 & POINTER_FLAG_UP.0 != 0 {
