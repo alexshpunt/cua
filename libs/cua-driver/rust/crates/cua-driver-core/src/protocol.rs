@@ -298,7 +298,7 @@ impl Content {
 
 /// Internal receiver-read knowledge, separate from insertion and application effect.
 /// This is not a wire contract and does not authorize replay of an unknown prefix.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum InputReadCompletion {
     /// No global queue input was inserted by this producer.
     NotSent,
@@ -340,7 +340,6 @@ pub struct ToolResult {
     pub action_record: Option<crate::action_record::ActionExecutionRecord>,
     /// Native completion carried between actuator and restoration guard, never
     /// appended to a tool's closed structured output schema.
-    #[serde(skip)]
     pub input_read: Option<InputReadCompletion>,
 }
 
