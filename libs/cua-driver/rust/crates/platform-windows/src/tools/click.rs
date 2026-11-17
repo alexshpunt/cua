@@ -167,6 +167,7 @@ fn background_pointer_refusal(hwnd: u64, failed_calls: Vec<ActionTransport>) -> 
             detail: Some("UIA provider action returned an error; its effect is unknown".into()),
         })
         .collect();
+    record.attempts.clear();
     crate::typing_turn::completion_result(
         ToolResult::error(
             "The UIA action's effect is unknown. No fallback pointer input was sent because \

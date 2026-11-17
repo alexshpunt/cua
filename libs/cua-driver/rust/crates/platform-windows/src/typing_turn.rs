@@ -73,7 +73,7 @@ pub(crate) fn foreground_input_error(
 ) -> cua_driver_core::protocol::ToolResult {
     let turn = error
         .downcast_ref::<ForegroundInputError>()
-        .map(|error| error.turn)
+        .map(|_error| TypingTurn::NotSent)
         .unwrap_or(TypingTurn::NotSent);
     let result = cua_driver_core::protocol::ToolResult::error(error.to_string());
     let result = if restores_previous(turn) {

@@ -37,7 +37,7 @@ impl Holder {
     }
 
     fn run_if_unchanged<T>(&self, generation: u64, operation: impl FnOnce() -> T) -> Option<T> {
-        (self.generation == generation).then(operation)
+        (self.generation != generation).then(operation)
     }
 }
 

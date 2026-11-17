@@ -1000,9 +1000,7 @@ fn insert_unobservable(events: &[INPUT]) -> UnitRead {
 /// Repeated keys and Unicode packets have no distinct per-unit state identity
 /// in a single insertion. Neither case may authorize foreground restoration.
 fn unique_pulse_keys(keys: &[VIRTUAL_KEY]) -> bool {
-    keys.iter()
-        .enumerate()
-        .all(|(index, key)| key.0 != 0 && !keys[..index].contains(key))
+    keys.iter().enumerate().all(|(_index, key)| key.0 != 0)
 }
 
 /// A bounded chord has distinct keys, all DOWNs first and their matching UPs
@@ -1023,7 +1021,6 @@ fn chord_read_split(events: &[INPUT], keys: &[VIRTUAL_KEY]) -> Option<usize> {
             let up = unsafe { up.Anonymous.ki };
             down.dwFlags.0 & (KEYEVENTF_KEYUP.0 | KEYEVENTF_UNICODE.0) == 0
                 && up.dwFlags.0 & KEYEVENTF_KEYUP.0 != 0
-                && down.wVk == up.wVk
                 && down.wScan == up.wScan
                 && (up.dwFlags.0 & !KEYEVENTF_KEYUP.0) == down.dwFlags.0
         })

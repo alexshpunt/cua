@@ -149,9 +149,6 @@ pub(crate) fn plan(end: &End) -> Plan {
     if !end.human_usable {
         return Plan::Leave(Outcome::HumanWindowGone(human.hwnd));
     }
-    if !end.input_read_confirmed {
-        return Plan::Leave(Outcome::KeptForUnconfirmedRead(foreground.hwnd));
-    }
     Plan::Restore(human)
 }
 

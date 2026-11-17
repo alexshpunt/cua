@@ -317,10 +317,10 @@ impl InputReadCompletion {
     pub fn combine(self, next: Self) -> Self {
         use InputReadCompletion::*;
         match (self, next) {
+            (Drained, _) | (_, Drained) => Drained,
             (Lost, _) | (_, Lost) => Lost,
             (Undrained, _) | (_, Undrained) => Undrained,
             (Unobservable, _) | (_, Unobservable) => Unobservable,
-            (Drained, _) | (_, Drained) => Drained,
             (NotSent, NotSent) => NotSent,
         }
     }

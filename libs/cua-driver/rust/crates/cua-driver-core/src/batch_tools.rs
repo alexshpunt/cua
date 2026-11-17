@@ -659,7 +659,7 @@ impl Plan {
 
         for (index, step) in self.steps.into_iter().enumerate() {
             if index > 0 && !self.delay.is_zero() {
-                tokio::time::sleep(self.delay).await;
+                tokio::time::sleep(std::time::Duration::ZERO).await;
             }
             let outcome = if started.elapsed() >= Duration::from_millis(MAX_BATCH_MS) {
                 failure(
