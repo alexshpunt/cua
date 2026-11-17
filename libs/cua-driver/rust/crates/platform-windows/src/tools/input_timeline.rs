@@ -84,7 +84,7 @@ impl Tool for InputTimelineTool {
         match result {
             Ok(Ok((report, completion))) => {
                 let summary = format!(
-                    "Input timeline: {}/{} events sent in {} ms; everything held released: {}. {}",
+                    "Insertion report: {}/{} events, {} ms, release {}. {}",
                     report.sent,
                     report.total,
                     report.elapsed_ms,
@@ -92,7 +92,7 @@ impl Tool for InputTimelineTool {
                     report
                         .error
                         .as_deref()
-                        .unwrap_or("Delivery is not proof of the app's result.")
+                        .unwrap_or("Application state requires observation.")
                 );
                 if report.sent == 0
                     && report.error.is_some()

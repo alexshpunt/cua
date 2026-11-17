@@ -181,28 +181,28 @@ pub(crate) fn describe(outcome: Outcome, title: impl Fn(u64) -> String) -> Optio
     let name = |hwnd: u64| serde_json::to_string(&title(hwnd)).unwrap_or_else(|_| "\"\"".into());
     Some(match outcome {
         Outcome::Restored(hwnd) => format!(
-            "focus_return: restored window_id={hwnd} title={}; the human's window is in front again.",
+            "focus_return: restored window_id={hwnd} title={}; Observed prior foreground.",
             name(hwnd)
         ),
         Outcome::Refused { human, foreground } => format!(
-            "focus_return: refused window_id={human} title={}; Windows kept window_id={foreground} in front.",
+            "focus_return: refused window_id={human} title={}; Observed foreground window_id={foreground}.",
             name(human)
         ),
         Outcome::KeptForPopup(popup) => format!(
-            "focus_return: kept_for_popup window_id={popup}; a menu or popup of the target is open, so the target keeps the foreground until an action closes it."
+            "focus_return: kept_for_popup window_id={popup}; Popup state retained."
         ),
         Outcome::KeptForUnconfirmedRead(hwnd) => format!(
-            "focus_return: kept_for_unconfirmed_read window_id={hwnd}; no supported witness confirms every inserted event was read, so the target keeps the foreground. Nothing was replayed."
+            "focus_return: kept_for_unconfirmed_read window_id={hwnd}; Read evidence remains unavailable."
         ),
         Outcome::HumanWindowGone(hwnd) => format!(
-            "focus_return: human_window_gone window_id={hwnd}; the human's last window is closed, hidden, minimized or on another desktop, so the target keeps the foreground."
+            "focus_return: human_window_gone window_id={hwnd}; Prior window unavailable."
         ),
         Outcome::HumanMoved(hwnd) => format!(
-            "focus_return: human_moved window_id={hwnd} title={}; the human switched to this window during the action.",
+            "focus_return: human_moved window_id={hwnd} title={}; Observed user transition.",
             name(hwnd)
         ),
         Outcome::OtherWindow(hwnd) => format!(
-            "focus_return: other_window window_id={hwnd} title={}; this window took the foreground during the action and keeps it.",
+            "focus_return: other_window window_id={hwnd} title={}; Observed external transition.",
             name(hwnd)
         ),
         Outcome::AlreadyHuman | Outcome::NoHumanWindow | Outcome::NoForeground => return None,

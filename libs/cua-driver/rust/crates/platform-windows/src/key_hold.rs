@@ -36,10 +36,10 @@ impl Report {
             ActionEffect, ActionExecutionRecord, ActionTransport, ActualDelivery, RequestedDelivery,
         };
         use cua_driver_core::protocol::ToolResult;
-        let summary = format!("Windows key hold: pressed={:?}, keys_released={}, pointer_actions={}/{}, duration_ms={}, held_ms={}, elapsed_ms={}, pointer_prefix={:?}. {}",
+        let summary = format!("Held-key report: {:?}, released {}, pointer {}/{}, requested {}, held {}, elapsed {}, prefix {:?}. {}",
             self.pressed_keys, self.keys_released, self.completed_actions, hold.actions.len(), hold.duration_ms, self.held_ms, elapsed_ms,
             self.pointer_reports.iter().map(|r| (r.completed_points, r.pressed, r.released)).collect::<Vec<_>>(),
-            self.error.as_deref().unwrap_or("Delivery is not proof of the app's result."));
+            self.error.as_deref().unwrap_or("Application state requires observation."));
         if self.pressed_keys.is_empty() && self.error.is_some() {
             return ToolResult::error(summary).with_structured(json!({"effect":"refused", "code":self.error.as_deref().unwrap().split(':').next().unwrap_or("input_failed")}));
         }
