@@ -1,7 +1,7 @@
 # Cua RFC process
 
-Requests for comments (RFCs) are the feedback and decision mechanism for
-changes that should be understood before they ship. Cua keeps RFCs in this
+Requests for comments (RFCs) are an optional public design review mechanism,
+used when the maintainer requests one. Cua keeps RFCs in this
 repository so the proposal, implementation, tests, and history can be reviewed
 together.
 
@@ -10,7 +10,7 @@ linked implementation pull requests become the source of truth.
 
 ## When to use an RFC
 
-Use an RFC for changes that affect one or more of the following:
+Consider an RFC when public feedback would help decide changes affecting:
 
 - public SDK, CLI, MCP, protocol, or file-format contracts;
 - cross-platform architecture or process and permission boundaries;
@@ -20,10 +20,11 @@ Use an RFC for changes that affect one or more of the following:
 - decisions where external contributor feedback would materially improve the
   outcome.
 
-An RFC is not required for small bug fixes, routine documentation changes,
-internal refactors that preserve public behavior, or urgent private security
-response. Suspected vulnerabilities must use the repository's private security
-reporting path instead of a public RFC.
+An accepted task and its maintainer decision do not require a duplicate public
+RFC, including for public-contract or compatibility changes. Follow the work
+intake guidance in [CONTRIBUTING.md](../../.github/CONTRIBUTING.md#choose-where-work-starts).
+Suspected vulnerabilities must use the private security reporting path instead
+of a public RFC.
 
 ### Security design versus vulnerability reports
 
@@ -31,8 +32,8 @@ A public RFC is the right place to decide what a security boundary should be:
 which process holds a capability, what a permission prompt must state, which
 data must not be collected or exposed, and how authorization appears in a
 public contract. A vulnerability report describes a specific exploitable defect
-in shipped Cua code or configuration. Design the boundary in public; report the
-defect privately through [`SECURITY.md`](../../.github/SECURITY.md).
+in shipped Cua code or configuration. Discuss the boundary through the selected
+design review; report the defect privately through [`SECURITY.md`](../../.github/SECURITY.md).
 
 If a hardening proposal cannot be described without disclosing an exploitable
 defect, report it privately first. Maintainers can open or unblock the public
@@ -55,6 +56,8 @@ directory. Relative asset links keep the proposal portable and reviewable on
 GitHub.
 
 ## Lifecycle
+
+When the maintainer requests a public GitHub RFC:
 
 1. Open an issue using the **Request for comments** issue form. The issue is the
    discussion and decision record.

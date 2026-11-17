@@ -19,8 +19,7 @@ scope, progress, blockers, and evidence rather than posting periodic status comm
 
 Refs #
 
-RFC (required for a public SDK, CLI, MCP, protocol, compatibility, permission,
-or cross-component contract change):
+Existing task or decision record (if applicable; no duplicate GitHub issue or RFC required):
 
 ## Compatibility and risk
 
@@ -36,7 +35,6 @@ or cross-component contract change):
 ## Contributor and release checks
 
 - [ ] The PR is focused and the description matches the final diff.
-- [ ] This change does not require an RFC, or the accepted RFC is linked above.
 - [ ] Tests, documentation, and platform evidence are included or the gap is explained.
 - [ ] The PR title is a Conventional Commit describing the production change.
 - [ ] External contributor authorship is preserved, or no external contribution is included.
