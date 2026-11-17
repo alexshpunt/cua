@@ -665,7 +665,7 @@ mod tests {
         let title = |_| "Notepad".to_owned();
         assert_eq!(
             describe(Outcome::Restored(1), title).unwrap(),
-            "focus_return: restored window_id=1 title=\"Notepad\"; Observed prior foreground."
+            "focus_return: restored window_id=1 title=\"Notepad\"; the human's window is in front again."
         );
         assert!(describe(Outcome::KeptForPopup(7), title)
             .unwrap()
