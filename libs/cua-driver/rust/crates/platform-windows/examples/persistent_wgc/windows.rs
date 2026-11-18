@@ -2,9 +2,7 @@
 // Copyright (c) 2026 Aleksandr Shpuntenko
 
 //! Read-only retained WGC experiment. No snapshot or input authority is published.
-use super::policy::{
-    content_bytes, empty_frame_hresult, frame_timing, fresh_frame, new_delivery, qpc_100ns,
-};
+use super::policy::{content_bytes, empty_frame_hresult, frame_timing, fresh_frame, qpc_100ns};
 use anyhow::{ensure, Context, Result};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -658,9 +656,22 @@ pub(super) fn run() -> Result<()> {
     Ok(())
 }
 
+/// A callback delivered before the local queue barrier cannot satisfy a new-delivery read.
+/// This proves probe delivery ordering only, never changed window content.
+fn new_delivery(arrival: i64, barrier: i64) -> bool {
+    arrival > barrier
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_future_stamp_does_not_replace_delivery_after_the_local_barrier() {
+        assert!(fresh_frame(120, 100, 90));
+        assert!(!new_delivery(99, 100));
+        assert!(!new_delivery(100, 100));
+        assert!(new_delivery(101, 100));
+    }
 
     #[test]
     fn physical_pixel_context_is_scoped_to_the_probe_worker() {

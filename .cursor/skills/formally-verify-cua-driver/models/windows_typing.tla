@@ -13,8 +13,10 @@
 \* by whichever window is foreground when it is read, so a restore that runs
 \* before the read hands the unread input to U.
 \*
-\* The unattached fallback (no queue attachment, 40 ms settle) has no read
-\* signal and is not modelled.
+\* This abstraction assumes sound receiver-read evidence for each observed
+\* phase. It does not prove the Win32 witness itself. Unattached, opaque and
+\* earlier unconfirmed input streams are outside this model and cannot
+\* authorize restoration in the implementation.
 \*
 \* Check with TLC (tla2tools.jar), from this directory:
 \*   java -cp tla2tools.jar tlc2.TLC -config windows_typing.cfg windows_typing.tla

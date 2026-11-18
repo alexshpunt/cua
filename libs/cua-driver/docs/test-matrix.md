@@ -180,11 +180,36 @@ atomically replaced state file, including the target and leakage sentinels.
 The single-line row covers CJK, digits, and emoji; the multiline sample covers
 LF, CR, CRLF, repeated empty lines, and leading/trailing breaks. The oracle
 normalizes line endings only and preserves all other characters and blank
-lines. Foreground delivery keeps the target in front until its thread has
-read every inserted event (a sentinel-key drain), so text after line breaks is
-not handed to the previously active window. Pointer actions also use PX where
+lines. Windows foreground delivery restores focus only with supported evidence
+for every requested key pulse. Unicode packets, repeated-key batches and earlier
+unconfirmed input remain unobservable and keep the target in front; a keyboard
+sentinel does not prove that unrelated input was read. Pointer actions also use PX where
 the tool contract requires coordinates. Current `set_value` rows declare
 background delivery and attach desktop-side-effect oracles.
+
+`harness_wpf_pointer_release_precedes_focus_return` owns queued pointer release
+across focus return for held paths, key holds with pointer work, and input timelines.
+Its opt-in WPF pointer receivers run in separate processes with overlapping canvases.
+The application journals DOWN, held moves, UP, activation and capture state to
+independent JSON files. Each tool has four rows: fast, 1,200 ms blocked,
+1,200 ms selectively pumping only keyboard messages, and 3,000 ms blocked.
+All pointer rows keep foreground and cursor with the target because no supported
+whole-stream pointer read witness exists. Complete insertion stays successful
+with public effect `unverifiable`; missing observability is not a fabricated
+`partial` failure. The separate
+`pointer_completion_oracle::harness_wpf_supported_key_read_returns_the_human_window`
+owner verifies that a fresh supported key pulse still permits restoration and
+reaches only its receiver. Before that control, the owned human receiver reads
+one external setup click and grants only the owned daemon foreground permission
+with `AllowSetForegroundWindow`. Permission is a precondition for activation,
+not evidence of input retrieval; all key and pointer counts remain exact.
+A later keyboard action must not clear the earlier pointer uncertainty or replay
+the gesture. The 3,000 ms row starts without a prior input action. Every row
+requires exactly one target DOWN/UP and no extra input in the human receiver.
+The ordinary WPF harness layout is unchanged.
+The companion `pointer_completion_oracle` owners cover legacy click, straight drag
+and wheel posture, plus the complete `move_pointer`/`scroll_at` no-return contract.
+Cursor oracles use a scoped per-monitor-aware observer and physical screen points.
 
 ## Harness E2E: macOS
 

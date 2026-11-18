@@ -291,6 +291,30 @@ pub mod windows {
         ObserverError, TargetWindow, TargetZ,
     };
 
+    /// Keep observer geometry and pixels in the driver manifest's physical frame.
+    pub struct PhysicalCoordinates(windows::Win32::UI::HiDpi::DPI_AWARENESS_CONTEXT);
+
+    impl PhysicalCoordinates {
+        pub fn enter() -> Self {
+            use windows::Win32::UI::HiDpi::{
+                SetThreadDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
+            };
+            let previous =
+                unsafe { SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
+            assert!(
+                !previous.0.is_null(),
+                "physical-pixel observer context is required"
+            );
+            Self(previous)
+        }
+    }
+
+    impl Drop for PhysicalCoordinates {
+        fn drop(&mut self) {
+            unsafe { windows::Win32::UI::HiDpi::SetThreadDpiAwarenessContext(self.0) };
+        }
+    }
+
     pub struct WindowsObserver {
         stop: Arc<AtomicBool>,
         events: Arc<Mutex<Vec<FocusEvent>>>,

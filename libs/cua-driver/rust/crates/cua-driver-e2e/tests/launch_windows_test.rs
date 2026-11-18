@@ -16,7 +16,7 @@ use cua_driver_testkit::e2e::{
 use cua_driver_testkit::sentinel::ForegroundSentinel;
 use cua_driver_testkit::{harness_app, spawn_in_job, Driver, McpDriver};
 use windows::Win32::Foundation::HWND;
-use windows::Win32::UI::WindowsAndMessaging::{IsIconic, ShowWindow, SW_MINIMIZE};
+use windows::Win32::UI::WindowsAndMessaging::{IsIconic, IsWindowVisible, ShowWindow, SW_MINIMIZE};
 
 #[path = "support/native_windows.rs"]
 mod native_windows;
@@ -47,13 +47,30 @@ fn minimized_window_is_listed_and_bring_to_front_restores_it() {
         let mut driver =
             McpDriver::spawn_named(cell_id).expect("required source-built driver did not start");
         *evidence = recording_evidence(driver.recording_dir());
+        let ready_directory = tempfile::tempdir().expect("create Electron readiness directory");
+        let host_ready = ready_directory.path().join("host-ready.json");
         let mut command = Command::new(&executable);
-        command.stdout(Stdio::null()).stderr(Stdio::null());
+        command
+            .env("CUA_E2E_HOST_READY_FILE", &host_ready)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         let app = spawn_in_job(&mut command).expect("Electron harness did not start");
         let pid = app.id();
         driver.reaper().push(app);
 
         let (window_id, _) = wait_for_window(pid);
+        wait_until(Duration::from_secs(10), || {
+            match std::fs::read(&host_ready) {
+                Ok(bytes) => {
+                    let ready: serde_json::Value =
+                        serde_json::from_slice(&bytes).expect("parse Electron host readiness");
+                    assert_eq!(ready["pid"].as_u64(), Some(u64::from(pid)));
+                    true
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+                Err(error) => panic!("read Electron host readiness: {error}"),
+            }
+        });
         let hwnd = HWND(window_id as *mut _);
         unsafe {
             let _ = ShowWindow(hwnd, SW_MINIMIZE);
@@ -191,9 +208,14 @@ fn launch_app_minimized_preserves_foreground() {
 fn wait_for_window(pid: u32) -> (u64, String) {
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     loop {
-        if let Some((_, window_id, title)) = native_windows()
-            .into_iter()
-            .find(|(window_pid, _, _)| *window_pid == pid)
+        if let Some((_, window_id, title)) =
+            native_windows()
+                .into_iter()
+                .find(|(window_pid, window_id, title)| {
+                    *window_pid == pid
+                        && title.starts_with("CuaTestHarness Electron [cdp=")
+                        && unsafe { IsWindowVisible(HWND(*window_id as *mut _)) }.as_bool()
+                })
         {
             return (window_id, title);
         }

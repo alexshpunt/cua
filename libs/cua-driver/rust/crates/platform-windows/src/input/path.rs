@@ -8,18 +8,19 @@ use std::sync::Arc;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use windows::Win32::Foundation::{HWND, POINT};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE,
     MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_MOVE_NOCOALESCE,
     MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, VK_LBUTTON, VK_MBUTTON, VK_RBUTTON,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetForegroundWindow, GetSystemMetrics, IsWindowVisible, SetCursorPos,
-    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
+    GetForegroundWindow, GetSystemMetrics, IsWindowVisible, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN,
+    SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN,
 };
 
 use crate::drag_path::{self, Backend, Path, Point, Report};
+use crate::typing_turn::TypingTurn;
 
 type MapPoint = fn(u64, i32, i32) -> (i32, i32);
 
@@ -39,18 +40,33 @@ struct NativePath {
     map: MapPoint,
     pressed_at: Instant,
     held: bool,
-    previous_cursor: POINT,
     last_cursor: Option<(i32, i32)>,
     cursor_key: String,
     held_keys: Vec<windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY>,
     hold_started: Instant,
     hold_duration_ms: Option<u64>,
+    input_pending: bool,
 }
 
 impl NativePath {
-    fn send(&self, input: INPUT) -> Result<(), String> {
+    /// Insertion is observable, but there is no supported whole-stream read witness.
+    fn completion(&self, error: Option<&str>) -> TypingTurn {
+        if !self.input_pending {
+            TypingTurn::NotSent
+        } else if error.is_some_and(|error| error.starts_with("foreground_lost:")) {
+            TypingTurn::Lost
+        } else if self.held || !self.held_keys.is_empty() {
+            TypingTurn::Undrained
+        } else {
+            TypingTurn::Unobservable
+        }
+    }
+
+    fn send(&mut self, input: INPUT) -> Result<(), String> {
         let inserted = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
         if inserted == 1 {
+            self.input_pending = true;
+            crate::focus_return::note_unconfirmed_input();
             Ok(())
         } else {
             Err("input_failed: SendInput inserted 0/1 events".into())
@@ -191,22 +207,8 @@ impl Drop for NativePath {
         // covers a panic after native insertion but before the backend returned.
         let _ = self.release();
         let _ = crate::key_hold::Backend::release_keys(self);
-        if self.held || !self.held_keys.is_empty() {
-            return;
-        }
-        // Let the target consume its queued button-up before any restoration.
-        sleep(Duration::from_millis(120));
-        unsafe {
-            let mut current = POINT::default();
-            if GetCursorPos(&mut current).is_ok()
-                && self.last_cursor == Some((current.x, current.y))
-            {
-                let _ = SetCursorPos(self.previous_cursor.x, self.previous_cursor.y);
-            }
-            // The target stays foreground, as after every explicit foreground action.
-            // Re-activating the previous foreground window brought an unrelated
-            // window of the user above the target after each stroke.
-        }
+        // Do not warp the cursor after global input was inserted. A keyboard
+        // sentinel can be read while earlier pointer messages remain queued.
     }
 }
 
@@ -218,9 +220,12 @@ pub(crate) fn send_path(
     cancelled: Arc<AtomicBool>,
     map: MapPoint,
     cursor_key: String,
-) -> Result<Report, String> {
+) -> Result<(Report, TypingTurn), String> {
     let mut native = prepare(hwnd, pid, cancelled, map, cursor_key, &[], &[path])?;
-    Ok(drag_path::execute(path, &mut native))
+    let report = drag_path::execute(path, &mut native);
+    let completion = native.completion(report.error.as_deref());
+    drop(native);
+    Ok((report, completion))
 }
 
 /// One native admission owns keyboard state and all pointer work until release.
@@ -231,14 +236,17 @@ pub(crate) fn send_hold(
     cancelled: Arc<AtomicBool>,
     map: MapPoint,
     cursor_key: String,
-) -> Result<crate::key_hold::Report, String> {
+) -> Result<(crate::key_hold::Report, TypingTurn), String> {
     let paths = hold.actions.iter().collect::<Vec<_>>();
     let mut native = prepare(hwnd, pid, cancelled, map, cursor_key, &hold.keys, &paths)?;
     native.hold_duration_ms = Some(hold.duration_ms);
     native.hold_started = Instant::now();
     let mut report = crate::key_hold::execute(hold, &mut native);
-    report.held_ms = native.hold_started.elapsed().as_millis() as u64;
-    Ok(report)
+    let hold_started = native.hold_started;
+    let completion = native.completion(report.error.as_deref());
+    drop(native);
+    report.held_ms = hold_started.elapsed().as_millis() as u64;
+    Ok((report, completion))
 }
 
 fn prepare(
@@ -279,9 +287,6 @@ fn prepare(
             );
         }
     }
-    let mut previous_cursor = POINT::default();
-    unsafe { GetCursorPos(&mut previous_cursor) }
-        .map_err(|error| format!("cursor_unavailable: {error}"))?;
     let native = NativePath {
         hwnd,
         pid,
@@ -289,12 +294,12 @@ fn prepare(
         map,
         pressed_at: Instant::now(),
         held: false,
-        previous_cursor,
         last_cursor: None,
         cursor_key,
         held_keys: Vec::with_capacity(keys.len()),
         hold_started: Instant::now(),
         hold_duration_ms: None,
+        input_pending: false,
     };
     for path in paths {
         for point in &path.points {

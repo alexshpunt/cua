@@ -3,6 +3,7 @@
 
 //! Native Windows backend for `input_timeline`: SendInput for keys, buttons,
 //! motion and wheel, and one synthetic pen device for pen contacts.
+use std::cell::Cell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::sleep;
@@ -31,6 +32,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 
 use crate::timeline::{self, Backend, Button, Event, Pen, Report, Timed};
+use crate::typing_turn::TypingTurn;
 
 type MapPoint = fn(u64, i32, i32) -> (i32, i32);
 
@@ -48,6 +50,10 @@ struct Native {
     cancelled: Arc<AtomicBool>,
     map: MapPoint,
     started: Instant,
+    input_pending: Cell<bool>,
+    held_keys: Vec<String>,
+    held_buttons: Vec<Button>,
+    held_pen: Option<(i32, i32, Pen)>,
     pen: Option<HSYNTHETICPOINTERDEVICE>,
     /// The target and its owner chain; the target's own popups and flyouts may hold the foreground.
     foreground: crate::win32::ForegroundTarget,
@@ -87,6 +93,8 @@ impl Native {
     fn insert(&self, input: INPUT) -> Result<(), String> {
         let inserted = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
         if inserted == 1 {
+            self.input_pending.set(true);
+            crate::focus_return::note_unconfirmed_input();
             Ok(())
         } else {
             Err("input_failed: SendInput inserted 0/1 events".into())
@@ -174,7 +182,15 @@ impl Native {
             },
         };
         unsafe { InjectSyntheticPointerInput(device, &[info]) }
-            .map_err(|error| format!("input_failed: pen injection: {error}"))
+            .map_err(|error| format!("input_failed: pen injection: {error}"))?;
+        self.input_pending.set(true);
+        crate::focus_return::note_unconfirmed_input();
+        if flags.0 & POINTER_FLAG_INCONTACT.0 != 0 {
+            self.held_pen = Some((x, y, pen));
+        } else if flags.0 & POINTER_FLAG_UP.0 != 0 {
+            self.held_pen = None;
+        }
+        Ok(())
     }
 }
 
@@ -214,7 +230,13 @@ impl Backend for Native {
                 self.insert(crate::input::keyboard::key_input(
                     vk,
                     matches!(event, Event::KeyUp(_)),
-                ))
+                ))?;
+                if matches!(event, Event::KeyDown(_)) {
+                    self.held_keys.push(key.clone());
+                } else {
+                    self.held_keys.retain(|held| held != key);
+                }
+                Ok(())
             }
             Event::ButtonDown(button) | Event::ButtonUp(button) => {
                 if matches!(event, Event::ButtonDown(_)) {
@@ -225,7 +247,13 @@ impl Backend for Native {
                     }
                 }
                 let (flags, data) = button_flags(*button, matches!(event, Event::ButtonDown(_)));
-                self.insert(mouse(flags, 0, 0, data))
+                self.insert(mouse(flags, 0, 0, data))?;
+                if matches!(event, Event::ButtonDown(_)) {
+                    self.held_buttons.push(*button);
+                } else {
+                    self.held_buttons.retain(|held| held != button);
+                }
+                Ok(())
             }
             Event::Move { x, y } => self.move_absolute(*x, *y),
             Event::MoveRelative { dx, dy } => self.insert(mouse(
@@ -274,10 +302,10 @@ impl Backend for Native {
         &mut self,
         keys: &[String],
         buttons: &[Button],
-        pen: Option<(i32, i32, Pen)>,
+        _pen: Option<(i32, i32, Pen)>,
     ) -> Result<(), String> {
         let mut errors = Vec::new();
-        if let Some((x, y, p)) = pen {
+        if let Some((x, y, p)) = self.held_pen {
             if let Err(error) = self
                 .pen_event(POINTER_FLAG_UP | POINTER_FLAG_INRANGE, x, y, p)
                 .and_then(|()| self.pen_event(POINTER_FLAG_UPDATE, x, y, p))
@@ -287,17 +315,17 @@ impl Backend for Native {
         }
         for button in buttons.iter().rev() {
             let (flags, data) = button_flags(*button, false);
-            if let Err(error) = self.insert(mouse(flags, 0, 0, data)) {
-                errors.push(error);
+            match self.insert(mouse(flags, 0, 0, data)) {
+                Ok(()) => self.held_buttons.retain(|held| held != button),
+                Err(error) => errors.push(error),
             }
         }
         for key in keys.iter().rev() {
             match crate::input::keyboard::key_name_to_vk(key) {
-                Ok(vk) => {
-                    if let Err(error) = self.insert(crate::input::keyboard::key_input(vk, true)) {
-                        errors.push(error);
-                    }
-                }
+                Ok(vk) => match self.insert(crate::input::keyboard::key_input(vk, true)) {
+                    Ok(()) => self.held_keys.retain(|held| held != key),
+                    Err(error) => errors.push(error),
+                },
                 Err(error) => errors.push(error.to_string()),
             }
         }
@@ -306,6 +334,18 @@ impl Backend for Native {
         } else {
             Err(format!("release_failed: {}", errors.join("; ")))
         }
+    }
+}
+
+impl Drop for Native {
+    fn drop(&mut self) {
+        // The pure executor handles ordinary exits. Keep native ownership too:
+        // unwinding a worker must release only the keys/buttons/contact it owns.
+        let keys = self.held_keys.clone();
+        let buttons = self.held_buttons.clone();
+        let pen = self.held_pen;
+        let _ = self.release(&keys, &buttons, pen);
+        // No cursor or foreground restoration: insertion is not receiver read.
     }
 }
 
@@ -404,7 +444,7 @@ pub(crate) fn send_timeline(
     program: &[Timed],
     cancelled: Arc<AtomicBool>,
     map: MapPoint,
-) -> Result<Report, String> {
+) -> Result<(Report, TypingTurn), String> {
     if cancelled.load(Ordering::Acquire) {
         return Err("cancelled".into());
     }
@@ -428,6 +468,10 @@ pub(crate) fn send_timeline(
         cancelled,
         map,
         started: Instant::now(),
+        input_pending: Cell::new(false),
+        held_keys: Vec::new(),
+        held_buttons: Vec::new(),
+        held_pen: None,
         pen: None,
         foreground: crate::win32::capture_foreground_target(hwnd)
             .ok_or("target_lost: exact window disappeared before input")?,
@@ -455,6 +499,23 @@ pub(crate) fn send_timeline(
     }
     native.started = Instant::now();
     let mut report = timeline::execute(program, &mut native);
-    report.elapsed_ms = native.started.elapsed().as_millis() as u64;
-    Ok(report)
+    let completion = if !native.input_pending.get() {
+        TypingTurn::NotSent
+    } else if report
+        .error
+        .as_deref()
+        .is_some_and(|error| error.starts_with("foreground_lost:"))
+    {
+        TypingTurn::Lost
+    } else if !report.released {
+        TypingTurn::Undrained
+    } else {
+        // A keyboard sentinel cannot witness a mixed stream: filtered
+        // retrieval may leave older motion, wheel, button or pen input unread.
+        TypingTurn::Unobservable
+    };
+    let started = native.started;
+    drop(native);
+    report.elapsed_ms = started.elapsed().as_millis() as u64;
+    Ok((report, completion))
 }

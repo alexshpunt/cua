@@ -287,6 +287,7 @@ struct Fixture {
     window_y: f64,
     name: &'static str,
     journal: FixtureJournal,
+    focus_journal: Option<FixtureJournal>,
     /// The last lines a Tauri host and its WebKit processes wrote to stderr.
     stderr_tail: Option<StderrTail>,
 }
@@ -327,6 +328,14 @@ impl Drop for Fixture {
                     .expect("serialize fixture state"),
             )
             .expect("persist fixture state");
+            if let Some(journal) = &self.focus_journal {
+                std::fs::write(
+                    dir.join("fixture-focus.json"),
+                    serde_json::to_vec_pretty(&journal.snapshot())
+                        .expect("serialize fixture focus diagnostics"),
+                )
+                .expect("persist fixture focus diagnostics");
+            }
         }
     }
 }
@@ -367,7 +376,12 @@ fn launch_host_with_evidence(spec: &HostSpec, scenario: &str, evidence: &mut Evi
     });
     *evidence = evidence_for_driver(&driver);
     let journal = FixtureJournal::start();
+    let focus_journal =
+        (cfg!(target_os = "windows") && spec.name == "tauri").then(FixtureJournal::start);
     let mut command = Command::new(&spec.path);
+    if let Some(journal) = &focus_journal {
+        command.env("CUA_E2E_FIXTURE_FOCUS_JOURNAL_URL", journal.url());
+    }
     command
         .args(&spec.args)
         .env("CUA_E2E_FIXTURE_JOURNAL_URL", journal.url())
@@ -432,6 +446,7 @@ fn launch_host_with_evidence(spec: &HostSpec, scenario: &str, evidence: &mut Evi
                         window_y: bounds["y"].as_f64().unwrap_or(0.0),
                         name: spec.name,
                         journal,
+                        focus_journal,
                         stderr_tail,
                     };
                     // Electron and Tauri can need more than the generic fixture
@@ -1760,7 +1775,7 @@ fn shared_case_with_native_hyprland(
     } else if cfg!(target_os = "windows") && delivery_kind == Delivery::Background {
         match (spec.name, action, targeting) {
             ("electron", "right_click" | "double_click" | "drag", _) => {
-                vec![RefusalCode::BackgroundOccluded]
+                vec![RefusalCode::BackgroundUnavailable]
             }
             (
                 "electron",
@@ -1772,7 +1787,7 @@ fn shared_case_with_native_hyprland(
             ("tauri", "hotkey", _) | ("tauri", "scroll", Targeting::Px) => {
                 vec![RefusalCode::BackgroundUnavailable]
             }
-            ("tauri", "drag", Targeting::Px) => vec![RefusalCode::BackgroundOccluded],
+            ("tauri", "drag", Targeting::Px) => vec![RefusalCode::BackgroundUnavailable],
             _ => Vec::new(),
         }
     } else if cfg!(target_os = "macos") && delivery_kind == Delivery::Background {

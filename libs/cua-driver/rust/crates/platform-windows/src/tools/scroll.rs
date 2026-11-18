@@ -231,6 +231,7 @@ impl Tool for ScrollTool {
                             && current != previous
                             && !target_root.0.is_null()
                             && current_root == target_root
+                            && !crate::focus_return::has_unconfirmed_input()
                         {
                             unsafe {
                                 crate::input::force_foreground_attached(previous);

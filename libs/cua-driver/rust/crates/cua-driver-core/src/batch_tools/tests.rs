@@ -20,6 +20,7 @@ use crate::{
 /// A stand-in platform tool that records every call it receives and fails
 /// when asked to (`{"fail": true}`).
 struct Probe {
+    independent_input_lane: bool,
     def: ToolDef,
     calls: Arc<Mutex<Vec<Value>>>,
     pacings: Arc<Mutex<Vec<(String, crate::step_pacing::StepPacing)>>>,
@@ -29,6 +30,10 @@ struct Probe {
 impl Tool for Probe {
     fn def(&self) -> &ToolDef {
         &self.def
+    }
+
+    fn has_independent_input_lane(&self, _args: &Value) -> bool {
+        self.independent_input_lane
     }
 
     async fn invoke(&self, args: Value) -> ToolResult {
@@ -56,6 +61,10 @@ struct Harness {
 
 impl Harness {
     fn new() -> Self {
+        Self::with_input_lane(false)
+    }
+
+    fn with_input_lane(independent_input_lane: bool) -> Self {
         let mut registry = ToolRegistry::new();
         let mut calls = std::collections::HashMap::new();
         let pacings: Arc<Mutex<Vec<(String, crate::step_pacing::StepPacing)>>> = Arc::default();
@@ -67,6 +76,7 @@ impl Harness {
             let log = Arc::new(Mutex::new(Vec::new()));
             calls.insert(name, log.clone());
             registry.register(Box::new(Probe {
+                independent_input_lane,
                 def: ToolDef {
                     name: name.into(),
                     description: "probe".into(),
@@ -397,16 +407,19 @@ async fn observation_inherits_the_window_and_stays_bounded() {
     );
 }
 
-/// `delay_ms` waits once between each pair of steps. The clock is the runtime's paused one, which only moves
-/// when the batch sleeps, so the elapsed time is exactly the pauses it asked for however busy the machine is.
+/// `delay_ms` waits once between each pair of steps. The in-memory probe's
+/// independent route keeps unrelated desktop admission out of this measurement.
 #[tokio::test(start_paused = true)]
 async fn pauses_between_steps_but_not_after_the_last() {
     for (steps, pauses) in [(1, 0), (2, 1), (3, 2)] {
-        let harness = Harness::new();
+        let harness = Harness::with_input_lane(true);
+        let step = json!({"tool": "click", "args": {"pid": 42, "window_id": 7, "delivery_mode": "background"}});
         let started = tokio::time::Instant::now();
-        harness
-            .run(json!({"delay_ms": 120, "steps": vec![json!({"tool": "click", "args": {"pid": 42}}); steps]}))
+        let result = harness
+            .run(json!({"delay_ms": 120, "steps": vec![step; steps]}))
             .await;
+        assert_ne!(result.is_error, Some(true), "{}", text(&result));
+        assert_eq!(harness.hits("click"), steps);
         assert_eq!(
             started.elapsed(),
             Duration::from_millis(120 * pauses),

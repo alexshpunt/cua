@@ -5,8 +5,7 @@ description: Poll and rank open GitHub issues, RFCs, and pull requests for maint
 
 # Poll GitHub Work
 
-Use GitHub as the durable record and
-[`MAINTAINERS.md`](../../../docs/contributing/MAINTAINERS.md) as the ranking policy. Operate in
+Use [`MAINTAINERS.md`](../../../docs/contributing/MAINTAINERS.md) as the ranking policy. Operate in
 **recommend** mode until the maintainer explicitly selects an item; only then
 enter **execute** mode.
 
@@ -84,13 +83,11 @@ authorization to choose a different issue or merge/deploy the result.
 2. If the recommendation is stale, the scope is ambiguous, or another active
    claim appeared, report the conflict before mutating GitHub.
 3. State the intended scope and acceptance evidence.
-4. Make selection visible through the repository's normal assignment or scope
-   confirmation mechanism.
+4. Keep selection, scope, and evidence in the existing task record.
 5. Create one isolated branch or worktree and follow the repository contribution
    and testing guidance.
-6. Open and link a draft pull request as soon as there is a meaningful
-   reviewable change. Keep its description current with scope, progress,
-   blockers, evidence, and known gaps.
+6. Keep the accepted task record current with progress, blockers, evidence, and
+   known gaps. A pull request is optional; when used, keep its description current.
 
 Preserve contributor authorship. Prefer reviewing or contributing to an active
 pull request over opening a competing implementation.

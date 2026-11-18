@@ -45,6 +45,7 @@ fn agent_cursor_overlay_obeys_untargeted_and_targeted_z_order() {
         ],
     );
     execute_case(case, |evidence| {
+        let _coordinates = cua_driver_testkit::observer::windows::PhysicalCoordinates::enter();
         let mut driver = McpDriver::spawn_named_with_overlay("windows-desktop-agent-cursor-px")
             .expect("required source-built driver with cursor overlay did not start");
         *evidence = recording_evidence(driver.recording_dir());

@@ -281,7 +281,7 @@ impl Tool for GetDesktopStateTool {
                     content,
                     is_error: None,
                     structured_content: Some(structured),
-                    action_record: None,
+                    ..Default::default()
                 }
             }
             Ok(Err(e)) => ToolResult::error(format!("Capture error: {e}")),

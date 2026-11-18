@@ -13,7 +13,7 @@ want to change; [`Development.md`](../docs/contributing/Development.md) maps the
 | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Report reproducible incorrect behavior                                                               | The **Bug report** issue form                                                                                                           |
 | Describe a user problem or product improvement                                                       | The **Feature request** issue form                                                                                                      |
-| Change a public contract, compatibility policy, permission boundary, or cross-component architecture | The **Request for comments** issue form and [`rfcs/README.md`](../docs/rfcs/README.md)                                                  |
+| Discuss a public contract, compatibility policy, permission boundary, or cross-component architecture | The existing task decision record, or an optional [RFC](../docs/rfcs/README.md)                                                         |
 | Report a suspected vulnerability                                                                     | [GitHub private vulnerability reporting](https://github.com/trycua/cua/security/advisories/new), following [`SECURITY.md`](SECURITY.md) |
 | Ask for contributor help                                                                             | The [Cua Discord community](https://discord.com/invite/mVnXXpdE85)                                                                      |
 
@@ -22,32 +22,24 @@ every open item is scheduled or ready for implementation. An open issue means
 the report was received. It does not mean anyone is working on it, and it does
 not reserve the work.
 
-Before substantial implementation:
+A maintainer's direct request or an accepted task in an existing tracker, such
+as Linear, is sufficient to start work. GitHub intake forms, public RFCs, and
+draft pull requests are optional, not prerequisites. Do not duplicate an
+accepted task or decision in public GitHub merely to satisfy a workflow.
 
-1. Search open issues and pull requests for the same problem. If an active pull
-   request already exists, contribute there or explain why your pull request
-   supersedes it.
-2. Comment on the issue with the scope you intend to implement and the
-   acceptance evidence you will produce.
-3. Open a draft pull request as soon as you have a branch and link it to the
-   issue. The linked draft pull request is the visible claim marker that helps
-   prevent duplicate work.
-
-Selection must be visible in GitHub through an issue assignment, a maintainer
-reply confirming the scope, or maintainer review of the linked draft pull
-request. Small, self-contained fixes may go directly to a focused pull request
-when the problem and evidence are clear; until reviewed, that work is an
-unselected contribution. Work that needs an RFC waits for the recorded decision
-in [`rfcs/README.md`](../docs/rfcs/README.md) before implementation begins.
+Before implementation, check for competing work and confirm the scope and
+acceptance evidence in the existing task record. Contribute to an active pull
+request rather than duplicating its implementation. Resolve material product or
+architecture choices with the maintainer; the decision can remain in that task.
 
 Maintainers and coding agents choosing what to work on next should use the
 read-only polling ladder in [`MAINTAINERS.md`](../docs/contributing/MAINTAINERS.md).
 
-Once implementation starts, keep the issue or RFC as the problem and decision
-record and the pull request as the current execution record. Link them in both
-directions and keep the pull request description current as scope, validation,
-or known gaps change. Use `Refs #123` for related work. Use `Fixes #123` only
-when merging the pull request will fully resolve that issue.
+Keep scope, decisions, validation, and known gaps in the accepted task record.
+A pull request is optional unless the maintainer requests one. When used, keep
+its description current and link existing related work without creating new
+public records solely for linking. Use `Refs #123` for related GitHub work and
+`Fixes #123` only when the pull request will fully resolve that issue.
 
 ## Report a Bug
 
@@ -68,11 +60,10 @@ In the **Feature request** issue form, describe the user problem and the
 expected behavior before prescribing an implementation. Mention affected
 platforms and existing workarounds when known.
 
-Use the [RFC process](../docs/rfcs/README.md) before implementation when a proposal
-changes a public SDK, CLI, MCP, protocol, compatibility, permission, or
-cross-component architectural contract. Start with the **Request for comments**
-GitHub issue form. Longer proposals and diagrams remain in this repository under
-`docs/rfcs/` and link back to the discussion issue.
+Use the optional [RFC process](../docs/rfcs/README.md) when the maintainer requests
+public design review. A change to a public contract does not itself require a
+new GitHub issue or RFC when the decision is already recorded with the accepted
+task. Longer RFC proposals and diagrams can remain under `docs/rfcs/`.
 
 ## Submit Code
 
@@ -83,7 +74,7 @@ GitHub issue form. Longer proposals and diagrams remain in this repository under
    Before you push, run `bin/ci`: it runs the CI checks your change affects and
    prints the fix for each failure (see [`CI.md`](../docs/contributing/CI.md#run-the-checks-locally-first-binci)).
 5. Run the formatters and linters owned by the changed component.
-6. Open a focused pull request that explains behavior, validation, and known gaps.
+6. When a pull request is used, explain behavior, validation, and known gaps.
 
 ### Contributor License Agreement
 

@@ -16,11 +16,11 @@
 //!   the default because cua-driver's value proposition is that input never
 //!   steals foreground — surfacing an honest error beats silently fronting.
 //!
-//! - `foreground` — SendInput with a brief `SetForegroundWindow(target)`
-//!   swap, restoring the prior foreground after the events flush. Brief
-//!   flash unless the target was already foreground. The agent's explicit
-//!   last resort, and the only rung that reaches Chromium-content / GTK-
-//!   button / VCL-accelerator targets reliably.
+//! - `foreground` — explicit activation and system-queue input. Restore only
+//!   with supported receiver-read evidence for every inserted event and no
+//!   earlier unconfirmed prefix. Otherwise retain target posture and report
+//!   uncertainty without replay. Motion, wheel, pen and opaque key batches
+//!   have no supported whole-stream witness.
 //!
 //! The legacy Windows-only `auto` mode (silent SendInput fallback) was
 //! removed in the macOS-alignment pass: it could front without the caller
@@ -82,9 +82,10 @@ pub fn delivery_mode_schema() -> Value {
          raised. For targets whose input stack silently drops posted events \
          (Chromium/Electron content, GTK buttons, VCL/LibreOffice accelerators) \
          the tool returns a structured background_unavailable error rather than \
-         fronting. 'foreground' is the explicit escalation: a brief \
-         SetForegroundWindow swap + SendInput, restoring the prior foreground \
-         afterward. \
+         fronting. 'foreground' explicitly activates the target and inserts input. \
+         Restoration requires supported receiver-read evidence for all inserted events, \
+         including earlier unconfirmed input. Otherwise the target keeps foreground \
+         and pointer posture, with uncertainty reported and no replay. \
          IMPORTANT: 'background' is not a hint to weigh — it is the mandatory \
          first attempt. Do NOT pass 'foreground' preemptively because a target \
          'looks like' GTK/Chromium/Electron; the DRIVER decides when background \
@@ -294,6 +295,23 @@ pub fn read_class_name(hwnd: u64) -> String {
     String::from_utf16_lossy(&buf[..n as usize])
 }
 
+/// Unsupported synthetic background routes must refuse before inserting input.
+pub(super) const BACKGROUND_POINTER_UNAVAILABLE: &str =
+    "background_unavailable: synthetic background pointer input can activate the target \
+     or move the human's cursor, and no supported receiver-read witness permits safe \
+     restoration; no input was sent";
+
+/// A known no-input refusal, with the existing foreground-escalation contract.
+pub(crate) fn background_pointer_unavailable_error(
+    hwnd: u64,
+    kind: EventKind,
+) -> cua_driver_core::protocol::ToolResult {
+    crate::typing_turn::completion_result(
+        background_unavailable_error_with_cause(hwnd, kind, BACKGROUND_POINTER_UNAVAILABLE),
+        crate::typing_turn::TypingTurn::NotSent,
+    )
+}
+
 /// Build the structured `background_unavailable` error returned when
 /// `delivery_mode:"background"` would silently drop.
 pub fn background_unavailable_error(
@@ -305,7 +323,8 @@ pub fn background_unavailable_error(
         "Background delivery is not available for target window class \
          '{class}' on this event kind ({}). Retry this action with \
          delivery_mode:\"foreground\"; Cua Driver will activate the target for \
-         the action and restore the previous foreground afterward.",
+         the action. Restoration requires supported receiver-read evidence; \
+         otherwise the target retains foreground and pointer posture.",
         kind.name()
     );
     // Windows analog of the macOS escalation signal: this surface drops
@@ -322,10 +341,9 @@ pub fn background_unavailable_error(
     )
 }
 
-/// Build a structured background refusal while preserving the concrete
-/// actuator failure. This is used after a background coordinate-injection
-/// fallback was attempted and failed, so callers can distinguish a true
-/// occlusion miss from a generic class-level refusal.
+/// Build a background refusal while preserving a concrete pre-input failure.
+/// Call only when no global input was inserted. An inserted prefix must retain
+/// its partial/unverifiable record without offering foreground replay.
 pub fn background_unavailable_error_with_cause(
     hwnd: u64,
     kind: EventKind,
@@ -345,7 +363,8 @@ pub fn background_unavailable_error_with_cause(
         "Background delivery is not available for target window class \
          '{class}' on this event kind ({}): {cause}. Retry this action with \
          delivery_mode:\"foreground\"; Cua Driver will activate the target for \
-         the action and restore the previous foreground afterward.",
+         the action. Restoration requires supported receiver-read evidence; \
+         otherwise the target retains foreground and pointer posture.",
         kind.name()
     );
     cua_driver_core::delivery::background_unavailable_result(

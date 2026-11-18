@@ -3,8 +3,9 @@
 
 //! Agent input hands the foreground back to the human's window.
 //!
-//! With `CUA_FOCUS_RETURN=1`, every foreground input action (a click at a point, keys, typing, a
-//! drag, a held path or a timeline) gives the foreground back after it ran. The window that gets it
+//! With `CUA_FOCUS_RETURN=1`, a foreground input action gives the foreground back only when
+//! supported receiver-read evidence covers every inserted event and no earlier unconfirmed
+//! prefix remains. The window that gets it
 //! is the human's: the window that had the foreground when the human last pressed a key or a mouse
 //! button, as the low-level hooks of [`crate::human_input`] count them. It is not simply the window
 //! that was in front before the action: that one may be the agent's own window from an earlier
@@ -36,8 +37,20 @@ pub(crate) struct Memory {
     presses_seen: Option<u64>,
     /// Popups of the agent's target that the last action kept open.
     kept_popups: Vec<u64>,
+    /// An earlier global-input prefix has no supported read witness. Only a
+    /// subsequent physical press explicitly hands control back to the human;
+    /// a later unrelated key receipt cannot acknowledge this prefix.
+    unconfirmed_since: Option<Option<u64>>,
 }
 
+/// Whether an earlier unconfirmed prefix still forbids automatic restoration.
+fn has_unconfirmed_prefix(memory: &Memory, presses: Option<u64>) -> bool {
+    match memory.unconfirmed_since {
+        None => false,
+        Some(Some(before)) if presses.is_some_and(|now| now != before) => false,
+        Some(_) => true,
+    }
+}
 /// The human's window at the start of an agent action.
 ///
 /// When the human pressed a key or a mouse button since the last action ended, or when nothing is
@@ -77,6 +90,9 @@ pub(crate) struct End {
     pub popup: Option<u64>,
     /// The human's window still exists, is visible, not minimized and on the current desktop.
     pub human_usable: bool,
+    /// Every inserted global input event has a supported receiver-read witness,
+    /// or no global input was inserted.
+    pub input_read_confirmed: bool,
 }
 
 /// What happened to the foreground after an action.
@@ -94,6 +110,8 @@ pub(crate) enum Outcome {
     OtherWindow(u64),
     /// This popup of the target is open; the target keeps the foreground.
     KeptForPopup(u64),
+    /// Read knowledge does not permit handing queued input to the human.
+    KeptForUnconfirmedRead(u64),
     /// The human's window is closed, hidden, minimized or on another desktop.
     HumanWindowGone(u64),
     /// No window of the human is known.
@@ -130,6 +148,9 @@ pub(crate) fn plan(end: &End) -> Plan {
     };
     if !end.human_usable {
         return Plan::Leave(Outcome::HumanWindowGone(human.hwnd));
+    }
+    if !end.input_read_confirmed {
+        return Plan::Leave(Outcome::KeptForUnconfirmedRead(foreground.hwnd));
     }
     Plan::Restore(human)
 }
@@ -170,6 +191,9 @@ pub(crate) fn describe(outcome: Outcome, title: impl Fn(u64) -> String) -> Optio
         Outcome::KeptForPopup(popup) => format!(
             "focus_return: kept_for_popup window_id={popup}; a menu or popup of the target is open, so the target keeps the foreground until an action closes it."
         ),
+        Outcome::KeptForUnconfirmedRead(hwnd) => format!(
+            "focus_return: kept_for_unconfirmed_read window_id={hwnd}; no supported witness confirms every inserted event was read, so the target keeps the foreground. Nothing was replayed."
+        ),
         Outcome::HumanWindowGone(hwnd) => format!(
             "focus_return: human_window_gone window_id={hwnd}; the human's last window is closed, hidden, minimized or on another desktop, so the target keeps the foreground."
         ),
@@ -186,14 +210,17 @@ pub(crate) fn describe(outcome: Outcome, title: impl Fn(u64) -> String) -> Optio
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) use native::{active, begin, enabled};
+pub(crate) use native::{
+    active, begin, enabled, has_unconfirmed_input, note_unconfirmed_input, unconfirmed_generation,
+};
 
 #[cfg(target_os = "windows")]
 mod native {
     use super::{
-        describe, human_at_start, open_popup, plan, remember, End, Memory, Outcome, Plan, Window,
+        describe, has_unconfirmed_prefix, human_at_start, open_popup, plan, remember, End, Memory,
+        Outcome, Plan, Window,
     };
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
     use std::sync::{Mutex, OnceLock};
     use std::thread::sleep;
     use std::time::{Duration, Instant};
@@ -208,8 +235,31 @@ mod native {
         human: None,
         presses_seen: None,
         kept_popups: Vec::new(),
+        unconfirmed_since: None,
     });
 
+    static UNCONFIRMED_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+    pub(crate) fn unconfirmed_generation() -> u64 {
+        UNCONFIRMED_GENERATION.load(Ordering::Acquire)
+    }
+    pub(crate) fn has_unconfirmed_input() -> bool {
+        let presses = crate::human_input::physical_presses();
+        let mut memory = MEMORY.lock().unwrap_or_else(|poison| poison.into_inner());
+        if !has_unconfirmed_prefix(&memory, presses) {
+            memory.unconfirmed_since = None;
+        }
+        memory.unconfirmed_since.is_some()
+    }
+
+    pub(crate) fn note_unconfirmed_input() {
+        UNCONFIRMED_GENERATION.fetch_add(1, Ordering::AcqRel);
+        let presses = crate::human_input::physical_presses();
+        let mut memory = MEMORY.lock().unwrap_or_else(|poison| poison.into_inner());
+        if !has_unconfirmed_prefix(&memory, presses) {
+            memory.unconfirmed_since = Some(presses);
+        }
+    }
     /// Leases that have begun and are not over yet.
     static ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
@@ -222,9 +272,8 @@ mod native {
         *ENABLED.get_or_init(crate::human_input::focus_return_configured)
     }
 
-    /// A lease covers the running input: it hands the foreground back when the input is over, so
-    /// the input itself does not. Input without a lease, such as keys addressed only by an element
-    /// token, keeps handing the foreground back to the window that was in front before it.
+    /// A lease owns the conditional return to the remembered human window.
+    /// Input without a lease still obeys the same unconfirmed-prefix guard.
     pub(crate) fn active() -> bool {
         ACTIVE.load(Ordering::Acquire) > 0
     }
@@ -321,6 +370,7 @@ mod native {
         presses: Option<u64>,
         popups_before: Vec<u64>,
         kept_before: Vec<u64>,
+        finished: bool,
     }
 
     /// Start a lease before a foreground action on the exact `target` window, or `None` when focus
@@ -343,11 +393,35 @@ mod native {
             presses,
             popups_before: popups(target, pid),
             kept_before: memory.kept_popups.clone(),
+            finished: false,
         })
     }
 
     impl Drop for Lease {
         fn drop(&mut self) {
+            if !self.finished {
+                // Caller cancellation may leave a blocking input worker alive.
+                // Retain the human and uncertainty, but never restore from Drop.
+                note_unconfirmed_input();
+                let presses = crate::human_input::physical_presses();
+                let foreground = window(unsafe { GetForegroundWindow() });
+                let moved = matches!((self.presses, presses), (Some(a), Some(b)) if a != b);
+                let outcome = match foreground {
+                    Some(front) if moved && !self.agents(front, true) => {
+                        Outcome::HumanMoved(front.hwnd)
+                    }
+                    _ => Outcome::KeptForUnconfirmedRead(self.target),
+                };
+                let mut memory = MEMORY.lock().unwrap_or_else(|poison| poison.into_inner());
+                remember(
+                    &mut memory,
+                    self.human,
+                    foreground,
+                    outcome,
+                    presses,
+                    Vec::new(),
+                );
+            }
             ACTIVE.fetch_sub(1, Ordering::AcqRel);
         }
     }
@@ -366,7 +440,7 @@ mod native {
         }
 
         /// Hand the foreground back when the action is over, and return the line for its result.
-        pub(crate) fn finish(self) -> Option<String> {
+        pub(crate) fn finish(mut self, input_read_confirmed: bool) -> Option<String> {
             let presses = crate::human_input::physical_presses;
             let started = self.presses;
             let human_pressed =
@@ -386,7 +460,11 @@ mod native {
                 }
                 open = popups(self.target, self.pid);
                 popup = open_popup(&self.popups_before, &self.kept_before, &open);
-                if popup.is_some() || Instant::now() >= deadline {
+                // A popup already present at entry may still be closing while
+                // the queued key is processed. Give that transition the same
+                // bounded UI-settle window; it is not an input-read receipt.
+                let newly_opened = popup.is_some_and(|hwnd| !self.popups_before.contains(&hwnd));
+                if newly_opened || Instant::now() >= deadline {
                     break;
                 }
                 sleep(Duration::from_millis(15));
@@ -400,12 +478,15 @@ mod native {
                 foreground_is_agents: foreground.is_some_and(|front| self.agents(front, pressed)),
                 popup,
                 human_usable: self.human.is_some_and(usable),
+                input_read_confirmed: input_read_confirmed && !has_unconfirmed_input(),
             };
             let outcome = match plan(&end) {
                 Plan::Leave(outcome) => outcome,
                 Plan::Restore(human) => {
                     let hwnd = HWND(human.hwnd as usize as *mut _);
-                    if unsafe { crate::input::force_foreground_assisted(hwnd) }.0 {
+                    // Returning focus must not create another unconfirmed key
+                    // prefix through the explicit-activation unlock fallback.
+                    if unsafe { crate::input::force_foreground_attached(hwnd) } {
                         Outcome::Restored(human.hwnd)
                     } else {
                         Outcome::Refused {
@@ -431,6 +512,7 @@ mod native {
                 kept,
             );
             drop(memory);
+            self.finished = true;
             tracing::debug!(target: "focus_return", ?outcome, "foreground after agent input");
             describe(outcome, crate::input::occlusion::window_title)
         }
@@ -452,6 +534,7 @@ mod tests {
             foreground_is_agents: true,
             popup: None,
             human_usable: true,
+            input_read_confirmed: true,
         }
     }
 
@@ -460,6 +543,31 @@ mod tests {
         assert_eq!(plan(&base()), Plan::Restore(HUMAN));
     }
 
+    #[test]
+    fn unconfirmed_input_keeps_the_target_and_the_original_human_memory() {
+        let end = End {
+            input_read_confirmed: false,
+            ..base()
+        };
+        let outcome = Outcome::KeptForUnconfirmedRead(TARGET.hwnd);
+        assert_eq!(plan(&end), Plan::Leave(outcome));
+        let mut memory = Memory {
+            unconfirmed_since: Some(Some(5)),
+            ..Memory::default()
+        };
+        remember(
+            &mut memory,
+            end.human,
+            end.foreground,
+            outcome,
+            Some(5),
+            Vec::new(),
+        );
+        assert_eq!(human_at_start(&memory, Some(5), Some(TARGET)), Some(HUMAN));
+        assert!(has_unconfirmed_prefix(&memory, Some(5)));
+        assert!(has_unconfirmed_prefix(&memory, None));
+        assert!(!has_unconfirmed_prefix(&memory, Some(6)));
+    }
     #[test]
     fn nothing_changes_when_the_human_window_is_in_front() {
         let end = End {

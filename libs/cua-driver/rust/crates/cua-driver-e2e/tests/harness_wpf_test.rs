@@ -41,7 +41,7 @@
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use cua_driver_testkit::e2e::{
     execute_case, native_background_case, native_foreground_case, native_readonly_case,
@@ -53,13 +53,15 @@ use cua_driver_testkit::sentinel::{run_with_background_oracles, ForegroundSentin
 use cua_driver_testkit::{ax, harness_app, spawn_in_job, Driver, McpDriver, ToolResponse};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, GetWindowLongPtrW, GetWindowRect, IsIconic, SetCursorPos, SetWindowPos,
-    ShowWindow, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SW_MINIMIZE,
-    WS_EX_TOPMOST,
+    GetCursorPos, GetForegroundWindow, GetWindowLongPtrW, GetWindowRect, IsIconic, SetCursorPos,
+    SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SW_MINIMIZE, WS_EX_TOPMOST,
 };
 
 #[path = "support/foreground_text_oracle.rs"]
 mod foreground_text_oracle;
+#[path = "support/pointer_completion_oracle.rs"]
+mod pointer_completion_oracle;
 use foreground_text_oracle::{ascii_escape, normalize_line_endings, stable_text};
 
 // ── harness launcher ─────────────────────────────────────────────────────────
@@ -1196,11 +1198,12 @@ fn focus_harness(driver: &mut McpDriver, pid: u32, wid: u64) {
 #[test]
 #[ignore]
 fn harness_wpf_right_click() {
+    let _coordinates = pointer_completion_oracle::PhysicalCoordinates::enter();
     run_foreground_case(
         "right_click",
         Targeting::Ax,
         DriverRoute::WindowsSendInput,
-        Vec::new(),
+        vec![OracleKind::Cursor, OracleKind::Focus],
         |pid, wid, driver| {
             focus_harness(driver, pid, wid);
             let snap = driver.call(
@@ -1242,10 +1245,20 @@ fn harness_wpf_right_click() {
             );
             let mut cursor_after = POINT::default();
             unsafe { GetCursorPos(&mut cursor_after) }.expect("read cursor after click");
+            assert!(!resp.is_error(), "right click failed: {}", resp.text());
+            // No supported receiver-read witness covers the pointer sequence.
+            // Its target posture must survive the response without restoration.
+            assert!(
+                (f64::from(cursor_after.x) - click_x).abs() <= 1.0
+                    && (f64::from(cursor_after.y) - click_y).abs() <= 1.0,
+                "unconfirmed right click moved off its target: ({}, {}) vs ({click_x}, {click_y})",
+                cursor_after.x,
+                cursor_after.y
+            );
             assert_eq!(
-                (cursor_after.x, cursor_after.y),
-                (cursor_before.x, cursor_before.y),
-                "foreground right click left the real cursor at the target"
+                unsafe { GetForegroundWindow() }.0 as usize as u64,
+                wid,
+                "unconfirmed right click returned foreground away from its target"
             );
             println!("right_click: {}", resp.text());
             std::thread::sleep(Duration::from_millis(400));
@@ -1262,7 +1275,7 @@ fn harness_wpf_right_click() {
                 action_lines
             );
             println!("✅ harness_wpf_right_click: last_action=right_click");
-            Vec::new()
+            vec![OracleKind::Cursor, OracleKind::Focus]
         },
     );
 }
@@ -1773,6 +1786,342 @@ fn harness_wpf_slider_drag() {
             Vec::new()
         },
     );
+}
+
+// Queued pointer input has one owner across held paths and explicit timelines.
+// The receiver and the window to which focus returns run on different UI threads.
+fn launch_pointer_receiver(
+    driver: &mut McpDriver,
+    state_path: &std::path::Path,
+    role: &str,
+    busy_ms: u32,
+    pump_keyboard: bool,
+    trigger: &str,
+) -> (u32, u64) {
+    let mut command = Command::new(harness_exe());
+    command
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .env_remove("CUA_WPF_TASK_STATE")
+        .env_remove("CUA_WPF_TASK_DENSITY")
+        .env("CUA_WPF_POINTER_STATE", state_path)
+        .env("CUA_WPF_POINTER_ROLE", role)
+        .env(
+            "CUA_WPF_POINTER_FOREGROUND_PID",
+            driver
+                .daemon_pid()
+                .expect("owned pointer test daemon")
+                .to_string(),
+        )
+        .env("CUA_WPF_POINTER_BUSY_TRIGGER", trigger)
+        .env("CUA_WPF_POINTER_BUSY_MS", busy_ms.to_string())
+        .env(
+            "CUA_WPF_POINTER_PUMP_KEYS",
+            if pump_keyboard { "1" } else { "0" },
+        );
+    let child = spawn_in_job(&mut command).expect("launch WPF pointer receiver");
+    let pid = child.id();
+    driver.reaper().push(child);
+    let title = format!("CuaTestHarness WPF Pointer {role}");
+    let (wid, _) = driver
+        .find_window(pid as i64, &title)
+        .expect("WPF pointer receiver window");
+    let ready = wait_pointer_receiver(state_path, 0, |state| state["ready"] == true);
+    assert_eq!(ready["schema"], "cua.wpf_pointer_receiver.v1");
+    assert_eq!(ready["pid"].as_u64(), Some(u64::from(pid)));
+    assert_eq!(ready["window_id"].as_u64(), Some(wid));
+    assert_eq!(ready["busy_ms"].as_u64(), Some(u64::from(busy_ms)));
+    assert_eq!(ready["pump_keyboard"], pump_keyboard);
+    (pid, wid)
+}
+
+fn pointer_oracle_time_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock after Unix epoch")
+        .as_millis() as u64
+}
+
+fn wait_pointer_receiver(
+    path: &std::path::Path,
+    not_before_ms: u64,
+    predicate: impl Fn(&serde_json::Value) -> bool,
+) -> serde_json::Value {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let mut last = serde_json::Value::Null;
+    loop {
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                last = serde_json::from_slice(&bytes).expect("parse atomic pointer fixture state");
+                if last["published_utc_ms"]
+                    .as_u64()
+                    .is_some_and(|time| time >= not_before_ms)
+                    && predicate(&last)
+                {
+                    return last;
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => panic!("read pointer fixture {}: {error}", path.display()),
+        }
+        assert!(
+            Instant::now() < deadline,
+            "pointer fixture did not reach its external state: {}: {last}",
+            path.display()
+        );
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+#[test]
+#[ignore]
+fn harness_wpf_pointer_release_precedes_focus_return() {
+    let _coordinates = pointer_completion_oracle::PhysicalCoordinates::enter();
+    for tool in ["held_path", "hold_keys", "input_timeline"] {
+        // Start with a busy receiver so the old implementation fails on its
+        // unread release, not only on the unobservable fast-row return policy.
+        for (busy_ms, pump_keyboard) in [(1200, false), (0, false), (1200, true), (3000, false)] {
+            let mut case = native_foreground_case(
+                "wpf",
+                &format!("{tool}_focus_return_{busy_ms}ms_keyboard_{pump_keyboard}"),
+                Targeting::Px,
+                DriverRoute::WindowsSendInput,
+            );
+            case.oracles
+                .extend([OracleKind::Focus, OracleKind::NoLeakedInput]);
+            let cell_id = case.cell_id.clone();
+            execute_case(case, |evidence| {
+                let temporary = tempfile::tempdir().expect("pointer fixture state directory");
+                let mut driver =
+                    McpDriver::spawn_named_with_env(&cell_id, &[("CUA_FOCUS_RETURN", "1")])
+                        .expect("required Windows driver did not start");
+                *evidence = recording_evidence(driver.recording_dir());
+                let state_root = driver
+                    .recording_dir()
+                    .map(std::path::Path::to_path_buf)
+                    .unwrap_or_else(|| temporary.path().to_path_buf());
+                let target_path = state_root.join("pointer-target-state.json");
+                let human_path = state_root.join("pointer-human-state.json");
+                let (target_pid, target_wid) = launch_pointer_receiver(
+                    &mut driver,
+                    &target_path,
+                    "target",
+                    busy_ms,
+                    pump_keyboard,
+                    "held_move",
+                );
+                let (human_pid, human_wid) = launch_pointer_receiver(
+                    &mut driver,
+                    &human_path,
+                    "human",
+                    0,
+                    false,
+                    "held_move",
+                );
+                assert_ne!(
+                    target_pid, human_pid,
+                    "receivers need independent UI threads"
+                );
+                focus_harness(&mut driver, human_pid, human_wid);
+                let human = snapshot(&mut driver, human_pid, human_wid);
+                let human_index = ax::element_index_by_id(human.tree_text(), "pointer-canvas")
+                    .expect("human pointer canvas");
+                let human_frame = &human.structured()["elements"]
+                    .as_array()
+                    .expect("human UIA elements")
+                    .iter()
+                    .find(|element| element["element_index"].as_u64() == Some(human_index))
+                    .expect("human pointer canvas frame")["frame"];
+                // Fixture posture only: keep the cursor's restore point inside the
+                // occluding human canvas, so it observes any misdirected release.
+                let screen_x = human_frame["x"].as_f64().expect("canvas x")
+                    + human_frame["w"].as_f64().expect("canvas width") / 2.0;
+                let screen_y = human_frame["y"].as_f64().expect("canvas y")
+                    + human_frame["h"].as_f64().expect("canvas height") / 2.0;
+                unsafe { SetCursorPos(screen_x.round() as i32, screen_y.round() as i32) }
+                    .expect("put fixture cursor inside human canvas");
+                let human_bounds = window_bounds(&mut driver, human_pid, human_wid);
+                let (hx, hy) = pixel_center(&human, "pointer-canvas", human_bounds);
+                // The first stalled-action row has no healthy input before it:
+                // dropping that lease must not replace the remembered human with the target.
+                let human_count = if busy_ms < 2000 { 1u64 } else { 0 };
+                if human_count != 0 {
+                    let initial_click = driver.call(
+                        "click",
+                        serde_json::json!({
+                            "pid": human_pid, "window_id": human_wid,
+                            "x": hx, "y": hy, "delivery_mode": "foreground"
+                        }),
+                    );
+                    assert!(
+                        !initial_click.is_error(),
+                        "human setup click: {}",
+                        initial_click.text()
+                    );
+                }
+                let baseline = wait_pointer_receiver(&human_path, 0, |state| {
+                    state["up"].as_u64() == Some(human_count)
+                });
+                assert_eq!(baseline["down"].as_u64(), Some(human_count));
+                assert_eq!(
+                    unsafe { GetForegroundWindow() }.0 as usize as u64,
+                    human_wid
+                );
+
+                let target = snapshot(&mut driver, target_pid, target_wid);
+                let target_bounds = window_bounds(&mut driver, target_pid, target_wid);
+                let (x, y, width, height) = pixel_frame(&target, "pointer-canvas", target_bounds);
+                let y = y + height / 2.0;
+                let from_x = x + width * 0.25;
+                let mid_x = x + width * 0.50;
+                let to_x = x + width * 0.75;
+                // Observation must not activate the target or replace remembered human focus.
+                assert_eq!(
+                    unsafe { GetForegroundWindow() }.0 as usize as u64,
+                    human_wid
+                );
+                let (tool_name, input) = if tool == "held_path" {
+                    (
+                        "drag",
+                        serde_json::json!({
+                            "pid": target_pid, "window_id": target_wid,
+                            "from_x": from_x, "from_y": y,
+                            "via": [{"x": mid_x, "y": y}],
+                            "to_x": to_x, "to_y": y,
+                            "duration_ms": 400, "delivery_mode": "foreground"
+                        }),
+                    )
+                } else if tool == "hold_keys" {
+                    (
+                        "hold_keys",
+                        serde_json::json!({
+                            "pid": target_pid, "window_id": target_wid,
+                            "delivery_mode": "foreground",
+                            "keys": ["shift"], "duration_ms": 450,
+                            "actions": [{
+                                "action": "drag",
+                                "from_x": from_x, "from_y": y,
+                                "via": [{"x": mid_x, "y": y}],
+                                "to_x": to_x, "to_y": y, "duration_ms": 400
+                            }]
+                        }),
+                    )
+                } else {
+                    (
+                        "input_timeline",
+                        serde_json::json!({
+                            "pid": target_pid, "window_id": target_wid,
+                            "delivery_mode": "foreground",
+                            "events": [
+                                {"at_ms": 0, "type": "move", "x": from_x, "y": y},
+                                {"at_ms": 0, "type": "button_down", "button": "left"},
+                                {"at_ms": 200, "type": "move", "x": mid_x, "y": y},
+                                {"at_ms": 400, "type": "move", "x": to_x, "y": y},
+                                {"at_ms": 400, "type": "button_up", "button": "left"}
+                            ]
+                        }),
+                    )
+                };
+                let response = driver.call(tool_name, input.clone());
+                let finished_ms = pointer_oracle_time_ms();
+                let foreground_after = unsafe { GetForegroundWindow() }.0 as usize as u64;
+                assert!(
+                    !response.is_error(),
+                    "pointer action failed: {}",
+                    response.text()
+                );
+                let target_state = wait_pointer_receiver(&target_path, finished_ms, |state| {
+                    state["up"] == 1 && (busy_ms == 0 || state["busy_finished"] == true)
+                });
+                let human_state = wait_pointer_receiver(&human_path, finished_ms, |_| true);
+                assert_eq!(target_state["down"], 1, "target state: {target_state}");
+                assert_eq!(
+                    target_state["up"], 1,
+                    "target missed queued UP: {target_state}; human: {human_state}"
+                );
+                assert!(target_state["held_moves"].as_u64().unwrap() > 0);
+                assert_eq!(target_state["busy_started"], busy_ms > 0);
+                assert_eq!(target_state["dropped_events"], 0);
+                assert_eq!(human_state["dropped_events"], 0);
+                assert_eq!(
+                    human_state["down"].as_u64(),
+                    Some(human_count),
+                    "drag DOWN leaked: {human_state}"
+                );
+                assert_eq!(
+                    human_state["up"].as_u64(),
+                    Some(human_count),
+                    "drag UP leaked: {human_state}"
+                );
+                let events = target_state["events"]
+                    .as_array()
+                    .expect("target event journal");
+                let up_index = events
+                    .iter()
+                    .position(|event| event["kind"] == "up")
+                    .unwrap();
+                assert_eq!(
+                    events[up_index]["foreground_window"].as_u64(),
+                    Some(target_wid),
+                    "the target must still own foreground when it handles UP: {target_state}"
+                );
+                assert_eq!(foreground_after, target_wid);
+                assert_eq!(response.action_effect(), Some("unverifiable"));
+
+                // The external receiver is healthy again. That does not give the
+                // driver a supported witness for its earlier pointer prefix: a
+                // later keyboard receipt must not authorize automatic restoration.
+                let successor = driver.call(
+                    "press_key",
+                    serde_json::json!({
+                        "pid": target_pid, "window_id": target_wid,
+                        "key": "f2", "delivery_mode": "foreground"
+                    }),
+                );
+                assert!(
+                    !successor.is_error(),
+                    "successor input: {}",
+                    successor.text()
+                );
+                assert_eq!(
+                    unsafe { GetForegroundWindow() }.0 as usize as u64,
+                    target_wid,
+                    "an unrelated successor cannot acknowledge the pointer prefix"
+                );
+                let successor_ms = pointer_oracle_time_ms();
+                let final_target = wait_pointer_receiver(&target_path, successor_ms, |state| {
+                    state["events"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|event| event["message"] == 0x0101 && event["virtual_key"] == 0x71)
+                });
+                let final_human = wait_pointer_receiver(&human_path, successor_ms, |_| true);
+                assert_eq!(
+                    final_target["down"], 1,
+                    "the pointer action was not replayed"
+                );
+                assert_eq!(final_target["up"], 1);
+                assert_eq!(final_target["dropped_events"], 0);
+                assert_eq!(final_human["down"].as_u64(), Some(human_count));
+                assert_eq!(final_human["up"].as_u64(), Some(human_count));
+                assert!(!final_human["events"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|event| { event["virtual_key"] == 0x70 || event["virtual_key"] == 0x71 }));
+                drop(driver);
+                Observation::delivered(
+                    vec![
+                        OracleKind::FixtureState,
+                        OracleKind::Focus,
+                        OracleKind::NoLeakedInput,
+                    ],
+                    Evidence::default(),
+                )
+            });
+        }
+    }
 }
 
 #[test]

@@ -9,7 +9,7 @@ use cua_driver_core::{
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use super::drag::path_refusal;
+use super::drag::{complete_held_input, path_refusal};
 use super::impl_::{bitmap_to_screen, screenshot_scale, ToolState};
 
 // ── input_timeline ────────────────────────────────────────────────────────────
@@ -82,7 +82,7 @@ impl Tool for InputTimelineTool {
             ActionEffect, ActionExecutionRecord, ActionTransport, ActualDelivery, RequestedDelivery,
         };
         match result {
-            Ok(Ok(report)) => {
+            Ok(Ok((report, completion))) => {
                 let summary = format!(
                     "Input timeline: {}/{} events sent in {} ms; everything held released: {}. {}",
                     report.sent,
@@ -94,7 +94,10 @@ impl Tool for InputTimelineTool {
                         .as_deref()
                         .unwrap_or("Delivery is not proof of the app's result.")
                 );
-                if report.sent == 0 && report.error.is_some() {
+                if report.sent == 0
+                    && report.error.is_some()
+                    && completion == crate::typing_turn::TypingTurn::NotSent
+                {
                     let code = report
                         .error
                         .as_deref()
@@ -103,8 +106,11 @@ impl Tool for InputTimelineTool {
                         .next()
                         .unwrap_or("input_failed")
                         .to_owned();
-                    return ToolResult::error(summary).with_structured(
-                        json!({"code": code, "effect": "refused", "timeline": report.to_json()}),
+                    return complete_held_input(
+                        ToolResult::error(summary).with_structured(
+                            json!({"code": code, "effect": "refused", "timeline": report.to_json()}),
+                        ),
+                        completion,
                     );
                 }
                 let mut record = ActionExecutionRecord::new(
@@ -118,9 +124,12 @@ impl Tool for InputTimelineTool {
                 );
                 record.actual_delivery = Some(ActualDelivery::Foreground);
                 record.delivered_count = Some(report.sent as u32);
-                ToolResult::text(summary)
-                    .with_structured(json!({"timeline": report.to_json()}))
-                    .with_action_record(record)
+                complete_held_input(
+                    ToolResult::text(summary)
+                        .with_structured(json!({"timeline": report.to_json()}))
+                        .with_action_record(record),
+                    completion,
+                )
             }
             Ok(Err(error)) => {
                 path_refusal(error.split(':').next().unwrap_or("input_failed"), &error)
@@ -132,7 +141,10 @@ impl Tool for InputTimelineTool {
                     RequestedDelivery::Foreground,
                 );
                 record.actual_delivery = Some(ActualDelivery::Unknown);
-                ToolResult::error(format!("Input timeline worker failed; prefix and release unconfirmed. Do not replay: {error}")).with_action_record(record)
+                complete_held_input(
+                    ToolResult::error(format!("Input timeline worker failed; prefix and release unconfirmed. Do not replay: {error}")).with_action_record(record),
+                    crate::typing_turn::TypingTurn::Undrained,
+                )
             }
         }
     }

@@ -19,6 +19,14 @@ share fixtures through `../shared/scenarios.json` and, for webview hosts,
 Built outputs land in `libs/cua-driver/rust/test-apps/harness-<name>/` via
 `../build/<host>`.
 
+On Windows, the Tauri behavioral fixture also writes `fixture-focus.json` beside
+each recording. A separate loopback journal receives read-only DOM focus and
+keyboard diagnostics every 250 ms. It retains the last 32 focus events and 64
+key events, their targets, the active element, document focus and transport
+errors. The observer does not focus controls, inject input or gate readiness.
+These diagnostics do not change `fixture-state.json` or replace its action and
+no-mutation assertions.
+
 Adding a new app:
 
 1. Put native source under `apps/<platform>/<toolkit>/`, or

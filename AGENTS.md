@@ -23,19 +23,16 @@ GitHub issue forms, [`rfcs/README.md`](docs/rfcs/README.md), and
 [`SECURITY.md`](.github/SECURITY.md). Keep those files canonical instead of duplicating
 their field lists, polling ladder, or RFC lifecycle here.
 
-Coding agents act as workers within that contract, not as a planning authority.
-GitHub holds the durable record: the issue or RFC carries the problem and the
-decision, and the pull request carries the execution. Local schedulers, queues,
-and worktree tooling are private conveniences; a reviewer must not need them to
-understand, reproduce, or continue the work.
+Coding agents implement maintainer-selected work under that contract. Use the
+accepted task record rather than creating duplicate public planning records.
 
 - when the authenticated GitHub account has write access, create and push the
   work branch directly in the canonical repository. Do not default to a personal
   fork merely because a fork remote exists. Use a fork only when write access is
   unavailable or the maintainer explicitly requests one, and verify the pull
   request head owner before reporting it;
-- avoid noisy periodic status comments; keep progress in the linked pull request
-  description; and
+- avoid noisy periodic status comments; keep progress in the accepted task record
+  and, when used, the pull request description; and
 - route suspected vulnerabilities through the private process in
   [`SECURITY.md`](.github/SECURITY.md), never a public issue, RFC, pull request, log, or
   screenshot.

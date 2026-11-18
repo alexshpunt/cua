@@ -174,36 +174,18 @@ impl Tool for DoubleClickTool {
                     return r;
                 }
             }
-            // delivery_mode:"background" (default): Chromium/Electron & GTK targets
-            // silently drop posted clicks (#1984) — inject via the coordinate
-            // actuator (system input queue, NO foreground swap), exactly like
-            // ClickTool, instead of refusing. Only error if injection can't
-            // express this click (e.g. right/middle on such a target).
+            // Drop-prone surfaces have no background pointer route that can
+            // preserve foreground and cursor posture. Refuse before input.
             if (cx, cy) != recorded_center {
                 crate::recording_hooks::capture_dispatch_click_target(hwnd, pid, cx, cy);
             }
             if delivery == DeliveryMode::Background
                 && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseClick)
             {
-                let inj = tokio::task::spawn_blocking({
-                    let admitted = admitted.clone();
-                    move || {
-                        let _admission = &admitted;
-                        crate::input::inject_click_screen(hwnd, cx, cy, 2, "left")
-                    }
-                })
-                .await;
-                return match inj {
-                    Ok(Ok(())) => ToolResult::text(format!(
-                        "✅ Injected double-click to [{idx}] at screen ({cx},{cy}) (background, no foreground swap)."
-                    )),
-                    Ok(Err(e)) => crate::input::delivery::background_unavailable_error_with_cause(
-                        hwnd,
-                        EventKind::MouseClick,
-                        e.to_string(),
-                    ),
-                    Err(e) => ToolResult::error(format!("Task error: {e}")),
-                };
+                return crate::input::delivery::background_pointer_unavailable_error(
+                    hwnd,
+                    EventKind::MouseClick,
+                );
             }
             // delivery_mode:"foreground" — route through SendInput at the cached coords.
             if delivery == DeliveryMode::Foreground {
@@ -297,30 +279,14 @@ impl Tool for DoubleClickTool {
                     return r;
                 }
             }
-            // delivery_mode:"background" (default): inject via the coordinate actuator
-            // (no foreground swap) for targets that drop posted clicks (#1984).
+            // Refuse unsupported synthetic background input before insertion.
             if delivery == DeliveryMode::Background
                 && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseClick)
             {
-                let inj = tokio::task::spawn_blocking({
-                    let admitted = admitted.clone();
-                    move || {
-                        let _admission = &admitted;
-                        crate::input::inject_click_screen(hwnd, sx_i, sy_i, 2, "left")
-                    }
-                })
-                .await;
-                return match inj {
-                    Ok(Ok(())) => ToolResult::text(format!(
-                        "✅ Injected double-click to pid {pid} at screen ({sx_i},{sy_i}) (background, no foreground swap)."
-                    )),
-                    Ok(Err(e)) => crate::input::delivery::background_unavailable_error_with_cause(
-                        hwnd,
-                        EventKind::MouseClick,
-                        e.to_string(),
-                    ),
-                    Err(e) => ToolResult::error(format!("Task error: {e}")),
-                };
+                return crate::input::delivery::background_pointer_unavailable_error(
+                    hwnd,
+                    EventKind::MouseClick,
+                );
             }
             // delivery_mode:"foreground" — SendInput at screen coords with FG swap.
             if delivery == DeliveryMode::Foreground {

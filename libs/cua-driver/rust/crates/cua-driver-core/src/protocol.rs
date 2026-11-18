@@ -296,6 +296,35 @@ impl Content {
     }
 }
 
+/// Internal receiver-read knowledge, separate from insertion and application effect.
+/// This is not a wire contract and does not authorize replay of an unknown prefix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputReadCompletion {
+    /// No global queue input was inserted by this producer.
+    NotSent,
+    /// A supported receiver-read witness covers all inserted events.
+    Drained,
+    /// No supported witness covers the inserted stream.
+    Unobservable,
+    /// A read wait timed out or insertion ended with an unconfirmed prefix.
+    Undrained,
+    /// Foreground ownership or the reader changed during input.
+    Lost,
+}
+
+impl InputReadCompletion {
+    /// Compose sequential producers without discarding an unconfirmed prefix.
+    pub fn combine(self, next: Self) -> Self {
+        use InputReadCompletion::*;
+        match (self, next) {
+            (Lost, _) | (_, Lost) => Lost,
+            (Undrained, _) | (_, Undrained) => Undrained,
+            (Unobservable, _) | (_, Unobservable) => Unobservable,
+            (Drained, _) | (_, Drained) => Drained,
+            (NotSent, NotSent) => NotSent,
+        }
+    }
+}
 /// The value placed in `result` for a `tools/call` response.
 #[derive(Debug, Serialize, Default)]
 pub struct ToolResult {
@@ -309,6 +338,10 @@ pub struct ToolResult {
     /// the MCP result envelope or its legacy structured payload.
     #[serde(skip)]
     pub action_record: Option<crate::action_record::ActionExecutionRecord>,
+    /// Native completion carried between actuator and restoration guard, never
+    /// appended to a tool's closed structured output schema.
+    #[serde(skip)]
+    pub input_read: Option<InputReadCompletion>,
 }
 
 impl ToolResult {
@@ -466,7 +499,7 @@ mod image_mime_type_tests {
 
 #[cfg(test)]
 mod action_record_wire_tests {
-    use super::ToolResult;
+    use super::{InputReadCompletion, ToolResult};
     use crate::action_record::{
         ActionEffect, ActionExecutionRecord, ActionTransport, ActualDelivery, RequestedDelivery,
     };
@@ -479,7 +512,7 @@ mod action_record_wire_tests {
             "effect": "unverifiable",
         });
         let plain = ToolResult::text("clicked").with_structured(legacy.clone());
-        let with_truth = ToolResult::text("clicked")
+        let mut with_truth = ToolResult::text("clicked")
             .with_structured(legacy)
             .with_action_record(
                 ActionExecutionRecord::builder(
@@ -491,6 +524,7 @@ mod action_record_wire_tests {
                 .build()
                 .expect("valid action record"),
             );
+        with_truth.input_read = Some(InputReadCompletion::Unobservable);
         assert_eq!(
             serde_json::to_value(plain).expect("serialize plain result"),
             serde_json::to_value(with_truth).expect("serialize result with internal truth"),

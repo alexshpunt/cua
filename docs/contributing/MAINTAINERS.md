@@ -3,7 +3,7 @@
 This guide defines how maintainers and coding agents turn the repository's
 issue and pull request backlog into a small, reviewable set of work. It extends
 the contribution contract in [`CONTRIBUTING.md`](../../.github/CONTRIBUTING.md); it does not
-replace issues, RFCs, pull requests, or maintainer judgment with a second queue.
+require a second queue or duplicate records for work already selected elsewhere.
 
 ## Pull Model
 
@@ -11,12 +11,11 @@ A polling session has two modes:
 
 - **Recommend:** inspect GitHub and return a ranked, read-only shortlist.
 - **Execute:** begin only after a maintainer explicitly selects an item, then
-  make that selection visible in GitHub and follow the normal worktree and draft
-  pull request workflow.
+  follow the isolated worktree and validation workflow.
 
 An open issue is intake, not scheduled work. A recommendation is advice, not a
-claim. Selection is the maintainer decision that authorizes execution. A linked
-draft pull request is the visible claim marker once implementation begins.
+claim. Selection is the maintainer decision that authorizes execution. The
+accepted task record identifies the selected scope and ownership.
 
 ## Ask for a Poll
 
@@ -57,7 +56,7 @@ Do not recommend immediate implementation when:
 
 - an active pull request already owns the same change;
 - the issue is a duplicate or has been superseded;
-- a required RFC is not accepted;
+- a required product or architecture decision is missing;
 - observable completion cannot be defined from the available evidence;
 - an external decision or dependency blocks progress;
 - the required platform or test environment is unavailable; or
@@ -92,8 +91,8 @@ repository state:
 - **Needs confirmation:** one bounded maintainer decision is missing.
 - **Needs evidence:** reproduction or observable completion is not yet strong
   enough.
-- **Blocked:** an RFC, dependency, platform, active workstream, or external
-  decision prevents progress.
+- **Blocked:** a decision, dependency, platform, or active workstream prevents
+  progress.
 
 ### 5. Check execution fit
 
@@ -151,13 +150,10 @@ is stale or a competing claim appeared, stop and report the conflict.
 
 If it is still actionable:
 
-1. make the selection visible through an assignment, maintainer scope reply, or
-   maintainer review of the linked draft pull request;
-2. create one isolated branch or worktree for the selected work;
-3. open and link a draft pull request as soon as the branch has a meaningful
-   reviewable change; and
-4. keep the pull request description current with scope, progress, blockers,
-   validation, and known gaps.
+1. keep scope and acceptance evidence in the existing task record;
+2. create one isolated branch or worktree for the selected work; and
+3. keep that record current with progress, blockers, validation, and known gaps.
+   If a pull request is used, keep its description current too.
 
 The explicit start instruction authorizes routine repository mutations needed
 for this transition. It does not authorize merging, deployment, public release,
@@ -172,5 +168,5 @@ credential-bearing execution without maintainer selection and revalidation.
 
 If automation is added later, begin with deterministic, read-only inventory such
 as linked pull request detection, RFC state, or missing intake evidence. Keep
-final priority and work selection with a maintainer, and keep GitHub as the
-durable record.
+final priority and work selection with a maintainer, and retain decisions in the
+accepted task record.
