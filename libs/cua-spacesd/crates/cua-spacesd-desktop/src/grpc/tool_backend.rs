@@ -1050,10 +1050,13 @@ impl DesktopBackend for ToolBackend {
             } else {
                 FeatureStatus::no(
                     "desktop_stream",
-                    "no display is visible to the capture provider",
+                    "no display is visible to the capture provider (a headless session has no display device); stream windows instead",
                 )
             },
-            FeatureStatus::yes("window_stream"),
+            FeatureStatus {
+                limitation: window_stream_limitation().unwrap_or_default(),
+                ..FeatureStatus::yes("window_stream")
+            },
             FeatureStatus::yes("h264_sw"),
             if hardware {
                 FeatureStatus::yes("h264_hw")
@@ -1129,6 +1132,18 @@ impl DesktopBackend for ToolBackend {
                 FeatureStatus::no("audio.opus", no_audio)
             },
         ]
+    }
+}
+
+/// Limitation of window streams on this host, when the platform has one.
+fn window_stream_limitation() -> Option<String> {
+    #[cfg(target_os = "windows")]
+    {
+        crate::windows_capture::window_capture_limitation()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
     }
 }
 
