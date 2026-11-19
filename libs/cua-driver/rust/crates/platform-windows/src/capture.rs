@@ -170,12 +170,25 @@ mod frame_geometry {
 
 use frame_geometry::FrameGeometry;
 
+/// Whether the desktop compositor (DWM) runs in this session. An isolated agent
+/// session (MXC isolation_session) has none: windows there have no
+/// DirectComposition surface, Windows.Graphics.Capture cannot create a capture
+/// item, and GDI capture (PrintWindow) is the route that works.
+fn compositor_running() -> bool {
+    use windows::Win32::Graphics::Dwm::DwmIsCompositionEnabled;
+    unsafe { DwmIsCompositionEnabled() }.is_ok_and(|enabled| enabled.as_bool())
+}
+
+/// Error text of a capture where every route returned a black frame. Callers stop
+/// there instead of trying a route that would return the same black frame as a
+/// valid image.
+const BLACK_FRAME: &str = "capture_black_frame";
+
 /// Make GDI capture pixels opaque when no desktop compositor runs. Without DWM (an
 /// isolated agent session), GDI leaves the alpha byte at 0 where it draws text and
 /// controls, so those pixels vanish from the PNG. With DWM the bytes stay untouched.
 fn opaque_without_compositor(bgra: &mut [u8]) {
-    use windows::Win32::Graphics::Dwm::DwmIsCompositionEnabled;
-    if unsafe { DwmIsCompositionEnabled() }.is_ok_and(|enabled| enabled.as_bool()) {
+    if compositor_running() {
         return;
     }
     for px in bgra.chunks_exact_mut(4) {
@@ -449,14 +462,22 @@ fn screenshot_window_encoded<T>(
     match unsafe { screenshot_window_bytes_with_occlusion_unsafe(hwnd, encode) } {
         Ok(capture) => Ok(capture),
         Err(primary_error) => {
-            if primary_error.to_string().contains("minimized window") {
+            let message = primary_error.to_string();
+            // Every route already ran for a black frame; another try returns the same frame.
+            if message.contains("minimized window") || message.contains(BLACK_FRAME) {
                 return Err(primary_error);
             }
             // A freshly restored DirectComposition window can temporarily have
             // no usable GDI surface even though DWM is already rendering it.
             // WGC reads the compositor-owned frame and is therefore the right
-            // first fallback for this class of capture failure.
-            match crate::wgc::screenshot_window_via_wgc(hwnd) {
+            // first fallback for this class of capture failure. Without DWM it
+            // cannot create a capture item.
+            let wgc = if compositor_running() {
+                crate::wgc::screenshot_window_via_wgc(hwnd)
+            } else {
+                Err(anyhow::anyhow!("no desktop compositor in this session"))
+            };
+            match wgc {
                 Ok((pixels, width, height)) => Ok((encode(&pixels, width, height)?, false, None)),
                 Err(wgc_error) => {
                     // Headless/virtualized Windows sessions can expose DWM but
@@ -466,6 +487,10 @@ fn screenshot_window_encoded<T>(
                     let target = HWND(hwnd as *mut _);
                     let occluded = unsafe { target_is_obscured(target) };
                     match unsafe { screenshot_via_screen_region(target) } {
+                        Ok((pixels, _, _, _)) if is_mostly_black_bgra(&pixels) => Err(primary_error.context(format!(
+                            "{BLACK_FRAME}: Windows.Graphics.Capture fallback failed: {wgc_error}; \
+                             the desktop-region fallback returned a black frame"
+                        ))),
                         Ok((pixels, width, height, geometry)) => Ok((
                             encode(&pixels, width as u32, height as u32)?,
                             occluded,
@@ -550,7 +575,12 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     // autonomous-test journal). On older Windows / GPU stalls / cloaked
     // windows WGC may fail; fall back to the screen-region BitBlt
     // path, then to PrintWindow as a last resort.
-    if crate::input::is_xaml_host_hwnd(hwnd_raw) {
+    //
+    // Without a compositor (an isolated agent session) there is no
+    // DirectComposition and WGC cannot capture: the window is GDI-rendered,
+    // and the process-name match can name a classic app (a fresh session
+    // user runs classic notepad.exe). PrintWindow below captures it.
+    if compositor_running() && crate::input::is_xaml_host_hwnd(hwnd_raw) {
         match crate::wgc::screenshot_window_via_wgc(hwnd_raw) {
             Ok((pixels, w, h)) => {
                 return Ok((
@@ -569,6 +599,14 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
         }
         let occluded = target_is_obscured(hwnd);
         match screenshot_via_screen_region(hwnd) {
+            // A black desktop region shows nothing of the window: try PrintWindow.
+            Ok((pixels, _, _, _)) if is_mostly_black_bgra(&pixels) => {
+                tracing::warn!(
+                    target: "cua-driver",
+                    "screenshot: XAML target screen-region path returned a black frame; \
+                     falling back to PrintWindow."
+                );
+            }
             Ok((pixels, w, h, geometry)) => {
                 return Ok((
                     encode(&pixels, w as u32, h as u32)?,
@@ -754,9 +792,14 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     //      not covered).
     // The WGC-first ordering covers backgrounded UWP targets the
     // screen-region path mishandles (returns covering window's pixels).
-    let mostly_black = is_mostly_black_bgra(&pixels);
-    if mostly_black {
-        match crate::wgc::screenshot_window_via_wgc(hwnd_raw) {
+    if is_mostly_black_bgra(&pixels) {
+        // Without a compositor WGC cannot create a capture item.
+        let wgc = if compositor_running() {
+            crate::wgc::screenshot_window_via_wgc(hwnd_raw)
+        } else {
+            Err(anyhow::anyhow!("no desktop compositor in this session"))
+        };
+        match wgc {
             Ok((alt_pixels, w, h)) => {
                 return Ok((encode(&alt_pixels, w, h)?, false, None));
             }
@@ -769,7 +812,10 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
             }
         }
         let occluded = target_is_obscured(hwnd);
-        match screenshot_via_screen_region(hwnd) {
+        let screen = match screenshot_via_screen_region(hwnd) {
+            Ok((alt_pixels, _, _, _)) if is_mostly_black_bgra(&alt_pixels) => {
+                "the desktop-region capture returned a black frame too".to_string()
+            }
             Ok((alt_pixels, alt_w, alt_h, geometry)) => {
                 return Ok((
                     encode(&alt_pixels, alt_w as u32, alt_h as u32)?,
@@ -777,18 +823,14 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
                     Some(geometry),
                 ));
             }
-            Err(e) => {
-                // Screen-region path failed too — return the (black) PrintWindow
-                // result with an explanatory log rather than erroring outright.
-                // Caller still gets an image; the fact that it's black is now
-                // visible in the bytes themselves.
-                tracing::warn!(
-                    target: "cua-driver",
-                    "screenshot: PrintWindow returned a mostly-black bitmap (UWP / \
-                     DirectComposition target?); screen-region fallback failed: {e}"
-                );
-            }
-        }
+            Err(e) => format!("the desktop-region capture failed: {e}"),
+        };
+        // No route showed the window. A black image would read as a real,
+        // empty window, so report the capture as unavailable instead.
+        bail!(
+            "{BLACK_FRAME}: window 0x{hwnd_raw:x} could not be captured: PrintWindow returned a \
+             black frame, Windows.Graphics.Capture is unavailable, and {screen}."
+        );
     }
 
     // Encode the captured BGRA frame. Overviews resize pixels first;
@@ -799,7 +841,7 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     Ok((
         encode(&pixels, w as u32, h as u32)?,
         false,
-        (!mostly_black).then_some(cropped_geometry),
+        Some(cropped_geometry),
     ))
 }
 
