@@ -487,10 +487,12 @@ fn screenshot_window_encoded<T>(
                     let target = HWND(hwnd as *mut _);
                     let occluded = unsafe { target_is_obscured(target) };
                     match unsafe { screenshot_via_screen_region(target) } {
-                        Ok((pixels, _, _, _)) if is_mostly_black_bgra(&pixels) => Err(primary_error.context(format!(
-                            "{BLACK_FRAME}: Windows.Graphics.Capture fallback failed: {wgc_error}; \
-                             the desktop-region fallback returned a black frame"
-                        ))),
+                        Ok((pixels, _, _, _)) if is_mostly_black_bgra(&pixels) => {
+                            Err(primary_error.context(format!(
+                                "{BLACK_FRAME}: Windows.Graphics.Capture fallback failed: {wgc_error}; \
+                                 the desktop-region fallback returned a black frame"
+                            )))
+                        }
                         Ok((pixels, width, height, geometry)) => Ok((
                             encode(&pixels, width as u32, height as u32)?,
                             occluded,
