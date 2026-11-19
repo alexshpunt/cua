@@ -17,9 +17,13 @@
 //! Constraints inherited from WGC: Windows 10 1903+, and a minimized window
 //! has no rendered content — the monitor loop reports `Suspended("minimized")`
 //! and `Resumed` around iconic state instead of failing the stream.
+//!
+//! When WGC cannot open a window, as in headless sessions without the per-user
+//! capture service (MXC isolated agent sessions), the stream falls back to
+//! `PrintWindow` polling in [`crate::windows_printwindow`].
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
 use cua_media_protocol::SurfaceGeometry;
@@ -52,6 +56,54 @@ use crate::windows_support;
 
 const MONITOR_INTERVAL: Duration = Duration::from_millis(200);
 const POLL_SLEEP: Duration = Duration::from_millis(4);
+
+/// `HRESULT_FROM_WIN32(ERROR_SERVICE_DOES_NOT_EXIST)`: `CreateForWindow` in a
+/// session that has no per-user capture service.
+const SERVICE_DOES_NOT_EXIST: windows::core::HRESULT =
+    windows::core::HRESULT(0x8007_0424_u32 as i32);
+
+/// Whether this session can open windows with WGC, once a probe or a stream
+/// has found out: `Some(reason)` when it cannot.
+static WGC_STATE: OnceLock<Option<String>> = OnceLock::new();
+
+fn note_create_for_window(result: &windows::core::Result<GraphicsCaptureItem>) {
+    match result {
+        Ok(_) => {
+            let _ = WGC_STATE.set(None);
+        }
+        Err(error) if error.code() == SERVICE_DOES_NOT_EXIST => {
+            let _ = WGC_STATE.set(Some(format!(
+                "Windows.Graphics.Capture is unavailable in this session ({}): it has no per-user capture service, as in headless MXC isolated sessions",
+                error.message()
+            )));
+        }
+        Err(_) => {}
+    }
+}
+
+/// Limitation of window streams in this session: `Some` when WGC cannot open
+/// windows here and streams use PrintWindow polling instead (no capture of
+/// content a window does not paint through PrintWindow, a paint per frame).
+/// Probes one visible top-level window the first time it is asked; with no
+/// window to probe, the answer stays unknown and nothing is reported.
+pub(crate) fn window_capture_limitation() -> Option<String> {
+    if let Some(state) = WGC_STATE.get() {
+        return state.as_deref().map(limitation_text);
+    }
+    let window = crate::windows_support::enumerate_windows(true)
+        .into_iter()
+        .next()?;
+    let interop =
+        windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().ok()?;
+    let result: windows::core::Result<GraphicsCaptureItem> =
+        unsafe { interop.CreateForWindow(HWND(window.native.window_id as *mut _)) };
+    note_create_for_window(&result);
+    WGC_STATE.get()?.as_deref().map(limitation_text)
+}
+
+fn limitation_text(reason: &str) -> String {
+    format!("{reason}; windows stream through PrintWindow polling, one window paint per frame")
+}
 
 struct WindowsCaptureLease {
     stop: Arc<AtomicBool>,
@@ -144,7 +196,9 @@ fn open_stream(hwnd: HWND) -> Result<CaptureStream, ProviderError> {
             windows::core::factory::<GraphicsCaptureItem, IGraphicsCaptureItemInterop>().map_err(
                 |error| capture_error(format!("capture interop factory failed: {error}")),
             )?;
-        let item: GraphicsCaptureItem = interop.CreateForWindow(hwnd).map_err(|error| {
+        let item = interop.CreateForWindow(hwnd);
+        note_create_for_window(&item);
+        let item: GraphicsCaptureItem = item.map_err(|error| {
             capture_error(format!(
                 "GraphicsCaptureItem::CreateForWindow failed (needs Windows 10 1903+ and a live window): {error}"
             ))
@@ -186,7 +240,7 @@ fn open_stream(hwnd: HWND) -> Result<CaptureStream, ProviderError> {
     }
 }
 
-fn window_title(hwnd: HWND) -> String {
+pub(crate) fn window_title(hwnd: HWND) -> String {
     unsafe {
         let length = GetWindowTextLengthW(hwnd);
         if length <= 0 {
@@ -217,7 +271,23 @@ fn capture_thread(
             stream
         }
         Err(error) => {
-            let _ = ready.send(Err(error));
+            // A window WGC cannot open (no per-user capture service, no
+            // hardware D3D device, a cloaked window) may still paint itself.
+            unsafe {
+                if IsIconic(hwnd).as_bool() {
+                    let _ = ready.send(Err(error));
+                    return;
+                }
+            }
+            crate::windows_printwindow::run(
+                hwnd_value,
+                max_fps,
+                stop,
+                sink,
+                native_geometry,
+                ready,
+                error,
+            );
             return;
         }
     };

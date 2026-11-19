@@ -30,6 +30,8 @@ mod macos_h264;
 #[cfg(target_os = "windows")]
 mod windows_capture;
 #[cfg(target_os = "windows")]
+mod windows_printwindow;
+#[cfg(target_os = "windows")]
 mod windows_display;
 #[cfg(target_os = "windows")]
 mod windows_h264;

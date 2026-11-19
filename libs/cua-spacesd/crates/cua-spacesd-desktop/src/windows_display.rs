@@ -10,6 +10,10 @@
 //! reads what is on screen, the same pixels cua-driver's `get_desktop_state`
 //! returns, so desktop coordinates on a frame are the coordinates desktop-scope
 //! input resolves against. Frames are packed BGRA with opaque alpha.
+//!
+//! Only monitors backed by an attached display device count: a headless
+//! session (an MXC isolated agent session) reports a monitor with no device,
+//! and its screen DC never shows anything, so it offers no display target.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -19,11 +23,13 @@ use cua_spacesd_provider_api::{
     CaptureEvent, CaptureLease, CaptureSink, OwnedFrame, PixelFormat, ProviderDisplay,
     ProviderError, ProviderErrorCode,
 };
+use windows::core::PCWSTR;
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
     BitBlt, CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject,
-    EnumDisplayMonitors, GetDC, GetDIBits, GetMonitorInfoW, ReleaseDC, SelectObject, BITMAPINFO,
-    BITMAPINFOHEADER, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS, HDC, HMONITOR, MONITORINFO,
+    EnumDisplayDevicesW, EnumDisplayMonitors, GetDC, GetDIBits, GetMonitorInfoW, ReleaseDC,
+    SelectObject, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, CAPTUREBLT, DIB_RGB_COLORS,
+    DISPLAY_DEVICEW, DISPLAY_DEVICE_ATTACHED_TO_DESKTOP, HDC, HMONITOR, MONITORINFO,
     MONITORINFOEXW, RGBQUAD, SRCCOPY,
 };
 use windows::Win32::UI::HiDpi::{GetDpiForMonitor, MDT_EFFECTIVE_DPI};
@@ -83,6 +89,45 @@ unsafe extern "system" fn collect(
     true.into()
 }
 
+/// Names (`\\.\DISPLAYn`) of the display devices attached to this session's
+/// desktop. Headless sessions, such as MXC isolated agent sessions, have none:
+/// Windows still reports one virtual monitor there, but nothing is ever drawn
+/// on its screen DC, so a capture of it is black.
+fn attached_display_devices() -> Vec<String> {
+    let mut names = Vec::new();
+    for index in 0.. {
+        let mut device = DISPLAY_DEVICEW {
+            cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32,
+            ..Default::default()
+        };
+        // SAFETY: a DISPLAY_DEVICEW with its size set.
+        if !unsafe { EnumDisplayDevicesW(PCWSTR::null(), index, &mut device, 0) }.as_bool() {
+            break;
+        }
+        if device.StateFlags & DISPLAY_DEVICE_ATTACHED_TO_DESKTOP != 0 {
+            let len = device
+                .DeviceName
+                .iter()
+                .position(|c| *c == 0)
+                .unwrap_or(device.DeviceName.len());
+            names.push(String::from_utf16_lossy(&device.DeviceName[..len]));
+        }
+    }
+    names
+}
+
+/// Monitors backed by an attached display device.
+fn with_display_device(monitors: Vec<Monitor>, devices: &[String]) -> Vec<Monitor> {
+    monitors
+        .into_iter()
+        .filter(|monitor| {
+            devices
+                .iter()
+                .any(|device| device.eq_ignore_ascii_case(&monitor.name))
+        })
+        .collect()
+}
+
 fn monitors() -> Vec<Monitor> {
     let mut out: Vec<Monitor> = Vec::new();
     // SAFETY: the callback only runs during this call and writes to `out`.
@@ -94,6 +139,7 @@ fn monitors() -> Vec<Monitor> {
             LPARAM(&mut out as *mut Vec<Monitor> as isize),
         );
     }
+    let mut out = with_display_device(out, &attached_display_devices());
     // Primary first, then left to right: index 0 is the primary display.
     out.sort_by_key(|m| (!m.primary, m.rect.left, m.rect.top));
     out
@@ -257,4 +303,35 @@ pub(crate) fn start(
         })
         .map_err(|error| capture_error(format!("failed to spawn capture thread: {error}")))?;
     Ok(Arc::new(DisplayCaptureLease { stop }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{with_display_device, Monitor, RECT};
+
+    fn monitor(name: &str) -> Monitor {
+        Monitor {
+            rect: RECT {
+                left: 0,
+                top: 0,
+                right: 1024,
+                bottom: 768,
+            },
+            name: name.into(),
+            primary: true,
+            scale: 1.0,
+        }
+    }
+
+    #[test]
+    fn a_monitor_without_an_attached_display_device_is_no_display() {
+        // A headless session reports a monitor but no display device.
+        assert!(with_display_device(vec![monitor(r"\\.\DISPLAY1")], &[]).is_empty());
+        let kept = with_display_device(
+            vec![monitor(r"\\.\DISPLAY1"), monitor(r"\\.\DISPLAY2")],
+            &[r"\\.\display2".to_owned()],
+        );
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].name, r"\\.\DISPLAY2");
+    }
 }
