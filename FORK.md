@@ -60,6 +60,13 @@ The native macOS desktop matrix was not rerun for this build.
 - `get_window_state` takes a `crop` rectangle for display-only reads: only that part of the window, in its physical pixels, is copied, resized and PNG-encoded, and the result names it as `screenshot_crop`. Pi Agent Computer Use watches a viewport this way. A crop is never an input source and is refused with the retained WGC route.
 - An opt-in retained Windows Graphics Capture route. Pi Agent Computer Use tried it and dropped it, because on the machines it was measured on it was slower than the default route.
 
+## cua-spacesd window streams
+
+- A cua-spacesd window stream whose window Windows Graphics Capture cannot open falls back to `PrintWindow` polling. Headless sessions, such as MXC isolated agent sessions, start no per-user capture service, so WGC fails there with `ERROR_SERVICE_DOES_NOT_EXIST`. The fallback paints the window at most `max_fps` times a second, crops it to the extended frame bounds and publishes a frame only when its pixels change. `GetCapabilities` names the limitation on `window_stream` when the session has no capture service.
+- A display target needs an attached display device. A headless session reports a monitor whose screen is always black; it now offers no display target, and `desktop_stream` says that no display is visible.
+- Measured on ZinPC (Windows 11 26200, NASM-built OpenH264) in an MXC isolated session, through a guest-to-host loopback relay: a 60 Hz window streams at 30 fps with `max_fps` 30 (0.33 Mbit/s, 7 % of one core) or at 58 fps with `max_fps` 60 (0.58 Mbit/s, 15 %); a frame reaches the host 8–10 ms after the window painted it; an unchanged window sends a frame every 3 s; three windows at once cost 17 % of one core.
+- The Windows build is `.github/workflows/windows-fork-spacesd-build.yml`. It installs NASM, which GitHub's Windows image lacks; without it the OpenH264 build script silently builds a C-only encoder, which took 25 % of one core instead of 7 % for the same 30 fps window stream.
+
 ## Protocol
 
 - An EOF-aware MCP receiver, so a host that closes stdin still gets the receipt of an interrupted held path.

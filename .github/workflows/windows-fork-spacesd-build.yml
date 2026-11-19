@@ -1,0 +1,111 @@
+name: Windows fork cua-spacesd build
+
+# Builds cua-spacesd.exe for Pi Agent Computer Use from an exact fork commit:
+# static CRT, protoc for the cua.env.v1 contract, and NASM so that OpenH264
+# compiles its SIMD assembly (GitHub's Windows image has no NASM, and the
+# openh264-sys2 build script silently builds the slower C-only encoder then).
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact source commit to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-fork-spacesd-build
+  cancel-in-progress: false
+
+env:
+  CUA_TELEMETRY: "0"
+  DO_NOT_TRACK: "1"
+  SOURCE_REF: ${{ inputs.source_ref }}
+  NASM_VERSION: "2.16.03"
+  NASM_SHA256: "3EE4782247BCB874378D02F7EAB4E294A84D3D15F3F6EE2DE2F47A46AA7226E6"
+  TARGET: x86_64-pc-windows-msvc
+  CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: "-C target-feature=+crt-static"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: libs/cua-spacesd
+    steps:
+      - name: Validate source revision
+        working-directory: .
+        run: |
+          if ($env:SOURCE_REF -notmatch '^[0-9a-f]{40}$') {
+            throw 'source_ref must be an exact commit SHA'
+          }
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+      - name: Install protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: "29.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: dtolnay/rust-toolchain@4716b85f2fac3e324e64fa2810f6b5c3905760a5 # 1.97.1
+        with:
+          targets: x86_64-pc-windows-msvc
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            libs/cua-spacesd/target
+          key: windows-fork-spacesd-1.97.1-${{ hashFiles('libs/cua-spacesd/Cargo.lock') }}
+      - name: Install NASM
+        working-directory: .
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'nasm.zip'
+          Invoke-WebRequest -UseBasicParsing "https://www.nasm.us/pub/nasm/releasebuilds/$env:NASM_VERSION/win64/nasm-$env:NASM_VERSION-win64.zip" -OutFile $zip
+          $hash = (Get-FileHash $zip -Algorithm SHA256).Hash
+          if ($hash -ne $env:NASM_SHA256) { throw "NASM archive hash $hash does not match $env:NASM_SHA256" }
+          Expand-Archive $zip $env:RUNNER_TEMP -Force
+          Join-Path $env:RUNNER_TEMP "nasm-$env:NASM_VERSION" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - name: Build
+        run: |
+          New-Item -ItemType Directory -Force -Path build-evidence | Out-Null
+          git rev-parse HEAD | Set-Content build-evidence/source-sha.txt
+          nasm -v | Tee-Object build-evidence/nasm.txt
+          # Its build script does not rerun when nasm changes, so a cached build could lack the assembly.
+          cargo clean --release --target $env:TARGET -p openh264-sys2
+          cargo build --locked --release --target $env:TARGET -p cua-spacesd --bin cua-spacesd -vv 2>&1 |
+            Set-Content build-evidence/build.log
+          if ($LASTEXITCODE -ne 0) { Get-Content build-evidence/build.log -Tail 80; throw "cargo build failed: $LASTEXITCODE" }
+          # The OpenH264 build script reports a NASM failure on stdout and continues without assembly.
+          if (Select-String -Path build-evidence/build.log -SimpleMatch 'Failed to compile NASM files') {
+            throw 'OpenH264 was built without its NASM assembly'
+          }
+          git diff --exit-code
+          if ($LASTEXITCODE -ne 0) { throw 'The build changed tracked source' }
+      - name: Check and package
+        run: |
+          $exe = "target/$env:TARGET/release/cua-spacesd.exe"
+          & $exe --version 2>&1 | Tee-Object build-evidence/version.txt
+          if ($LASTEXITCODE -ne 0) { throw 'version check failed' }
+          $bundle = 'build-evidence/cua-spacesd'
+          New-Item -ItemType Directory -Force -Path $bundle | Out-Null
+          Copy-Item $exe "$bundle/cua-spacesd.exe"
+          Copy-Item LICENSE "$bundle/LICENSE"
+          Copy-Item THIRD_PARTY_NOTICES.md "$bundle/THIRD_PARTY_NOTICES.md"
+          Get-FileHash "$bundle/cua-spacesd.exe" -Algorithm SHA256 |
+            Select-Object @{Name='name';Expression={Split-Path $_.Path -Leaf}}, Hash |
+            ConvertTo-Json | Set-Content build-evidence/hashes.json
+          'Unsigned build of the fork for Pi Agent Computer Use.' | Set-Content "$bundle/BUILD-NOTICE.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-fork-spacesd-${{ env.SOURCE_REF }}
+          path: libs/cua-spacesd/build-evidence/
+          if-no-files-found: error
+          retention-days: 30
