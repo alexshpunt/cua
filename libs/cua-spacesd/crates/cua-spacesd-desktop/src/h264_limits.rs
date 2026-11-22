@@ -1,19 +1,23 @@
 // SPDX-License-Identifier: FSL-1.1-MIT
 // Copyright (c) 2026 Cua AI, Inc.
 
-//! Frame-size limits shared by the macOS and Windows H.264 capture paths.
-//! VideoToolbox limits the long edge to 4096 px and H.264 level 5.2 limits
-//! the frame to 36,864 macroblocks. Larger sources are scaled to fit.
+//! The largest frame an H.264 stream encodes: the VideoToolbox hardware
+//! encoder (and H.264 level 5.2) tops out at 4096 px on the long edge and
+//! 36,864 macroblocks (4096x2304). A larger source, such as a 6K display
+//! (6720x3780), is captured downscaled to fit instead of failing to encode.
 
 /// Longest edge, in pixels, of an H.264 frame.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) const H264_MAX_DIMENSION: u32 = 4096;
 /// Most 16x16 macroblocks in one H.264 frame (level 5.2 MaxFS).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) const H264_MAX_MACROBLOCKS: u64 = 36_864;
 
 /// The long-edge cap an H.264 stream of a `width`x`height` (native px)
 /// source captures at: `requested` (0 = native size) lowered, when needed,
 /// so the downscaled frame fits [`H264_MAX_DIMENSION`] and
 /// [`H264_MAX_MACROBLOCKS`]. Never 0.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn h264_max_dimension(width: u32, height: u32, requested: u32) -> u32 {
     let (width, height) = (width.max(1), height.max(1));
     let longest = width.max(height);

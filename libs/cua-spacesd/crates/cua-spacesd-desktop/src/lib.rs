@@ -47,7 +47,6 @@ mod driver_input;
 #[cfg(target_os = "linux")]
 mod encoded_capture;
 pub mod grpc;
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
 mod h264_limits;
 #[cfg(target_os = "linux")]
 mod linux_capture;

@@ -21,8 +21,12 @@ use openh264::encoder::{
 use openh264::formats::{RgbSliceU8, YUVBuffer};
 use openh264::OpenH264API;
 
-use crate::h264_limits::h264_max_dimension;
 use crate::windows_frames::resize_bgra;
+
+// The OpenH264 Rust wrapper rejects either edge above these limits,
+// independent of the H.264 level's macroblock budget.
+const OPENH264_MAX_LONG_EDGE: u32 = 3840;
+const OPENH264_MAX_SHORT_EDGE: u32 = 2160;
 
 #[derive(Default)]
 struct EncoderQueue {
@@ -358,9 +362,18 @@ impl SoftwareEncoder {
 }
 
 fn fit_frame(width: u32, height: u32, requested: u32) -> ((u32, u32), bool) {
-    let cap = h264_max_dimension(width, height, requested);
+    let long = width.max(height);
+    let short = width.min(height);
+    let mut cap = long.min(OPENH264_MAX_LONG_EDGE);
+    if short > OPENH264_MAX_SHORT_EDGE {
+        let fit = u64::from(long) * u64::from(OPENH264_MAX_SHORT_EDGE) / u64::from(short);
+        cap = cap.min(fit as u32);
+    }
+    if requested != 0 {
+        cap = cap.min(requested);
+    }
     // Without scaling, the RGB conversion just crops a trailing odd row or column.
-    let resize = cap < width.max(height) || width < 2 || height < 2;
+    let resize = cap < long || short < 2;
     (fit_even(width, height, cap), resize)
 }
 
@@ -504,6 +517,14 @@ mod tests {
     }
 
     #[test]
+    fn fits_windows_frames_to_encoder_and_viewer_limits() {
+        assert_eq!(fit_frame(3840, 2160, 0), ((3840, 2160), false));
+        assert_eq!(fit_frame(2160, 4096, 0), ((2024, 3840), true));
+        assert_eq!(fit_frame(3840, 2560, 240), ((240, 160), true));
+        assert_eq!(fit_frame(801, 601, 0), ((800, 600), false));
+    }
+
+    #[test]
     fn oversized_frame_is_scaled_and_decodes_with_the_advertised_dimensions() {
         use openh264::formats::YUVSource;
 
@@ -532,7 +553,7 @@ mod tests {
         };
         frame.validate().unwrap();
         assert!(frame.keyframe);
-        assert_eq!((frame.width_px, frame.height_px), (3744, 2496));
+        assert_eq!((frame.width_px, frame.height_px), (3240, 2160));
         let mut decoder = openh264::decoder::Decoder::new().unwrap();
         let decoded = decoder.decode(&frame.bytes).unwrap().unwrap();
         assert_eq!(
