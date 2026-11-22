@@ -13,12 +13,16 @@ use std::thread::JoinHandle;
 use cua_spacesd_provider_api::{
     CaptureEvent, CaptureSink, OwnedFrame, PixelFormat, ProviderError, ProviderErrorCode,
 };
+use cua_spacesd_session::media::encoder::fit_even;
 use openh264::encoder::{
     BitRate, Encoder, EncoderConfig, FrameRate, FrameType, IntraFramePeriod, Profile,
     RateControlMode, UsageType, VuiConfig,
 };
 use openh264::formats::{RgbSliceU8, YUVBuffer};
 use openh264::OpenH264API;
+
+use crate::h264_limits::h264_max_dimension;
+use crate::windows_frames::resize_bgra;
 
 #[derive(Default)]
 struct EncoderQueue {
@@ -97,6 +101,7 @@ impl EncoderMailbox {
 }
 
 pub(super) struct WindowsH264Encoder {
+    max_dimension: u32,
     sink: Arc<dyn CaptureSink>,
     mailbox: Arc<EncoderMailbox>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -105,6 +110,7 @@ pub(super) struct WindowsH264Encoder {
 impl WindowsH264Encoder {
     pub(super) fn start(
         max_fps: u16,
+        max_dimension: u32,
         target_bitrate_kbps: Option<u32>,
         sink: Arc<dyn CaptureSink>,
     ) -> Result<Arc<Self>, ProviderError> {
@@ -113,7 +119,15 @@ impl WindowsH264Encoder {
         let worker_sink = sink.clone();
         let worker = std::thread::Builder::new()
             .name("rcdp-windows-h264".into())
-            .spawn(move || encoder_loop(max_fps, target_bitrate_kbps, worker_sink, worker_mailbox))
+            .spawn(move || {
+                encoder_loop(
+                    max_fps,
+                    max_dimension,
+                    target_bitrate_kbps,
+                    worker_sink,
+                    worker_mailbox,
+                );
+            })
             .map_err(|error| {
                 ProviderError::new(
                     ProviderErrorCode::CaptureFailed,
@@ -121,12 +135,14 @@ impl WindowsH264Encoder {
                 )
             })?;
         Ok(Arc::new(Self {
+            max_dimension,
             sink,
             mailbox,
             worker: Mutex::new(Some(worker)),
         }))
     }
 
+    #[cfg(target_os = "windows")]
     pub(super) fn request_keyframe(&self) {
         self.mailbox.request_keyframe();
     }
@@ -154,8 +170,8 @@ impl CaptureSink for WindowsH264Encoder {
                 "OpenH264 received a non-BGRA source frame".into(),
             )),
             CaptureEvent::GeometryChanged(mut geometry) => {
-                geometry.width_px = even_extent(geometry.width_px);
-                geometry.height_px = even_extent(geometry.height_px);
+                (geometry.width_px, geometry.height_px) =
+                    fit_frame(geometry.width_px, geometry.height_px, self.max_dimension).0;
                 self.sink.on_event(CaptureEvent::GeometryChanged(geometry));
             }
             other => self.sink.on_event(other),
@@ -171,6 +187,7 @@ impl Drop for WindowsH264Encoder {
 
 fn encoder_loop(
     max_fps: u16,
+    max_dimension: u32,
     target_bitrate_kbps: Option<u32>,
     sink: Arc<dyn CaptureSink>,
     mailbox: Arc<EncoderMailbox>,
@@ -178,7 +195,19 @@ fn encoder_loop(
     let mut native: Option<SoftwareEncoder> = None;
     let mut codec_epoch = 0u64;
     while let Some((frame, mut force_keyframe)) = mailbox.take() {
-        let dimensions = (even_extent(frame.width_px), even_extent(frame.height_px));
+        let (dimensions, resize) = fit_frame(frame.width_px, frame.height_px, max_dimension);
+        // Resize after the mailbox so CPU work is not spent on superseded frames.
+        let frame = if resize {
+            match resize_bgra(frame, dimensions) {
+                Ok(frame) => frame,
+                Err(error) => {
+                    sink.on_event(CaptureEvent::Suspended(error.to_string()));
+                    continue;
+                }
+            }
+        } else {
+            frame
+        };
         if native.as_ref().map(SoftwareEncoder::dimensions) != Some(dimensions) {
             codec_epoch = codec_epoch.saturating_add(1);
             match SoftwareEncoder::new(dimensions.0, dimensions.1, max_fps, target_bitrate_kbps) {
@@ -328,8 +357,11 @@ impl SoftwareEncoder {
     }
 }
 
-fn even_extent(value: u32) -> u32 {
-    value.max(2) & !1
+fn fit_frame(width: u32, height: u32, requested: u32) -> ((u32, u32), bool) {
+    let cap = h264_max_dimension(width, height, requested);
+    // Without scaling, the RGB conversion just crops a trailing odd row or column.
+    let resize = cap < width.max(height) || width < 2 || height < 2;
+    (fit_even(width, height, cap), resize)
 }
 
 fn bitrate_for(width: u32, height: u32, fps: u16) -> u32 {
@@ -472,8 +504,40 @@ mod tests {
     }
 
     #[test]
-    fn odd_capture_dimensions_crop_to_even_encoder_extents() {
-        assert_eq!(even_extent(801), 800);
-        assert_eq!(even_extent(1), 2);
+    fn oversized_frame_is_scaled_and_decodes_with_the_advertised_dimensions() {
+        use openh264::formats::YUVSource;
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        struct Sink(std::sync::mpsc::Sender<CaptureEvent>);
+        impl CaptureSink for Sink {
+            fn on_event(&self, event: CaptureEvent) {
+                let _ = self.0.send(event);
+            }
+        }
+
+        let encoder = WindowsH264Encoder::start(30, 0, None, Arc::new(Sink(sender))).unwrap();
+        encoder.on_event(CaptureEvent::Frame(OwnedFrame {
+            bytes: vec![128; 3840 * 2560 * 4].into(),
+            width_px: 3840,
+            height_px: 2560,
+            bytes_per_row: Some(3840 * 4),
+            ..frame(1)
+        }));
+        let event = receiver
+            .recv_timeout(std::time::Duration::from_secs(10))
+            .unwrap();
+        encoder.stop();
+        let CaptureEvent::Frame(frame) = event else {
+            panic!("expected an H.264 frame, got {event:?}");
+        };
+        frame.validate().unwrap();
+        assert!(frame.keyframe);
+        assert_eq!((frame.width_px, frame.height_px), (3744, 2496));
+        let mut decoder = openh264::decoder::Decoder::new().unwrap();
+        let decoded = decoder.decode(&frame.bytes).unwrap().unwrap();
+        assert_eq!(
+            decoded.dimensions(),
+            (frame.width_px as usize, frame.height_px as usize)
+        );
     }
 }

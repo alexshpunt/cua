@@ -31,7 +31,9 @@ mod macos_h264;
 mod windows_capture;
 #[cfg(target_os = "windows")]
 mod windows_display;
-#[cfg(target_os = "windows")]
+#[cfg(any(target_os = "windows", test))]
+mod windows_frames;
+#[cfg(any(target_os = "windows", all(target_os = "linux", test)))]
 mod windows_h264;
 #[cfg(target_os = "windows")]
 mod windows_printwindow;
@@ -45,6 +47,7 @@ mod driver_input;
 #[cfg(target_os = "linux")]
 mod encoded_capture;
 pub mod grpc;
+#[cfg(any(target_os = "macos", target_os = "windows", test))]
 mod h264_limits;
 #[cfg(target_os = "linux")]
 mod linux_capture;
@@ -1788,6 +1791,7 @@ impl CaptureProvider for CuaCaptureProvider {
             if config.accepted_formats.contains(&PixelFormat::H264AnnexB) {
                 let encoder = windows_h264::WindowsH264Encoder::start(
                     config.max_fps,
+                    config.max_dimension,
                     config.target_bitrate_kbps,
                     sink,
                 )?;
@@ -1800,6 +1804,7 @@ impl CaptureProvider for CuaCaptureProvider {
                     "the CUA adapter cannot provide any requested capture format",
                 ));
             }
+            let sink = windows_frames::cap_bgra(config.max_dimension, sink);
             return windows_display::start(&display_id, config.max_fps, sink);
         }
         let native = self.0.native(target)?;
@@ -1831,6 +1836,7 @@ impl CaptureProvider for CuaCaptureProvider {
             if config.accepted_formats.contains(&PixelFormat::H264AnnexB) {
                 let encoder = windows_h264::WindowsH264Encoder::start(
                     config.max_fps,
+                    config.max_dimension,
                     config.target_bitrate_kbps,
                     sink,
                 )?;
@@ -1858,6 +1864,8 @@ impl CaptureProvider for CuaCaptureProvider {
                 "the CUA adapter cannot provide any requested capture format",
             ));
         }
+        #[cfg(target_os = "windows")]
+        let sink = windows_frames::cap_bgra(config.max_dimension, sink);
         start_platform_capture(native, config, sink, native_geometry)
     }
 }
