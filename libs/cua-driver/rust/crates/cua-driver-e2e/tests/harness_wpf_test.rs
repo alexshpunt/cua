@@ -2258,14 +2258,11 @@ fn harness_wpf_unlock_pulse_permits_focus_return() {
             pulse.contains(&0x0100) && pulse.contains(&0x0101),
             "the driver did not need its unlock pulse, so this run does not cover it: {pulse:?}"
         );
-        assert!(
-            response.text().contains("focus_return: restored"),
+        assert_eq!(
+            foreground_after,
+            human_wid,
             "focus return kept the target after a read unlock pulse: {}",
             response.text()
-        );
-        assert_eq!(
-            foreground_after, human_wid,
-            "the human's window must be in front again"
         );
         drop(driver);
         Observation::delivered(

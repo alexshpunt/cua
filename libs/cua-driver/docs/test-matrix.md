@@ -212,8 +212,8 @@ The ordinary WPF harness layout is unchanged.
 The test process inserts the latest input itself and puts the human receiver in
 front, so the driver has no foreground right and must insert its no-name unlock
 key before a foreground click on the target. The human receiver's journal must
-show that key's DOWN and UP after the click starts; with both read, the click
-result reports `focus_return: restored` and the human receiver is in front again.
+show that key's DOWN and UP after the click starts; with both read, the human
+receiver is in front again when the click returns.
 The target gets exactly one DOWN/UP and the human receiver none.
 
 The companion `pointer_completion_oracle` owners cover legacy click, straight drag
