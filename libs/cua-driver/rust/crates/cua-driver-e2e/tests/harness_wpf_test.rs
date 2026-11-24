@@ -2222,6 +2222,17 @@ fn harness_wpf_activation_unlock_permits_focus_return() {
         let target_bounds = window_bounds(&mut driver, target_pid, target_wid);
         let (x, y) = pixel_center(&target, "pointer-canvas", target_bounds);
         take_foreground_from_driver(human_wid);
+        // Rest the pointer on the human's canvas, so any pointer message the unlock caused
+        // would reach it.
+        let human = snapshot(&mut driver, human_pid, human_wid);
+        let (cx, cy, cw, ch) = pointer_completion_oracle::screen_canvas(&human);
+        unsafe {
+            windows::Win32::UI::WindowsAndMessaging::SetPhysicalCursorPos(
+                (cx + cw / 2.0).round() as i32,
+                (cy + ch / 2.0).round() as i32,
+            )
+        }
+        .expect("rest the pointer on the human canvas");
         // Let the human receiver read this process's own input before the driver acts.
         std::thread::sleep(Duration::from_millis(300));
         let human_before = wait_pointer_receiver(&human_path, pointer_oracle_time_ms(), |_| true);

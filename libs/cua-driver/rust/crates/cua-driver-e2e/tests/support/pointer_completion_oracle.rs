@@ -190,7 +190,7 @@ fn foreground() -> u64 {
     unsafe { GetForegroundWindow() }.0 as usize as u64
 }
 
-fn screen_canvas(snapshot: &ToolResponse) -> (f64, f64, f64, f64) {
+pub(super) fn screen_canvas(snapshot: &ToolResponse) -> (f64, f64, f64, f64) {
     let index = ax::element_index_by_id(snapshot.tree_text(), "pointer-canvas")
         .expect("pointer canvas in UIA snapshot");
     let frame = &snapshot.structured()["elements"]

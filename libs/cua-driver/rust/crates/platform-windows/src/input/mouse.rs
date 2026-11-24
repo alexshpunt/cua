@@ -755,8 +755,21 @@ impl ClickWitness {
             return;
         }
         let deadline = Instant::now() + CLICK_READ_TIMEOUT;
-        if !crate::input::keyboard::await_key_state(keys, down, deadline) {
-            self.give_up();
+        loop {
+            crate::input::keyboard::service_own_messages();
+            if let Some(state) = crate::input::keyboard::keyboard_state() {
+                if keys
+                    .iter()
+                    .all(|key| (state[*key as usize] & 0x80 != 0) == down)
+                {
+                    return;
+                }
+            }
+            if Instant::now() >= deadline {
+                self.give_up();
+                return;
+            }
+            sleep(Duration::from_millis(1));
         }
     }
 
