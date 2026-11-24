@@ -2130,8 +2130,8 @@ fn harness_wpf_pointer_release_precedes_focus_return() {
 fn take_foreground_from_driver(window: u64) {
     use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
     use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-        KEYEVENTF_KEYUP, VIRTUAL_KEY,
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
+        VIRTUAL_KEY,
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         BringWindowToTop, GetWindowThreadProcessId, SetForegroundWindow,
@@ -2164,8 +2164,9 @@ fn take_foreground_from_driver(window: u64) {
         }
         let own = unsafe { GetCurrentThreadId() };
         let thread = unsafe { GetWindowThreadProcessId(foreground, None) };
-        let attached =
-            thread != 0 && thread != own && unsafe { AttachThreadInput(own, thread, true) }.as_bool();
+        let attached = thread != 0
+            && thread != own
+            && unsafe { AttachThreadInput(own, thread, true) }.as_bool();
         let _ = unsafe { BringWindowToTop(target) };
         let _ = unsafe { SetForegroundWindow(target) };
         if attached {
@@ -2210,7 +2211,10 @@ fn harness_wpf_unlock_pulse_permits_focus_return() {
             launch_pointer_receiver(&mut driver, &target_path, "target", 0, false, "held_move");
         let (human_pid, human_wid) =
             launch_pointer_receiver(&mut driver, &human_path, "human", 0, false, "held_move");
-        assert_ne!(target_pid, human_pid, "receivers need independent UI threads");
+        assert_ne!(
+            target_pid, human_pid,
+            "receivers need independent UI threads"
+        );
 
         // Read the target's canvas while it is in front, then hand the foreground to the human.
         take_foreground_from_driver(target_wid);
@@ -2244,7 +2248,9 @@ fn harness_wpf_unlock_pulse_permits_focus_return() {
             .iter()
             .filter(|event| {
                 event["virtual_key"] == 0xFC
-                    && event["utc_ms"].as_u64().is_some_and(|time| time >= started_ms)
+                    && event["utc_ms"]
+                        .as_u64()
+                        .is_some_and(|time| time >= started_ms)
             })
             .map(|event| event["message"].as_u64().unwrap_or_default())
             .collect();
