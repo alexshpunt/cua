@@ -1496,7 +1496,7 @@ mod wheel_tests {
             let trace = MouseTrace::new();
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Arc::as_ptr(&trace) as isize);
             assert!(super::SuspendedThread::suspend(hwnd).unwrap().is_none());
-            post_click_on(hwnd, 5, 5, 1, "left").expect("post without pause");
+            post_click_on(hwnd, 5, 5, 1, "left", &[]).expect("post without pause");
             let mut msg = MSG::default();
             while PeekMessageW(&mut msg, hwnd, 0, 0, PM_REMOVE).as_bool() {
                 DispatchMessageW(&msg);
@@ -1514,7 +1514,7 @@ mod wheel_tests {
     fn posted_click_release_is_queued_before_the_leave_its_move_triggers() {
         let window = PumpedWindow::spawn("CuaPostedClickLeaveOnMoveRace");
         for _ in 0..200 {
-            post_click_on(window.hwnd, 5, 5, 1, "left").expect("post click");
+            post_click_on(window.hwnd, 5, 5, 1, "left", &[]).expect("post click");
         }
         let trace = window.finish(200 * 4);
 
@@ -1531,7 +1531,7 @@ mod wheel_tests {
     #[test]
     fn posted_double_click_queues_move_press_release_per_click() {
         let window = PumpedWindow::spawn("CuaPostedClickLeaveOnMoveDouble");
-        post_click_on(window.hwnd, 5, 5, 2, "left").expect("post double click");
+        post_click_on(window.hwnd, 5, 5, 2, "left", &[]).expect("post double click");
         let clicks: Vec<u32> = window
             .finish(2 * 4)
             .into_iter()

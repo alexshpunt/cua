@@ -221,7 +221,7 @@ fn success_requires_the_exact_completed_axis_prefix_and_cannot_claim_content_dis
         (
             "route",
             json!("overlay"),
-            "unknown variant `overlay`, expected `native`",
+            "unknown variant `overlay`, expected `native` or `posted`",
         ),
         (
             "effect",
@@ -230,8 +230,20 @@ fn success_requires_the_exact_completed_axis_prefix_and_cannot_claim_content_dis
         ),
         (
             "delivery_mode",
+            json!("auto"),
+            "unknown variant `auto`, expected `foreground` or `background`",
+        ),
+        // Foreground wheel input is native; posted messages are the background route.
+        (
+            "route",
+            json!("posted"),
+            "foreground scroll_at uses native wheel input",
+        ),
+        // A background receipt never moves the pointer.
+        (
+            "delivery_mode",
             json!("background"),
-            "unknown variant `background`, expected `foreground`",
+            "background scroll_at posts wheel messages and never moves the pointer",
         ),
         (
             "unit",

@@ -5,8 +5,8 @@
 
 use crate::inputs::string_schema;
 use crate::{
-    InputDeliveryMode, Platform, PointerMoveDelivery, PointerMoveEffect, PointerMoveRoute,
-    SchemaMode, ToolAnnotations, ToolContract, ToolInput, ToolOutput,
+    InputDeliveryMode, Platform, PointerMoveEffect, SchemaMode, ToolAnnotations, ToolContract,
+    ToolInput, ToolOutput,
 };
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
@@ -62,6 +62,22 @@ impl ScrollUnit {
 pub enum ScrollAxis {
     X,
     Y,
+}
+
+/// Native wheel input in the foreground, or wheel messages posted to the window in the background.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScrollRoute {
+    Native,
+    Posted,
+}
+
+/// How the wheel input was delivered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScrollDelivery {
+    Foreground,
+    Background,
 }
 
 /// A current overview point belonging to one exact Windows window.
@@ -148,11 +164,11 @@ pub struct PointerScrollOutput {
     /// Axes whose native methods returned successful delivery, in actual order.
     pub delivered_axes: Vec<ScrollAxis>,
     /// Native OS input in the foreground, posted window messages in the background.
-    pub route: PointerMoveRoute,
+    pub route: ScrollRoute,
     /// Application effects need an independent fresh observation.
     pub effect: PointerMoveEffect,
     /// Background messages, or explicit foreground delivery without automatic restoration.
-    pub delivery_mode: PointerMoveDelivery,
+    pub delivery_mode: ScrollDelivery,
     /// Foreground comparison before input and at receipt time; null means unavailable.
     pub foreground_changed: Option<bool>,
     /// Pointer comparison before input and at receipt time; null means unavailable.
@@ -166,9 +182,9 @@ pub struct PointerScrollOutput {
 impl ToolOutput for PointerScrollOutput {
     fn validate(&self) -> Result<(), String> {
         // Background wheel messages go to the window at the point; the pointer never moves.
-        let posted = self.delivery_mode == PointerMoveDelivery::Background;
+        let posted = self.delivery_mode == ScrollDelivery::Background;
         if posted
-            && (self.route != PointerMoveRoute::Posted
+            && (self.route != ScrollRoute::Posted
                 || self.pointer_attempted
                 || self.pointer_delivered)
         {
@@ -176,7 +192,7 @@ impl ToolOutput for PointerScrollOutput {
                 "background scroll_at posts wheel messages and never moves the pointer".into(),
             );
         }
-        if !posted && self.route != PointerMoveRoute::Native {
+        if !posted && self.route != ScrollRoute::Native {
             return Err("foreground scroll_at uses native wheel input".into());
         }
         if !self.attempted

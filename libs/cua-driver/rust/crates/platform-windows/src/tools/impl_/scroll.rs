@@ -8,8 +8,8 @@ use super::{
 };
 use async_trait::async_trait;
 use cua_driver_contract::{
-    PointerMoveDelivery, PointerMoveEffect, PointerMoveRoute, PointerScrollInput,
-    PointerScrollOutput, ToolInput,
+    PointerMoveEffect, PointerScrollInput, PointerScrollOutput, ScrollDelivery, ScrollRoute,
+    ToolInput,
 };
 use cua_driver_core::protocol::ToolResult;
 use cua_driver_core::tool::{Tool, ToolDef};
@@ -116,9 +116,9 @@ async fn background_scroll(
             unit: input.unit,
             attempted_axes: axes.clone(),
             delivered_axes: axes,
-            route: PointerMoveRoute::Posted,
+            route: ScrollRoute::Posted,
             effect: PointerMoveEffect::Unverifiable,
-            delivery_mode: PointerMoveDelivery::Background,
+            delivery_mode: ScrollDelivery::Background,
             foreground_changed: Some(foreground_before != foreground_after),
             pointer_changed: Some(false),
             foreground_at_target: Some(foreground_after == hwnd),
@@ -205,9 +205,9 @@ impl Tool for ScrollAtTool {
                 unit: input.unit,
                 attempted_axes: outcome.report.attempted_axes,
                 delivered_axes: outcome.report.delivered_axes,
-                route: PointerMoveRoute::Native,
+                route: ScrollRoute::Native,
                 effect: PointerMoveEffect::Unverifiable,
-                delivery_mode: PointerMoveDelivery::Foreground,
+                delivery_mode: ScrollDelivery::Foreground,
                 foreground_changed: Some(outcome.foreground_before != outcome.foreground_after),
                 pointer_changed: outcome.pointer_before.zip(outcome.pointer_after).map(|(before, after)| before != after),
                 foreground_at_target: Some(outcome.foreground_after == hwnd),
@@ -280,9 +280,9 @@ mod tests {
             unit: ScrollUnit::WheelDetents,
             attempted_axes: vec![ScrollAxis::Y],
             delivered_axes: vec![ScrollAxis::Y],
-            route: PointerMoveRoute::Posted,
+            route: ScrollRoute::Posted,
             effect: PointerMoveEffect::Unverifiable,
-            delivery_mode: PointerMoveDelivery::Background,
+            delivery_mode: ScrollDelivery::Background,
             foreground_changed: Some(false),
             pointer_changed: Some(false),
             foreground_at_target: Some(false),
@@ -292,7 +292,7 @@ mod tests {
         output.pointer_attempted = true;
         assert!(output.validate().is_err());
         output.pointer_attempted = false;
-        output.route = PointerMoveRoute::Native;
+        output.route = ScrollRoute::Native;
         assert!(output.validate().is_err());
     }
 }
