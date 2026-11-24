@@ -255,7 +255,7 @@ impl Tool for DragTool {
             let native_drag =
                 crate::activity::alongside_presentation(native_drag, visual_drag).await;
             return match native_drag {
-                Ok(Ok(())) => complete_held_input(
+                Ok(Ok(_)) => complete_held_input(
                     ToolResult::text(format!(
                         "Dragged from ({from_x}, {from_y}) to ({to_x}, {to_y}) (scope:desktop)."
                     ))
@@ -283,21 +283,9 @@ impl Tool for DragTool {
         };
         let pid = raw_pid as u32;
         let delivery = DeliveryMode::from_args(&args);
+        // Held keys: real keys in the foreground, the target thread's key state for a
+        // posted background drag.
         let modifiers: Vec<String> = args.str_array("modifier");
-        if !modifiers.is_empty() && delivery != DeliveryMode::Foreground {
-            return ToolResult::error(
-                "drag modifiers require delivery_mode:\"foreground\" on Windows; posted \
-                 messages and pen injection cannot carry live modifier-key state",
-            )
-            .with_structured(json!({
-                "code": "background_unavailable",
-                "effect": "refused",
-                "escalation": {
-                    "recommended": "foreground",
-                    "reason": "Windows modifier drags require SendInput so the target observes live modifier state"
-                }
-            }));
-        }
 
         // Accepts numeric JSON as either float or integer — coerce both to f64.
         let coerce = |key: &str| -> Option<f64> {
@@ -467,13 +455,14 @@ impl Tool for DragTool {
                 format!(" ({} button)", button)
             };
             return match send_result {
-                Ok(Ok(())) => complete_held_input(
+                // Drained when the target was seen reading the press and the release.
+                Ok(Ok(read)) => complete_held_input(
                     ToolResult::text(format!(
                         "✅ Sent drag{button_suffix} via SendInput on pid {raw_pid} \
                          from screen ({sx_from},{sy_from}) → ({sx_to},{sy_to}) \
                          in {duration_ms}ms / {steps} steps (delivery_mode:foreground)."
                     )),
-                    crate::typing_turn::TypingTurn::Unobservable,
+                    read,
                 ),
                 Ok(Err(e)) => complete_held_input(
                     crate::input::occlusion::input_error(e),
@@ -536,6 +525,7 @@ impl Tool for DragTool {
             // Screen-coord, deepest-child variant: routes the gesture to the
             // child control under the start point (e.g. a WinForms Panel),
             // not the top-level frame that would ignore it.
+            let modifier_refs: Vec<&str> = modifiers.iter().map(String::as_str).collect();
             crate::input::mouse::post_drag_screen(
                 hwnd,
                 sx_from,
@@ -545,6 +535,7 @@ impl Tool for DragTool {
                 duration_ms,
                 steps,
                 &button_c,
+                &modifier_refs,
             )
         });
         let visual_drag = track_overlay_drag(
@@ -572,45 +563,8 @@ impl Tool for DragTool {
                     from_x as i32, from_y as i32, to_x as i32, to_y as i32,
                 ))
             }
-            Ok(Err(e)) => ToolResult::error(e.to_string()),
+            Ok(Err(e)) => crate::input::delivery::posted_input_error(hwnd, EventKind::MouseMove, e),
             Err(e) => ToolResult::error(format!("Task error: {e}")),
-        }
-    }
-}
-
-#[cfg(test)]
-mod drag_modifier_tests {
-    use super::DragTool;
-    use cua_driver_core::tool::Tool;
-    use serde_json::json;
-
-    // A background drag posts mouse messages or injects pen input, neither of
-    // which carries live modifier-key state. The refusal comes before any window
-    // lookup or input, so an unknown pid never reaches the OS.
-    #[tokio::test]
-    async fn background_drag_with_modifiers_is_refused_before_input() {
-        let tool = DragTool {
-            state: super::ToolState::new(None),
-        };
-        for delivery in [json!(null), json!("background")] {
-            let mut args = json!({
-                "pid": 0x7fff_fff0_i64,
-                "from_x": 10, "from_y": 10, "to_x": 50, "to_y": 10,
-                "modifier": ["ctrl"]
-            });
-            if !delivery.is_null() {
-                args["delivery_mode"] = delivery;
-            }
-            let result = tool.invoke(args).await;
-            assert_eq!(
-                result.is_error,
-                Some(true),
-                "modified background drag was not refused"
-            );
-            let structured = result.structured_content.expect("structured refusal");
-            assert_eq!(structured["code"], "background_unavailable");
-            assert_eq!(structured["effect"], "refused");
-            assert_eq!(structured["escalation"]["recommended"], "foreground");
         }
     }
 }

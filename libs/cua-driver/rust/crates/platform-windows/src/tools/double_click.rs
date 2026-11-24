@@ -10,9 +10,9 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use super::impl_::{
-    bitmap_to_screen, chromium_click_short_circuit, element_target_rect, overlay_glide_to,
-    overlay_glide_to_target, pin_overlay_above, resolve_cursor_key,
-    resolve_onscreen_point_with_scroll, screenshot_scale, winui3_background_gesture, ToolState,
+    bitmap_to_screen, element_target_rect, overlay_glide_to, overlay_glide_to_target,
+    pin_overlay_above, resolve_cursor_key, resolve_onscreen_point_with_scroll, screenshot_scale,
+    winui3_background_gesture, ToolState,
 };
 
 // ── double_click ──────────────────────────────────────────────────────────────
@@ -42,8 +42,8 @@ impl Tool for DoubleClickTool {
                 returned by `get_window_state`) — posts two WM_LBUTTONDOWN/UP pairs in \
                 quick succession to the deepest child window at that point.\n\n\
                 Exactly one of `element_token` or (`x` AND `y`) must be provided. \
-                `pid` is required with `x`, `y`; an `element_token` carries its own pid. The macOS-only `modifier` field is accepted for \
-                parity (no-op on Windows — PostMessage doesn't propagate modifier-key state).".into(),
+                `pid` is required with `x`, `y`; an `element_token` carries its own pid. `modifier` holds keys during the \
+                double-click: real keys in the foreground, the target thread's key state in the background.".into(),
             input_schema: json!({"type":"object","required":[],"properties":{
                 "session": cua_driver_core::tool_schema::session_schema(),
                 "pid":{"type":"integer","description":"Target process ID. Optional with element_token (the token carries the pid)."},
@@ -81,6 +81,7 @@ impl Tool for DoubleClickTool {
         let y = args.opt_f64("y");
         let delivery = DeliveryMode::from_args(&args);
         let cursor_key = resolve_cursor_key(&args);
+        let modifiers: Vec<String> = args.str_array("modifier");
         // Swift validates "both x and y or neither" and "no element_token without window_id".
         let has_xy = x.is_some() && y.is_some();
         let partial_xy = x.is_some() != y.is_some();
@@ -189,40 +190,33 @@ impl Tool for DoubleClickTool {
             }
             // delivery_mode:"foreground" — route through SendInput at the cached coords.
             if delivery == DeliveryMode::Foreground {
+                let mods = modifiers.clone();
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
+                        let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
                         crate::input::send_click_synthesized_active_mods(
-                            hwnd,
-                            cx,
-                            cy,
-                            2,
-                            "left",
-                            &[],
+                            hwnd, cx, cy, 2, "left", &mods,
                         )
                     }
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(ToolResult::text(format!(
                         "✅ Sent double-click via SendInput on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
                     )), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
             }
-            // Chromium/Electron silently drops PostMessage clicks (#1984) — route via SendInput.
-            if let Some(r) =
-                chromium_click_short_circuit(hwnd, cx, cy, 2, "left", pid, "double-click").await
-            {
-                return r;
-            }
+            let mods = modifiers.clone();
             let result = tokio::task::spawn_blocking({
                 let admitted = admitted.clone();
                 move || -> anyhow::Result<String> {
                     let _admission = &admitted;
-                    crate::input::post_click_screen(hwnd, cx, cy, 2, "left")?;
+                    let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
+                    crate::input::post_click_screen(hwnd, cx, cy, 2, "left", &mods)?;
                     // Swift text format 1:1: `"✅ Posted double-click to [N] role \"title\" at screen-point (X, Y)."`.
                     // UIA role/title placeholder pending element-cache enrichment.
                     Ok(format!(
@@ -233,7 +227,9 @@ impl Tool for DoubleClickTool {
             .await;
             match result {
                 Ok(Ok(msg)) => ToolResult::text(msg),
-                Ok(Err(e)) => ToolResult::error(e.to_string()),
+                Ok(Err(e)) => {
+                    crate::input::delivery::posted_input_error(hwnd, EventKind::MouseClick, e)
+                }
                 Err(e) => ToolResult::error(format!("Task error: {e}")),
             }
         } else if let (Some(mut px), Some(mut py)) = (x, y) {
@@ -290,23 +286,20 @@ impl Tool for DoubleClickTool {
             }
             // delivery_mode:"foreground" — SendInput at screen coords with FG swap.
             if delivery == DeliveryMode::Foreground {
+                let mods = modifiers.clone();
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
+                        let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
                         crate::input::send_click_synthesized_active_mods(
-                            hwnd,
-                            sx_i,
-                            sy_i,
-                            2,
-                            "left",
-                            &[],
+                            hwnd, sx_i, sy_i, 2, "left", &mods,
                         )
                     }
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(ToolResult::text(format!(
                         "✅ Sent double-click via SendInput to pid {pid} at screen ({sx_i},{sy_i}) (delivery_mode:foreground)."
                     )), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
@@ -314,17 +307,13 @@ impl Tool for DoubleClickTool {
                 };
             }
             let (xi, yi) = (px as i32, py as i32);
-            // Chromium/Electron silently drops PostMessage clicks (#1984) — route via SendInput.
-            if let Some(r) =
-                chromium_click_short_circuit(hwnd, sx_i, sy_i, 2, "left", pid, "double-click").await
-            {
-                return r;
-            }
+            let mods = modifiers.clone();
             let result = tokio::task::spawn_blocking({
                 let admitted = admitted.clone();
                 move || {
                     let _admission = &admitted;
-                    crate::input::post_click_screen(hwnd, sx_i, sy_i, 2, "left")
+                    let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
+                    crate::input::post_click_screen(hwnd, sx_i, sy_i, 2, "left", &mods)
                 }
             })
             .await;
@@ -334,7 +323,9 @@ impl Tool for DoubleClickTool {
                     ToolResult::text(format!(
                         "✅ Posted double-click to pid {pid} at window-pixel ({xi}, {yi}) → screen-point ({sx_i}, {sy_i})."))
                 }
-                Ok(Err(e)) => ToolResult::error(e.to_string()),
+                Ok(Err(e)) => {
+                    crate::input::delivery::posted_input_error(hwnd, EventKind::MouseClick, e)
+                }
                 Err(e) => ToolResult::error(format!("Task error: {e}")),
             }
         } else {

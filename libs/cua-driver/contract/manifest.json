@@ -6008,7 +6008,7 @@
     },
     {
       "name": "scroll_at",
-      "description": "Use scroll_at to deliver native wheel input at a current overview point in one exact Windows window without an accessibility scroll target. Delivery does not prove content displacement; observe the same window again.",
+      "description": "Use scroll_at to deliver wheel input at a current overview point in one exact Windows window without an accessibility scroll target. Delivery does not prove content displacement; observe the same window again.",
       "platforms": [
         "windows"
       ],
@@ -6034,7 +6034,7 @@
           },
           "delivery_mode": {
             "default": "background",
-            "description": "Background refuses. Explicit foreground leaves the target and pointer active.",
+            "description": "Background posts wheel messages to the window at the point; foreground moves the pointer and leaves the target active.",
             "enum": [
               "background",
               "foreground"
@@ -6129,7 +6129,8 @@
           },
           "delivery_mode": {
             "enum": [
-              "foreground"
+              "foreground",
+              "background"
             ],
             "type": "string"
           },
@@ -6179,7 +6180,8 @@
           },
           "route": {
             "enum": [
-              "native"
+              "native",
+              "posted"
             ],
             "type": "string"
           },

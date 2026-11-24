@@ -5,8 +5,8 @@
 
 use crate::inputs::string_schema;
 use crate::{
-    InputDeliveryMode, Platform, PointerMoveDelivery, PointerMoveEffect, PointerMoveRoute,
-    SchemaMode, ToolAnnotations, ToolContract, ToolInput, ToolOutput,
+    InputDeliveryMode, Platform, PointerMoveEffect, SchemaMode, ToolAnnotations, ToolContract,
+    ToolInput, ToolOutput,
 };
 use schemars::{json_schema, JsonSchema, Schema, SchemaGenerator};
 use serde::{Deserialize, Serialize};
@@ -64,6 +64,22 @@ pub enum ScrollAxis {
     Y,
 }
 
+/// Native wheel input in the foreground, or wheel messages posted to the window in the background.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScrollRoute {
+    Native,
+    Posted,
+}
+
+/// How the wheel input was delivered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ScrollDelivery {
+    Foreground,
+    Background,
+}
+
 /// A current overview point belonging to one exact Windows window.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -94,7 +110,7 @@ pub struct PointerScrollInput {
     pub delta_y: i32,
     /// State wheel_detents explicitly; the application controls actual displacement.
     pub unit: ScrollUnit,
-    /// Background refuses. Explicit foreground leaves the target and pointer active.
+    /// Background posts wheel messages to the window at the point; foreground moves the pointer and leaves the target active.
     #[serde(default = "background")]
     pub delivery_mode: InputDeliveryMode,
     /// For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
@@ -146,12 +162,12 @@ pub struct PointerScrollOutput {
     pub attempted_axes: Vec<ScrollAxis>,
     /// Axes whose native methods returned successful delivery, in actual order.
     pub delivered_axes: Vec<ScrollAxis>,
-    /// Native OS input, never overlay or browser input.
-    pub route: PointerMoveRoute,
+    /// Native OS input in the foreground, posted window messages in the background.
+    pub route: ScrollRoute,
     /// Application effects need an independent fresh observation.
     pub effect: PointerMoveEffect,
-    /// Explicit foreground delivery without automatic restoration.
-    pub delivery_mode: PointerMoveDelivery,
+    /// Background messages, or explicit foreground delivery without automatic restoration.
+    pub delivery_mode: ScrollDelivery,
     /// Foreground comparison before input and at receipt time; null means unavailable.
     pub foreground_changed: Option<bool>,
     /// Pointer comparison before input and at receipt time; null means unavailable.
@@ -164,7 +180,23 @@ pub struct PointerScrollOutput {
 
 impl ToolOutput for PointerScrollOutput {
     fn validate(&self) -> Result<(), String> {
-        if !self.attempted || !self.delivered || !self.pointer_attempted || !self.pointer_delivered
+        // Background wheel messages go to the window at the point; the pointer never moves.
+        let posted = self.delivery_mode == ScrollDelivery::Background;
+        if posted
+            && (self.route != ScrollRoute::Posted
+                || self.pointer_attempted
+                || self.pointer_delivered)
+        {
+            return Err(
+                "background scroll_at posts wheel messages and never moves the pointer".into(),
+            );
+        }
+        if !posted && self.route != ScrollRoute::Native {
+            return Err("foreground scroll_at uses native wheel input".into());
+        }
+        if !self.attempted
+            || !self.delivered
+            || !posted && (!self.pointer_attempted || !self.pointer_delivered)
         {
             return Err(
                 "scroll_at success requires attempted and delivered pointer and wheel input".into(),
@@ -185,7 +217,7 @@ impl ToolOutput for PointerScrollOutput {
 pub(crate) fn contracts() -> Vec<ToolContract> {
     vec![ToolContract {
         name: PointerScrollInput::TOOL_NAME.into(),
-        description: "Use scroll_at to deliver native wheel input at a current overview point in one exact Windows window without an accessibility scroll target. Delivery does not prove content displacement; observe the same window again.".into(),
+        description: "Use scroll_at to deliver wheel input at a current overview point in one exact Windows window without an accessibility scroll target. Delivery does not prove content displacement; observe the same window again.".into(),
         platforms: vec![Platform::Windows],
         aliases: vec![],
         capabilities: vec!["input.pointer.scroll".into(), "input.delivery_mode".into()],

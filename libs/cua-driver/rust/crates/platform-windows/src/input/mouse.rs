@@ -159,26 +159,70 @@ pub fn post_click(root: u64, x: i32, y: i32, count: usize, button: &str) -> Resu
     // Find deepest child and its local client coordinates.
     let (target, client) = deepest_child(root_hwnd, screen_pt);
 
-    post_click_on(target, client.x, client.y, count, button)
+    post_click_on(target, client.x, client.y, count, button, &[])
 }
 
 /// Post a click at **screen** coordinates, resolving the deepest child of
 /// `root_hwnd` at that point.  Call this when you already have screen coords.
-pub fn post_click_screen(root: u64, sx: i32, sy: i32, count: usize, button: &str) -> Result<()> {
+/// `modifiers` (ctrl, shift, alt, win) are held in the target thread's key state.
+pub fn post_click_screen(
+    root: u64,
+    sx: i32,
+    sy: i32,
+    count: usize,
+    button: &str,
+    modifiers: &[&str],
+) -> Result<()> {
     let root_hwnd = HWND(root as *mut _);
     let screen_pt = POINT { x: sx, y: sy };
     let (target, client) = deepest_child(root_hwnd, screen_pt);
-    post_click_on(target, client.x, client.y, count, button)
+    post_click_on(target, client.x, client.y, count, button, modifiers)
+}
+
+/// Prefix of the error when posted pointer input cannot reach the window at the point.
+pub(crate) const POINTER_SURFACE_UNAVAILABLE: &str = "background_pointer_surface_unavailable";
+
+/// XAML islands and UWP frames ignore posted pointer messages: their input stack
+/// reads pointer input only from the system queue (LPT-1846: Notepad's menu bar,
+/// Explorer's command bar, Paint's canvas, Windows Terminal, Calculator buttons).
+/// Their elements still take UIA patterns, and keys posted to their input site.
+fn refuses_posted_pointer(hwnd: HWND) -> Result<()> {
+    let class = crate::input::delivery::read_class_name(hwnd.0 as u64);
+    let island = class.ends_with("DesktopChildSiteBridge")
+        || class.ends_with("DesktopWindowContentBridge")
+        || matches!(
+            class.as_str(),
+            "InputSiteWindowClass"
+                | "Windows.UI.Input.InputSite.WindowClass"
+                | "Windows.UI.Core.CoreWindow"
+                | "ApplicationFrameWindow"
+                | "ApplicationFrameInputSinkWindow"
+        );
+    if island {
+        bail!(
+            "{POINTER_SURFACE_UNAVAILABLE}: the point is on a XAML or UWP surface ({class}), which \
+             ignores pointer input sent to its window; nothing was sent"
+        );
+    }
+    Ok(())
 }
 
 /// Internal: post click messages to `hwnd` using its own client coordinates.
-fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Result<()> {
+fn post_click_on(
+    hwnd: HWND,
+    x: i32,
+    y: i32,
+    count: usize,
+    button: &str,
+    modifiers: &[&str],
+) -> Result<()> {
     // UIPI check — Medium-IL daemon → High-IL target silently drops mouse
     // messages just like keyboard ones. Surface an actionable error before
     // PostMessage returns its misleading TRUE. See post_message_blocked_by_uipi.
     if let Some(msg) = crate::input::post_message_blocked_by_uipi(hwnd.0 as u64) {
         anyhow::bail!(msg);
     }
+    refuses_posted_pointer(hwnd)?;
 
     let (down_msg, double_msg, up_msg, mk_flag) = match button {
         "right" => (WM_RBUTTONDOWN, WM_RBUTTONDBLCLK, WM_RBUTTONUP, MK_RBUTTON),
@@ -186,8 +230,14 @@ fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Resu
         _ => (WM_LBUTTONDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONUP, MK_LBUTTON),
     };
     let lparam = make_lparam(x, y);
-    let wdown = WPARAM(mk_flag as usize);
-    let wup = WPARAM(0);
+    let held_flags = crate::input::key_state::mouse_key_flags(modifiers);
+    let wdown = WPARAM(mk_flag as usize | held_flags);
+    let wup = WPARAM(held_flags);
+    let held: Vec<u16> = modifiers
+        .iter()
+        .flat_map(|m| crate::input::key_state::modifier_keys(m).iter().copied())
+        .collect();
+    let mut held = crate::input::key_state::HeldKeys::hold(hwnd, &held)?;
     let wants_double = unsafe { (GetClassLongPtrW(hwnd, GCL_STYLE) as u32 & CS_DBLCLKS.0) != 0 };
     let prev_fg = unsafe { GetForegroundWindow() };
     let target_root = unsafe {
@@ -209,7 +259,7 @@ fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Resu
         let suspended = SuspendedThread::suspend(hwnd).map_err(unavailable)?;
         let posted = unsafe {
             // WM_MOUSEMOVE first so hover state is correct before the click.
-            PostMessageW(hwnd, WM_MOUSEMOVE, WPARAM(0), lparam)
+            PostMessageW(hwnd, WM_MOUSEMOVE, wup, lparam)
                 // Win32 controls do not infer a double-click from two posted DOWN
                 // messages. The second press must use WM_*BUTTONDBLCLK.
                 .and_then(|()| PostMessageW(hwnd, press_msg, wdown, lparam))
@@ -223,6 +273,11 @@ fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Resu
             sleep(Duration::from_millis(80));
         }
     }
+    // Held modifiers go up once the target processed the clicks.
+    if let Some(keys) = held.as_mut() {
+        keys.posted(3 * count);
+    }
+    drop(held);
     sleep(Duration::from_millis(50));
     unsafe {
         if !prev_fg.0.is_null()
@@ -309,6 +364,7 @@ pub fn post_drag_screen(
     duration_ms: u64,
     steps: usize,
     button: &str,
+    modifiers: &[&str],
 ) -> Result<()> {
     let root_hwnd = HWND(root as *mut _);
     let (target, c_from) = deepest_child(
@@ -325,26 +381,40 @@ pub fn post_drag_screen(
     if let Some(msg) = crate::input::post_message_blocked_by_uipi(target.0 as u64) {
         anyhow::bail!(msg);
     }
+    refuses_posted_pointer(target)?;
     let (down_msg, up_msg, mk_flag) = match button {
         "right" => (WM_RBUTTONDOWN, WM_RBUTTONUP, MK_RBUTTON),
         "middle" => (WM_MBUTTONDOWN, WM_MBUTTONUP, MK_MBUTTON),
         _ => (WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON),
     };
-    let wparam = WPARAM(mk_flag as usize);
+    let held_flags = crate::input::key_state::mouse_key_flags(modifiers);
+    let wparam = WPARAM(mk_flag as usize | held_flags);
+    let wfree = WPARAM(held_flags);
     let steps = steps.max(1);
     let step_delay_ms = if steps > 1 {
         duration_ms / steps as u64
     } else {
         duration_ms
     };
+    let held: Vec<u16> = modifiers
+        .iter()
+        .flat_map(|m| crate::input::key_state::modifier_keys(m).iter().copied())
+        .collect();
+    let mut held = crate::input::key_state::HeldKeys::hold(target, &held)?;
+    let prev_fg = unsafe { GetForegroundWindow() };
+    let target_root = unsafe {
+        let root = GetAncestor(target, GA_ROOT);
+        if root.0.is_null() {
+            target
+        } else {
+            root
+        }
+    };
+    // An app that recently had real input may activate itself on a posted press.
+    let _noact = crate::input::NoActivateGuard::arm(target);
     unsafe {
-        // Pre-drag MOUSEMOVE (wParam=0, no buttons down yet) then DOWN at from.
-        PostMessageW(
-            target,
-            WM_MOUSEMOVE,
-            WPARAM(0),
-            make_lparam(c_from.x, c_from.y),
-        )?;
+        // Pre-drag MOUSEMOVE (no buttons down yet) then DOWN at from.
+        PostMessageW(target, WM_MOUSEMOVE, wfree, make_lparam(c_from.x, c_from.y))?;
         PostMessageW(target, down_msg, wparam, make_lparam(c_from.x, c_from.y))?;
     }
     sleep(Duration::from_millis(CLICK_DELAY_MS));
@@ -360,8 +430,54 @@ pub fn post_drag_screen(
         }
     }
     unsafe {
-        PostMessageW(target, up_msg, WPARAM(0), make_lparam(c_to.x, c_to.y))?;
+        PostMessageW(target, up_msg, wfree, make_lparam(c_to.x, c_to.y))?;
     }
+    if let Some(keys) = held.as_mut() {
+        keys.posted(steps + 3);
+    }
+    drop(held);
+    sleep(Duration::from_millis(50));
+    unsafe {
+        if !prev_fg.0.is_null()
+            && prev_fg != target_root
+            && GetForegroundWindow() == target_root
+            && !crate::focus_return::has_unconfirmed_input()
+        {
+            crate::input::force_foreground_attached(prev_fg);
+            sleep(Duration::from_millis(12));
+            crate::input::force_foreground_attached(prev_fg);
+        }
+    }
+    Ok(())
+}
+
+/// Post wheel notches at a **screen** point to the deepest child of `root` there.
+/// Positive `delta_y` scrolls content down, positive `delta_x` scrolls right, as in
+/// `scroll_at`. The vertical axis goes first. The pointer and the foreground stay.
+pub fn post_wheel_screen(root: u64, sx: i32, sy: i32, delta_x: i32, delta_y: i32) -> Result<()> {
+    use windows::Win32::UI::WindowsAndMessaging::{WM_MOUSEHWHEEL, WM_MOUSEWHEEL};
+    const WHEEL_DELTA: i32 = 120;
+    let root_hwnd = HWND(root as *mut _);
+    let (target, _) = deepest_child(root_hwnd, POINT { x: sx, y: sy });
+    if let Some(msg) = crate::input::post_message_blocked_by_uipi(target.0 as u64) {
+        anyhow::bail!(msg);
+    }
+    refuses_posted_pointer(target)?;
+    // Wheel messages carry screen coordinates.
+    let lparam = make_lparam(sx, sy);
+    let wheel = |message: u32, notches: i32, step: i32| -> Result<()> {
+        for _ in 0..notches.unsigned_abs() {
+            let delta = (step * notches.signum()) as i16 as u16 as usize;
+            unsafe {
+                PostMessageW(target, message, WPARAM(delta << 16), lparam)?;
+            }
+            sleep(Duration::from_millis(10));
+        }
+        Ok(())
+    };
+    // Windows counts a wheel turn away from the user (content up) as positive.
+    wheel(WM_MOUSEWHEEL, delta_y, -WHEEL_DELTA)?;
+    wheel(WM_MOUSEHWHEEL, delta_x, WHEEL_DELTA)?;
     Ok(())
 }
 
@@ -548,7 +664,7 @@ pub fn send_click_synthesized_active_mods(
     count: usize,
     button: &str,
     modifiers: &[&str],
-) -> Result<Option<u64>> {
+) -> Result<ClickReceipt> {
     send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers)
 }
 
@@ -564,6 +680,131 @@ pub fn send_click_synthesized_desktop_mods(
     send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers).map(|_| ())
 }
 
+/// What a foreground click reports.
+#[derive(Clone, Copy, Debug)]
+pub struct ClickReceipt {
+    /// The window of the target's process that took the foreground when the click closed
+    /// the target, such as OK in a dialog.
+    pub after: Option<u64>,
+    /// `Drained` when the target's input thread was seen reading every inserted event.
+    pub read: cua_driver_core::protocol::InputReadCompletion,
+}
+
+/// How long one press or release may take to be read by the target.
+const CLICK_READ_TIMEOUT: Duration = Duration::from_millis(1000);
+
+/// Watches a foreground click being read by the target's input thread. Attached to that
+/// thread, the shared key state shows a mouse button or a modifier as down once the thread
+/// has read its press and as up once it has read its release. Events are inserted one phase
+/// at a time; when a phase is not seen in time, the rest of the click is unconfirmed input.
+struct ClickWitness {
+    attachment: Option<crate::input::keyboard::InputQueueAttachment>,
+    button: u16,
+    modifiers: Vec<u16>,
+    inserted: bool,
+}
+
+impl ClickWitness {
+    fn start(enabled: bool, button: &str, modifiers: Vec<u16>) -> Self {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LBUTTON, VK_MBUTTON, VK_RBUTTON};
+        use windows::Win32::UI::WindowsAndMessaging::SM_SWAPBUTTON;
+        // With swapped buttons, the physical left button is the logical right one.
+        let swapped = unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0;
+        let button = match (button, swapped) {
+            ("middle", _) => VK_MBUTTON.0,
+            ("right", false) | ("left", true) => VK_RBUTTON.0,
+            ("right", true) => VK_LBUTTON.0,
+            _ => VK_LBUTTON.0,
+        };
+        let mut witness = Self {
+            attachment: None,
+            button,
+            modifiers,
+            inserted: false,
+        };
+        if !enabled {
+            return witness;
+        }
+        witness.attachment =
+            crate::input::keyboard::InputQueueAttachment::attach(unsafe { GetForegroundWindow() });
+        // A button or key that is already down cannot show this click's press.
+        let all_up = crate::input::keyboard::keyboard_state().is_some_and(|state| {
+            std::iter::once(witness.button)
+                .chain(witness.modifiers.iter().copied())
+                .all(|key| state[key as usize] & 0x80 == 0)
+        });
+        if !all_up {
+            witness.attachment = None;
+        }
+        witness
+    }
+
+    /// Insert events; without a working witness they are unconfirmed input.
+    fn insert(&mut self, events: &[INPUT]) -> u32 {
+        let size = std::mem::size_of::<INPUT>() as i32;
+        if self.attachment.is_none() {
+            return unsafe { send_unconfirmed_input(events, size) };
+        }
+        let sent = unsafe { SendInput(events, size) };
+        self.inserted |= sent > 0;
+        sent
+    }
+
+    fn await_keys(&mut self, keys: &[u16], down: bool) {
+        if self.attachment.is_none() || keys.is_empty() {
+            return;
+        }
+        let deadline = Instant::now() + CLICK_READ_TIMEOUT;
+        loop {
+            crate::input::keyboard::service_own_messages();
+            if let Some(state) = crate::input::keyboard::keyboard_state() {
+                if keys
+                    .iter()
+                    .all(|key| (state[*key as usize] & 0x80 != 0) == down)
+                {
+                    return;
+                }
+            }
+            if Instant::now() >= deadline {
+                self.give_up();
+                return;
+            }
+            sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn await_button(&mut self, down: bool) {
+        let button = [self.button];
+        self.await_keys(&button, down);
+    }
+
+    fn await_modifiers(&mut self, down: bool) {
+        let modifiers = std::mem::take(&mut self.modifiers);
+        self.await_keys(&modifiers, down);
+        self.modifiers = modifiers;
+    }
+
+    /// The witness lost sight of the click: what it inserted is unconfirmed from now on.
+    fn give_up(&mut self) {
+        if self.attachment.take().is_some() && self.inserted {
+            crate::focus_return::note_unconfirmed_input();
+        }
+    }
+
+    fn finish(mut self) -> cua_driver_core::protocol::InputReadCompletion {
+        use cua_driver_core::protocol::InputReadCompletion;
+        let read = if self.attachment.is_some() && self.inserted {
+            InputReadCompletion::Drained
+        } else if self.inserted || self.attachment.is_none() {
+            InputReadCompletion::Unobservable
+        } else {
+            InputReadCompletion::NotSent
+        };
+        self.attachment = None;
+        read
+    }
+}
+
 fn send_click_synthesized_mods_impl(
     target: u64,
     sx: i32,
@@ -571,7 +812,7 @@ fn send_click_synthesized_mods_impl(
     count: usize,
     button: &str,
     modifiers: &[&str],
-) -> Result<Option<u64>> {
+) -> Result<ClickReceipt> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(target as *mut _);
     if target.0.is_null() {
@@ -682,12 +923,28 @@ fn send_click_synthesized_mods_impl(
         let (mod_downs, _) = crate::input::keyboard::modifier_hold_inputs(modifiers);
         // After the target is raised, a window still on top at the point would take the press.
         let occluded = crate::input::occlusion::check_point(target.0 as usize as u64, sx, sy).err();
+        // Read witness: attached to the target's input thread, its key state shows a button or a
+        // key as down once the thread has read the press, and as up once it has read the release.
+        // While every phase is seen, the inserted click is read and the foreground can go back.
+        let mut witness = ClickWitness::start(
+            occluded.is_none(),
+            button,
+            modifiers
+                .iter()
+                .filter_map(|name| {
+                    crate::input::key_state::modifier_keys(name)
+                        .first()
+                        .copied()
+                })
+                .collect(),
+        );
         let mut sent_ok = true;
         let mut held_modifiers = 0;
         if occluded.is_none() && !mod_downs.is_empty() {
-            let sent = send_unconfirmed_input(&mod_downs, std::mem::size_of::<INPUT>() as i32);
+            let sent = witness.insert(&mod_downs);
             held_modifiers = sent as usize;
             sent_ok = held_modifiers == mod_downs.len();
+            witness.await_modifiers(true);
             sleep(Duration::from_millis(5));
         }
 
@@ -710,18 +967,17 @@ fn send_click_synthesized_mods_impl(
                 if index > 0 {
                     sleep(Duration::from_millis(if index == 1 { 30 } else { 15 }));
                 }
-                let inserted = send_unconfirmed_input(
-                    std::slice::from_ref(event),
-                    std::mem::size_of::<INPUT>() as i32,
-                );
+                let inserted = witness.insert(std::slice::from_ref(event));
                 sent += inserted;
                 if inserted == 0 {
                     break;
                 }
                 if index == 1 {
                     button_held = true;
+                    witness.await_button(true);
                 } else if index == 2 {
                     button_held = false;
+                    witness.await_button(false);
                 }
             }
             if sent != 3 {
@@ -738,10 +994,14 @@ fn send_click_synthesized_mods_impl(
             let _ = send_unconfirmed_input(&[up_input], std::mem::size_of::<INPUT>() as i32);
         }
         sent_ok &= crate::input::keyboard::release_inserted_keys(&mod_downs, held_modifiers);
+        if held_modifiers > 0 {
+            witness.await_modifiers(false);
+        }
+        let read = witness.finish();
 
-        // SendInput success confirms insertion, not receiver retrieval. Keep
-        // pointer and foreground with the target: a timed restore can divert
-        // the queued release. The tool reports that the read is unobservable.
+        // SendInput success confirms insertion, not receiver retrieval. Without a
+        // complete read witness, pointer and foreground stay with the target: a
+        // timed restore can divert the queued release.
         if let Some(occluded) = occluded {
             return Err(occluded.into());
         }
@@ -759,10 +1019,17 @@ fn send_click_synthesized_mods_impl(
         loop {
             let actual = GetForegroundWindow().0 as usize as u64;
             if crate::win32::foreground_after_target_closed(snapshot, actual) {
-                return Ok(Some(actual));
+                // A successor window never supplies a restoration receipt.
+                if read == crate::typing_turn::TypingTurn::Drained {
+                    crate::focus_return::note_unconfirmed_input();
+                }
+                return Ok(ClickReceipt {
+                    after: Some(actual),
+                    read: crate::typing_turn::TypingTurn::Unobservable,
+                });
             }
             if crate::win32::foreground_matches_target_or_owned_window(snapshot, actual) {
-                return Ok(None);
+                return Ok(ClickReceipt { after: None, read });
             }
             if Instant::now() >= deadline {
                 bail!(
@@ -775,6 +1042,21 @@ fn send_click_synthesized_mods_impl(
             }
             sleep(Duration::from_millis(10));
         }
+    }
+}
+
+/// A foreground click's result with its receipt: the window that took the foreground
+/// (see [`note_foreground_after`]) and, when the target was seen reading every inserted
+/// event, the read evidence that lets focus return hand the foreground back.
+pub fn note_click_receipt(
+    result: cua_driver_core::protocol::ToolResult,
+    receipt: ClickReceipt,
+) -> cua_driver_core::protocol::ToolResult {
+    let result = note_foreground_after(result, receipt.after);
+    if receipt.read == cua_driver_core::protocol::InputReadCompletion::Drained {
+        crate::typing_turn::completion_result(result, receipt.read)
+    } else {
+        result
     }
 }
 
@@ -836,7 +1118,7 @@ pub fn send_drag_synthesized(
     steps: usize,
     button: &str,
     modifiers: &[&str],
-) -> Result<()> {
+) -> Result<cua_driver_core::protocol::InputReadCompletion> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(target as *mut _);
     if target.0.is_null() {
@@ -899,9 +1181,6 @@ pub fn send_drag_synthesized(
             },
         },
     };
-    let send = |input: INPUT| unsafe {
-        send_unconfirmed_input(&[input], std::mem::size_of::<INPUT>() as i32) == 1
-    };
     let release_modifiers =
         || crate::input::keyboard::release_inserted_keys(&mod_downs, mod_downs.len());
 
@@ -915,29 +1194,47 @@ pub fn send_drag_synthesized(
     }
     // Only the press point matters: the window that takes the press captures the moves.
     crate::input::occlusion::check_point(target.0 as usize as u64, sx_from, sy_from)?;
+    // Input is read in order, so a release seen read means every move before it was read.
+    let mut witness = ClickWitness::start(
+        true,
+        button,
+        modifiers
+            .iter()
+            .filter_map(|name| {
+                crate::input::key_state::modifier_keys(name)
+                    .first()
+                    .copied()
+            })
+            .collect(),
+    );
+    let send = |witness: &mut ClickWitness, input: INPUT| witness.insert(&[input]) == 1;
     // Hold the modifiers before the press.
     if !mod_downs.is_empty() {
-        let sent =
-            unsafe { send_unconfirmed_input(&mod_downs, std::mem::size_of::<INPUT>() as i32) };
+        let sent = witness.insert(&mod_downs);
         if sent as usize != mod_downs.len() {
             let _ = crate::input::keyboard::release_inserted_keys(&mod_downs, sent as usize);
+            witness.give_up();
             bail!(
                 "SendInput inserted {sent}/{} modifier key presses; no mouse input was sent",
                 mod_downs.len()
             );
         }
+        witness.await_modifiers(true);
         sleep(Duration::from_millis(5));
     }
     let (nfx, nfy) = norm(sx_from, sy_from);
-    if !send(make_input(nfx, nfy, MOUSEEVENTF_MOVE)) {
+    if !send(&mut witness, make_input(nfx, nfy, MOUSEEVENTF_MOVE)) {
         let _ = release_modifiers();
+        witness.give_up();
         bail!("SendInput did not insert the drag's first move; no button was pressed");
     }
     sleep(Duration::from_millis(30));
-    if !send(button_input(down_flag)) {
+    if !send(&mut witness, button_input(down_flag)) {
         let _ = release_modifiers();
+        witness.give_up();
         bail!("SendInput did not insert the drag's button press");
     }
+    witness.await_button(true);
     sleep(Duration::from_millis(30));
     let mut moves_ok = true;
     let mut cursor_at = (sx_from, sy_from);
@@ -946,7 +1243,7 @@ pub fn send_drag_synthesized(
         let x = sx_from + ((sx_to - sx_from) as f64 * t).round() as i32;
         let y = sy_from + ((sy_to - sy_from) as f64 * t).round() as i32;
         let (nx, ny) = norm(x, y);
-        if !send(make_input(nx, ny, MOUSEEVENTF_MOVE)) {
+        if !send(&mut witness, make_input(nx, ny, MOUSEEVENTF_MOVE)) {
             moves_ok = false;
             break;
         }
@@ -956,11 +1253,22 @@ pub fn send_drag_synthesized(
         }
     }
     // Always release, even after a failed move, so no button stays held.
-    let released = send(button_input(up_flag)) || send(button_input(up_flag));
+    let released =
+        send(&mut witness, button_input(up_flag)) || send(&mut witness, button_input(up_flag));
+    if released {
+        witness.await_button(false);
+    }
     // A target that samples live key state while handling the release still
     // sees the modifiers held; release them after the settle.
     sleep(Duration::from_millis(40));
     let modifiers_released = release_modifiers();
+    if modifiers_released && !mod_downs.is_empty() {
+        witness.await_modifiers(false);
+    }
+    if !released || !modifiers_released || !moves_ok {
+        witness.give_up();
+    }
+    let read = witness.finish();
     if !released {
         let (cx, cy) = cursor_at;
         bail!(
@@ -977,7 +1285,7 @@ pub fn send_drag_synthesized(
     if !moves_ok {
         bail!("SendInput inserted fewer drag moves than expected; the button was released.");
     }
-    Ok(())
+    Ok(read)
 }
 
 /// Explicit-window entry point, with the same exact-target guards and physical
@@ -993,7 +1301,7 @@ pub fn send_drag_synthesized_active(
     steps: usize,
     button: &str,
     modifiers: &[&str],
-) -> Result<()> {
+) -> Result<cua_driver_core::protocol::InputReadCompletion> {
     send_drag_synthesized(
         target,
         sx_from,
@@ -1380,7 +1688,7 @@ mod wheel_tests {
             let trace = MouseTrace::new();
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Arc::as_ptr(&trace) as isize);
             assert!(super::SuspendedThread::suspend(hwnd).unwrap().is_none());
-            post_click_on(hwnd, 5, 5, 1, "left").expect("post without pause");
+            post_click_on(hwnd, 5, 5, 1, "left", &[]).expect("post without pause");
             let mut msg = MSG::default();
             while PeekMessageW(&mut msg, hwnd, 0, 0, PM_REMOVE).as_bool() {
                 DispatchMessageW(&msg);
@@ -1398,7 +1706,7 @@ mod wheel_tests {
     fn posted_click_release_is_queued_before_the_leave_its_move_triggers() {
         let window = PumpedWindow::spawn("CuaPostedClickLeaveOnMoveRace");
         for _ in 0..200 {
-            post_click_on(window.hwnd, 5, 5, 1, "left").expect("post click");
+            post_click_on(window.hwnd, 5, 5, 1, "left", &[]).expect("post click");
         }
         let trace = window.finish(200 * 4);
 
@@ -1415,7 +1723,7 @@ mod wheel_tests {
     #[test]
     fn posted_double_click_queues_move_press_release_per_click() {
         let window = PumpedWindow::spawn("CuaPostedClickLeaveOnMoveDouble");
-        post_click_on(window.hwnd, 5, 5, 2, "left").expect("post double click");
+        post_click_on(window.hwnd, 5, 5, 2, "left", &[]).expect("post double click");
         let clicks: Vec<u32> = window
             .finish(2 * 4)
             .into_iter()

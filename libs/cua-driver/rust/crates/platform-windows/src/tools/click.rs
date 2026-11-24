@@ -424,27 +424,12 @@ impl Tool for ClickTool {
             button_raw
         };
         let count = args.u64_or("count", 1) as usize;
-        // macOS click `modifier` surface: held keys (cmd/shift/option/ctrl). Only
-        // the SendInput rung (delivery_mode:"foreground" pixel tap, and the
-        // window-less desktop-scope click above) can hold them; the background
-        // UIA-Invoke / PostMessage rungs have no keyboard state to carry them, so
-        // a modifier passed to a background click is necessarily ignored there.
+        // macOS click `modifier` surface: held keys (cmd/shift/option/ctrl). The
+        // SendInput rung holds them as real keys; the background rung posts the click
+        // with the keys held in the target thread's key state. UIA patterns cannot
+        // carry them, so a modifier click skips UIA.
         let modifiers: Vec<String> = args.str_array("modifier");
         let delivery = DeliveryMode::from_args(&args);
-        if !modifiers.is_empty() && delivery != DeliveryMode::Foreground {
-            return ToolResult::error(
-                "click modifiers require delivery_mode:\"foreground\" on Windows; UIA and \
-                 PostMessage cannot carry live modifier-key state",
-            )
-            .with_structured(json!({
-                "code": "background_unavailable",
-                "effect": "refused",
-                "escalation": {
-                    "recommended": "foreground",
-                    "reason": "Windows modifier clicks require SendInput so the target observes live modifier state"
-                }
-            }));
-        }
         // Optional `action` arg picks among the actions exposed in the
         // accessibility tree. Today this only changes behavior for MSAA
         // BUTTONDROPDOWN: `"expand"` clicks the right-edge (dropdown arrow
@@ -631,7 +616,7 @@ impl Tool for ClickTool {
                 .await;
                 let half = if want_expand { "dropdown" } else { "press" };
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(
                         ToolResult::text(format!(
                         "✅ Performed SendInput click on MSAA [{idx}] {half} half at ({tx},{ty})."
                     ))
@@ -795,7 +780,7 @@ impl Tool for ClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(ToolResult::text(format!(
                         "✅ Performed SendInput click on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
                     ))
                     .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" })), after),
@@ -825,12 +810,10 @@ impl Tool for ClickTool {
             // Chromium's UIA Invoke raises a fully occluded renderer, while a
             // targeted PostMessage left click reaches the renderer without
             // changing foreground, z-order, or the real cursor. Keep AX for
-            // target resolution and use the posted-message transport only for
-            // the empirically verified single-left-click shape.
+            // target resolution and post every click shape: right, double and
+            // modifier clicks land too (LPT-1846).
             if delivery == DeliveryMode::Background
                 && !uia_only
-                && btn == "left"
-                && count == 1
                 && crate::input::is_chromium_target_window(hwnd)
             {
                 // This route posts at the cached center without
@@ -854,11 +837,13 @@ impl Tool for ClickTool {
                         }
                     }));
                 }
+                let mods = modifiers.clone();
                 let posted = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
-                        crate::input::post_click_screen(hwnd, cx, cy, count, &btn)
+                        let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
+                        crate::input::post_click_screen(hwnd, cx, cy, count, &btn, &mods)
                     }
                 })
                 .await;
@@ -871,7 +856,11 @@ impl Tool for ClickTool {
                         ActionTransport::WindowsPostMessage,
                         vec![],
                     ),
-                    Ok(Err(error)) => ToolResult::error(error.to_string()),
+                    Ok(Err(error)) => crate::input::delivery::posted_input_error(
+                        hwnd,
+                        EventKind::MouseClick,
+                        error,
+                    ),
                     Err(error) => ToolResult::error(format!("Task error: {error}")),
                 };
             }
@@ -885,7 +874,8 @@ impl Tool for ClickTool {
             //     different patterns; keep PostMessage for now)
             //   - count > 1 (double-click semantics aren't an Invoke
             //     concept — PostMessage produces the actual WM_LBUTTONDBLCLK)
-            let use_uia_invoke = (btn == "left" || btn == "middle") && count == 1;
+            let use_uia_invoke =
+                (btn == "left" || btn == "middle") && count == 1 && modifiers.is_empty();
             let result = tokio::task::spawn_blocking({ let admitted = admitted.clone(); move || -> anyhow::Result<BackgroundElementClick> {
                 let _admission = &admitted;
                 let mut failed_calls = Vec::new();
@@ -1056,11 +1046,13 @@ impl Tool for ClickTool {
             } else {
                 "PostMessage click"
             };
+            let mods = modifiers.clone();
             let sent = tokio::task::spawn_blocking({
                 let admitted = admitted.clone();
                 move || {
                     let _admission = &admitted;
-                    crate::input::post_click_screen(hwnd, x, y, count, &btn)
+                    let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
+                    crate::input::post_click_screen(hwnd, x, y, count, &btn, &mods)
                 }
             })
             .await;
@@ -1070,7 +1062,9 @@ impl Tool for ClickTool {
                     ActionTransport::WindowsPostMessage,
                     failed_calls,
                 ),
-                Ok(Err(error)) => ToolResult::error(error.to_string()),
+                Ok(Err(error)) => {
+                    crate::input::delivery::posted_input_error(hwnd, EventKind::MouseClick, error)
+                }
                 Err(error) => ToolResult::error(format!("Task error: {error}")),
             }
         } else if let (Some(mut px), Some(mut py)) = (x, y) {
@@ -1160,7 +1154,7 @@ impl Tool for ClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(
                         {
                             let click_word = match count {
                                 2 => "double-click",
@@ -1195,16 +1189,15 @@ impl Tool for ClickTool {
             // Match the AX-addressed Chromium route above: the point remains
             // PX-resolved, but transport uses the background-safe posted
             // message path proven against the fully occluded fixture.
-            if delivery == DeliveryMode::Background
-                && btn == "left"
-                && count == 1
-                && crate::input::is_chromium_target_window(hwnd)
+            if delivery == DeliveryMode::Background && crate::input::is_chromium_target_window(hwnd)
             {
+                let mods = modifiers.clone();
                 let posted = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
-                        crate::input::post_click_screen(hwnd, sx_i, sy_i, count, &btn)
+                        let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
+                        crate::input::post_click_screen(hwnd, sx_i, sy_i, count, &btn, &mods)
                     }
                 })
                 .await;
@@ -1218,20 +1211,15 @@ impl Tool for ClickTool {
                         "verified": false,
                         "effect": "unverifiable"
                     })),
-                    Ok(Err(error)) => ToolResult::error(error.to_string()),
+                    Ok(Err(error)) => crate::input::delivery::posted_input_error(
+                        hwnd,
+                        EventKind::MouseClick,
+                        error,
+                    ),
                     Err(error) => ToolResult::error(format!("Task error: {error}")),
                 };
             }
-            // Do not substitute synthetic background input for Chromium's
-            // false-positive UIA Invoke. Refuse before any pointer input.
-            if delivery == DeliveryMode::Background && crate::input::is_chromium_target_window(hwnd)
-            {
-                return crate::input::delivery::background_pointer_unavailable_error(
-                    hwnd,
-                    EventKind::MouseClick,
-                );
-            }
-            let use_uia = (btn == "left" || btn == "middle") && count == 1;
+            let use_uia = (btn == "left" || btn == "middle") && count == 1 && modifiers.is_empty();
             if use_uia {
                 let outcome = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
@@ -1271,11 +1259,13 @@ impl Tool for ClickTool {
 
             // bitmap pixels -> screen (DWM-frame origin + inset). Use
             // post_click_screen so we don't double-ClientToScreen.
+            let mods = modifiers.clone();
             let result = tokio::task::spawn_blocking({
                 let admitted = admitted.clone();
                 move || {
                     let _admission = &admitted;
-                    crate::input::post_click_screen(hwnd, sx_i, sy_i, count, &btn)
+                    let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
+                    crate::input::post_click_screen(hwnd, sx_i, sy_i, count, &btn, &mods)
                 }
             })
             .await;
@@ -1289,7 +1279,9 @@ impl Tool for ClickTool {
                     };
                     posted_pixel_click_result(pid, click_word)
                 }
-                Ok(Err(e)) => ToolResult::error(e.to_string()),
+                Ok(Err(e)) => {
+                    crate::input::delivery::posted_input_error(hwnd, EventKind::MouseClick, e)
+                }
                 Err(e) => ToolResult::error(format!("Task error: {e}")),
             }
         } else {

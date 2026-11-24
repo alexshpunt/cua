@@ -45,6 +45,8 @@ pub enum EventKind {
     MouseMove,
     /// `WM_VSCROLL` / `WM_HSCROLL`.
     MouseScroll,
+    /// `WM_MOUSEWHEEL` / `WM_MOUSEHWHEEL` at a point.
+    MouseWheel,
     /// `WM_KEYDOWN/UP` with no modifiers — plain key tap.
     Keystroke,
     /// `WM_KEYDOWN/UP` with modifiers — accelerator candidate (Ctrl+S etc).
@@ -59,6 +61,7 @@ impl EventKind {
             Self::MouseClick => "mouse_click",
             Self::MouseMove => "mouse_move",
             Self::MouseScroll => "mouse_scroll",
+            Self::MouseWheel => "mouse_wheel",
             Self::Keystroke => "keystroke",
             Self::KeyCombo => "key_combo",
             Self::TextInput => "text_input",
@@ -102,35 +105,35 @@ pub fn delivery_mode_schema() -> Value {
 ///
 /// Combines the existing `is_chromium_target_window` detector with new GTK
 /// (`gdkWindowToplevel` / `gdkSurfaceToplevel`) detection.
+///
+/// The table follows the input route matrix of LPT-1846 (real apps, each with
+/// another window in the foreground and the cursor away from the target). Posted
+/// input reaches classic Win32, Unity, Chromium/Electron, GTK and Godot windows;
+/// modifiers are held in the target thread's key state by the posting helpers.
 pub fn would_be_silently_dropped(hwnd: u64, kind: EventKind) -> bool {
     use EventKind::*;
     if crate::input::is_chromium_target_window(hwnd) {
-        // Chromium's input thread architecture requires SendInput-queue
-        // origin for pointer and keyboard events (#1623). Posted WM_CHAR and
-        // plain key messages can return success while a background renderer
-        // receives nothing, so they must be refused as honestly as chords.
-        return matches!(
-            kind,
-            MouseClick | MouseMove | MouseScroll | Keystroke | KeyCombo | TextInput
-        );
+        // Chrome and VS Code took posted clicks, right clicks, double clicks,
+        // drags with capture, wheel, WM_CHAR text and key-state chords on their
+        // top-level window (LPT-1846). Only scrollbar messages mean nothing to them.
+        return matches!(kind, MouseScroll);
     }
     if crate::input::has_chromium_descendant(hwnd) {
         // Embedded WebView2 hosts retain useful UIA/top-level routes for
         // clicks and ValuePattern text. Their drag, wheel and modifier-chord
         // paths still depend on the renderer's system input queue.
-        return matches!(kind, MouseMove | MouseScroll | KeyCombo);
+        return matches!(kind, MouseMove | MouseScroll | MouseWheel | KeyCombo);
     }
     if is_wpf_target_window(hwnd) {
-        // WPF ignores posted pointer messages unless the live system cursor is
-        // over the window. Its InputManager also ignores posted key messages
-        // while another native window owns foreground; PostMessage still
-        // returns success, so both routes need an honest refusal.
+        // WPF drops posted pointer messages unless the real cursor is over its
+        // window, and its buttons read the button from the key state. Posted
+        // WM_CHAR text and key-state chords reach its keyboard focus element.
         //
         // Do not classify WM_VSCROLL/WM_HSCROLL here: the scroll tool posts the
         // scrollbar messages directly to the top-level HWND, and WPF hosts that
         // explicitly handle those messages (including our harness hook) can
         // consume them without a foreground swap.
-        return wpf_drops_event(kind, target_is_foreground(hwnd));
+        return wpf_drops_event(kind);
     }
     if is_tk_target_window(hwnd) {
         // Tk derives button transitions from GetKeyState rather than trusting
@@ -139,23 +142,11 @@ pub fn would_be_silently_dropped(hwnd: u64, kind: EventKind) -> bool {
         // be accepted without reaching the focused widget.
         return tk_drops_event(kind);
     }
-    // NB: WinUI3 (`WinUIDesktopWin32WindowClass`) is deliberately NOT flagged
-    // here. It looks WPF-like, but its composition input-site does NOT consume
-    // the synthetic pen/touch the way WPF's stylus stack does — routing WinUI3
-    // background clicks through the coordinate injector neither lands double/
-    // right-click NOR preserves the no-foreground contract (measured: it
-    // regressed ax-bg from 0/8 to 8/8 stolen). Driving WinUI3 double/right-click
-    // in the background needs a WinUI3-specific input path (composition input-
-    // site target), tracked separately; single left-click already works via UIA
-    // Invoke and the contract holds.
-    if is_gtk_target_window(hwnd) {
-        // Conservative flag for GTK: button widgets ignore PostMessage
-        // clicks, drawing-area widgets accept them. We cannot distinguish
-        // at the HWND level (single HWND for the whole GTK window) so we
-        // flag mouse clicks broadly. Canvas-style drag works in practice;
-        // caller can still opt to retry with delivery_mode:"background" on the
-        // drag path if the click error wasn't actually load-bearing.
-        return matches!(kind, MouseClick);
+    if is_ghost_target_window(hwnd) {
+        // Blender's GHOST reads the real cursor position for button events and
+        // raw input for keys: posted clicks, drags, keys and text do nothing.
+        // Only the wheel lands.
+        return ghost_drops_event(kind);
     }
     if is_vcl_target_window(hwnd) {
         // VCL (LibreOffice / OpenOffice family) routes accelerator keys
@@ -173,9 +164,11 @@ pub fn would_be_silently_dropped(hwnd: u64, kind: EventKind) -> bool {
     false
 }
 
-fn wpf_drops_event(kind: EventKind, target_is_foreground: bool) -> bool {
-    matches!(kind, EventKind::MouseClick | EventKind::MouseMove)
-        || (!target_is_foreground && matches!(kind, EventKind::Keystroke | EventKind::KeyCombo))
+fn wpf_drops_event(kind: EventKind) -> bool {
+    matches!(
+        kind,
+        EventKind::MouseClick | EventKind::MouseMove | EventKind::MouseWheel
+    )
 }
 
 fn tk_drops_event(kind: EventKind) -> bool {
@@ -185,18 +178,13 @@ fn tk_drops_event(kind: EventKind) -> bool {
     )
 }
 
-fn target_is_foreground(hwnd: u64) -> bool {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
-    if hwnd == 0 {
-        return false;
-    }
-    unsafe {
-        let target = GetAncestor(HWND(hwnd as *mut _), GA_ROOT);
-        let foreground = GetForegroundWindow();
-        let foreground_root = GetAncestor(foreground, GA_ROOT);
-        !target.0.is_null() && target == foreground_root
-    }
+fn ghost_drops_event(kind: EventKind) -> bool {
+    !matches!(kind, EventKind::MouseWheel | EventKind::MouseScroll)
+}
+
+/// Detect Blender's GHOST windows.
+pub fn is_ghost_target_window(hwnd: u64) -> bool {
+    read_class_name(hwnd) == "GHOST_WindowClass"
 }
 
 /// Detect LibreOffice / OpenOffice (VCL framework) windows.
@@ -341,6 +329,25 @@ pub fn background_unavailable_error(
     )
 }
 
+/// The result of failed posted input. A key that opened a Win32 menu loop, which the
+/// driver closed again, needs the foreground; so does a point on a XAML or UWP surface
+/// and a target whose key state cannot hold modifiers, both refused before anything
+/// was posted. These are background refusals. Other failures stay errors.
+pub(crate) fn posted_input_error(
+    hwnd: u64,
+    kind: EventKind,
+    error: anyhow::Error,
+) -> cua_driver_core::protocol::ToolResult {
+    let message = error.to_string();
+    if message.starts_with(crate::input::keyboard::BACKGROUND_MENU_LOOP)
+        || message.starts_with(crate::input::key_state::KEY_STATE_UNAVAILABLE)
+        || message.starts_with(crate::input::mouse::POINTER_SURFACE_UNAVAILABLE)
+    {
+        return background_unavailable_error_with_cause(hwnd, kind, message);
+    }
+    cua_driver_core::protocol::ToolResult::error(message)
+}
+
 /// Build a background refusal while preserving a concrete pre-input failure.
 /// Call only when no global input was inserted. An inserted prefix must retain
 /// its partial/unverifiable record without offering foreground replay.
@@ -393,15 +400,24 @@ mod tests {
     }
 
     #[test]
-    fn wpf_refuses_posted_pointer_and_keyboard_events() {
-        assert!(wpf_drops_event(EventKind::MouseClick, true));
-        assert!(wpf_drops_event(EventKind::MouseMove, true));
-        assert!(wpf_drops_event(EventKind::Keystroke, false));
-        assert!(wpf_drops_event(EventKind::KeyCombo, false));
-        assert!(!wpf_drops_event(EventKind::Keystroke, true));
-        assert!(!wpf_drops_event(EventKind::KeyCombo, true));
-        assert!(!wpf_drops_event(EventKind::TextInput, false));
-        assert!(!wpf_drops_event(EventKind::MouseScroll, false));
+    fn wpf_refuses_posted_pointer_events_and_takes_posted_keys() {
+        assert!(wpf_drops_event(EventKind::MouseClick));
+        assert!(wpf_drops_event(EventKind::MouseMove));
+        assert!(wpf_drops_event(EventKind::MouseWheel));
+        assert!(!wpf_drops_event(EventKind::Keystroke));
+        assert!(!wpf_drops_event(EventKind::KeyCombo));
+        assert!(!wpf_drops_event(EventKind::TextInput));
+        assert!(!wpf_drops_event(EventKind::MouseScroll));
+    }
+
+    #[test]
+    fn blender_takes_only_the_wheel_in_the_background() {
+        assert!(ghost_drops_event(EventKind::MouseClick));
+        assert!(ghost_drops_event(EventKind::MouseMove));
+        assert!(ghost_drops_event(EventKind::Keystroke));
+        assert!(ghost_drops_event(EventKind::KeyCombo));
+        assert!(ghost_drops_event(EventKind::TextInput));
+        assert!(!ghost_drops_event(EventKind::MouseWheel));
     }
 
     #[test]
