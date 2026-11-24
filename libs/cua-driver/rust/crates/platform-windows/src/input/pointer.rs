@@ -446,7 +446,7 @@ fn run_operation<R>(
         }
         if foreground_before != native.hwnd {
             activation_attempted = true;
-            // The assisted helper injects VK_NONAME. These actions never inject keys.
+            // The assisted helper may fall back to a VK_NONAME key pulse. These actions never inject keys.
             if !unsafe { crate::input::force_foreground_attached(HWND(native.hwnd as *mut _)) } {
                 return Err(failure(
                     "foreground_unavailable",

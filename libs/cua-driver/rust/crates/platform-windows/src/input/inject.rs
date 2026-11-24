@@ -18,9 +18,7 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    keybd_event, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-};
+use windows::Win32::UI::Input::KeyboardAndMouse::{KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP};
 use windows::Win32::UI::Shell::{IVirtualDesktopManager, VirtualDesktopManager};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId,
@@ -136,29 +134,74 @@ pub(crate) unsafe fn force_foreground_attached(target: HWND) -> bool {
     actual == target
 }
 
-/// Retry an explicit visible foreground transition after a reserved no-name
-/// key grants this process the most-recent-input token. The key has no
-/// application meaning; the retry count keeps the transition bounded.
+/// Retry an explicit visible foreground transition after this process becomes
+/// the source of the most recent input, which Windows requires before it lets a
+/// process change the foreground. A null mouse input does that without any
+/// message reaching a window; the no-name key pulse is the fallback. The retry
+/// count keeps the transition bounded.
 pub(crate) unsafe fn force_foreground_assisted(target: HWND) -> (bool, bool) {
     if unsafe { force_foreground_attached(target) } {
         return (true, false);
     }
-
-    const VK_NONAME: u8 = 0xFC;
-    // keybd_event has no insertion or receiver-read receipt. Its unlock pulse
-    // cannot authorize automatic restoration or a later queue attachment.
-    crate::focus_return::note_unconfirmed_input();
-    unsafe {
-        keybd_event(VK_NONAME, 0, KEYBD_EVENT_FLAGS(0), 0);
-        keybd_event(VK_NONAME, 0, KEYEVENTF_KEYUP, 0);
-    }
-    for _ in 0..3 {
-        if unsafe { force_foreground_attached(target) } {
-            return (true, true);
+    for unlock in [null_mouse_input as fn(), unlock_pulse] {
+        unlock();
+        for _ in 0..3 {
+            if unsafe { force_foreground_attached(target) } {
+                return (true, true);
+            }
+            sleep(Duration::from_millis(25));
         }
-        sleep(Duration::from_millis(25));
     }
     (false, true)
+}
+
+/// Insert a mouse input without movement, buttons or wheel. It makes this process the source of
+/// the most recent input, but produces no window message, so nothing is queued for a window to
+/// read and focus return needs no read evidence for it.
+fn null_mouse_input() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEINPUT,
+    };
+    let input = INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT::default(),
+        },
+    };
+    let sent = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
+    tracing::debug!(sent, "foreground unlock: null mouse input");
+}
+
+/// The reserved no-name key of the unlock pulse.
+const VK_NONAME: u16 = 0xFC;
+
+/// Insert the fallback unlock pulse, a press and a release of the no-name key. The window in
+/// front, usually the human's, receives it, and nothing witnesses that it read the key, so the
+/// pulse is unconfirmed input.
+fn unlock_pulse() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+    };
+    let key = |flags| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(VK_NONAME),
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    crate::focus_return::note_unconfirmed_input();
+    let pulse = [key(KEYBD_EVENT_FLAGS(0)), key(KEYEVENTF_KEYUP)];
+    let sent = unsafe { SendInput(&pulse, std::mem::size_of::<INPUT>() as i32) };
+    if sent == 1 {
+        // Only the press went in; do not leave the key down.
+        let _ = super::keyboard::release_inserted_keys(&pulse, 1);
+    }
+    tracing::debug!(sent, "foreground unlock: no-name key pulse");
 }
 
 /// RAII guard that makes a specific target window **unable to become the
