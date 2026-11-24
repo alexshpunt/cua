@@ -502,6 +502,10 @@ expected and observed behavior, oracles, and one evidence link. The link uses
 the exact video path as its label and opens the owning lane archive. Unit tests
 need normal test output and logs; they do not need desktop video.
 
+The testkit discards the spawned driver's stderr. To see the driver's own log
+while debugging an E2E test, set `CUA_TEST_DRIVER_STDERR=1` together with
+`CUA_LOG`, for example `CUA_LOG=debug`.
+
 ## What Is Implemented Today
 
 - Rust owns the canonical scenario definitions and external-state assertions.
