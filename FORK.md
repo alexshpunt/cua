@@ -2,7 +2,7 @@
 
 This fork integrates the full upstream [trycua/cua](https://github.com/trycua/cua) history through Cua Driver 0.52.0 (upstream `main` at `ca6a6434`) while retaining the Windows Cua Driver extensions used by [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use). Upstream code retains its original authorship and license.
 
-The current source of Pi Agent Computer Use selects Windows Cua Driver 0.52.0 built from commit `3cf8455bfbd5b5b20231b4f24de7b6b6ad2c0322`, attached to the [`pi-runtime-0.52.0-3cf8455b` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.52.0-3cf8455b). These unsigned AMD64 binaries were built on GitHub's Windows runner with a static CRT. The package pins and checks the SHA-256 of every file before starting the driver. This does not establish UIAccess deployment, elevated/UWP support or physical display coverage.
+The current source of Pi Agent Computer Use selects Windows Cua Driver 0.52.0 built from commit `9dd83311e1521d60b578ee942ae9fe47c90dab54`, attached to the [`pi-runtime-0.52.0-9dd83311` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.52.0-9dd83311). These unsigned AMD64 binaries were built on GitHub's Windows runner with a static CRT. The package pins and checks the SHA-256 of every file before starting the driver. This does not establish UIAccess deployment, elevated/UWP support or physical display coverage.
 
 Where upstream and the fork change the same behavior, this build keeps both:
 
