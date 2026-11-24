@@ -209,6 +209,127 @@ fn focused_descendant(parent: HWND) -> Option<HWND> {
     best.map(|(_, focused)| focused)
 }
 
+/// XAML islands take posted keys only on their input-site child window: neither the
+/// top-level frame nor the island bridge forwards them, and `GUITHREADINFO.hwndFocus`
+/// does not name the input site while the app is in the background (LPT-1846).
+fn is_input_site_class(class: &str) -> bool {
+    matches!(
+        class,
+        "InputSiteWindowClass" | "Windows.UI.Input.InputSite.WindowClass"
+    )
+}
+
+/// The window that hosts a XAML island inside a Win32 frame.
+fn is_island_bridge_class(class: &str) -> bool {
+    class.ends_with("DesktopChildSiteBridge") || class.ends_with("DesktopWindowContentBridge")
+}
+
+/// The first descendant of `parent` whose class matches.
+fn descendant_of_class(parent: HWND, matches: fn(&str) -> bool) -> Option<HWND> {
+    struct Search {
+        matches: fn(&str) -> bool,
+        found: Option<HWND>,
+    }
+    unsafe extern "system" fn visit(child: HWND, lparam: LPARAM) -> BOOL {
+        let search = &mut *(lparam.0 as *mut Search);
+        if class_name(child).is_some_and(|class| (search.matches)(&class)) {
+            search.found = Some(child);
+            return BOOL(0);
+        }
+        TRUE
+    }
+    let mut search = Search {
+        matches,
+        found: None,
+    };
+    unsafe {
+        let _ = EnumChildWindows(
+            parent,
+            Some(visit),
+            LPARAM(&mut search as *mut Search as isize),
+        );
+    }
+    search.found
+}
+
+/// The window that posted keys and text for `root` must reach:
+/// - a direct Chromium/Electron frame takes them on the top-level window itself;
+/// - otherwise the focused descendant of the target's UI threads (an editor child such
+///   as RichEdit or Scintilla, a rename box), unless that is a XAML island bridge;
+/// - a XAML island takes them on its input site, a UWP frame on its CoreWindow.
+pub(crate) fn keyboard_target(root: HWND) -> HWND {
+    if crate::input::is_chromium_target_window(root.0 as u64) {
+        return root;
+    }
+    let focused = focused_descendant(root);
+    if let Some(focused) = focused {
+        let class = class_name(focused).unwrap_or_default();
+        if is_input_site_class(&class) {
+            return focused;
+        }
+        if !is_island_bridge_class(&class) {
+            return focused;
+        }
+        if let Some(site) = descendant_of_class(focused, is_input_site_class) {
+            return site;
+        }
+    }
+    descendant_of_class(root, is_input_site_class)
+        .or_else(|| descendant_of_class(root, |class| class == "Windows.UI.Core.CoreWindow"))
+        .or(focused)
+        .unwrap_or(root)
+}
+
+/// Chromium stops reading posted keys once it has been activated and deactivated
+/// again (its web contents is blurred). A posted activation and focus message makes it
+/// read them again without taking the foreground (LPT-1846).
+fn wake_chromium_keyboard(root: HWND) {
+    use windows::Win32::UI::WindowsAndMessaging::{WM_ACTIVATE, WM_SETFOCUS};
+    if !crate::input::is_chromium_target_window(root.0 as u64) {
+        return;
+    }
+    const WA_ACTIVE: usize = 1;
+    unsafe {
+        let _ = PostMessageW(root, WM_ACTIVATE, WPARAM(WA_ACTIVE), LPARAM(0));
+        let _ = PostMessageW(root, WM_SETFOCUS, WPARAM(0), LPARAM(0));
+    }
+}
+
+/// Set when posted input left the target's UI thread in a Win32 menu loop.
+pub(crate) const BACKGROUND_MENU_LOOP: &str = "background_menu_loop";
+
+/// A posted Alt chord or F10 can start a Win32 menu loop. In a background app that
+/// loop blocks the app (its own message loop stops) until the menu ends, so end it
+/// at once and report that the key needs the foreground.
+fn cancel_background_menu_loop(target: HWND) -> Result<()> {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GUI_INMENUMODE, GUI_POPUPMENUMODE, WM_CANCELMODE,
+    };
+    let thread = unsafe { GetWindowThreadProcessId(target, None) };
+    let mut info = GUITHREADINFO {
+        cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+        ..Default::default()
+    };
+    if thread == 0 || unsafe { GetGUIThreadInfo(thread, &mut info) }.is_err() {
+        return Ok(());
+    }
+    if info.flags.0 & (GUI_INMENUMODE.0 | GUI_POPUPMENUMODE.0) == 0 {
+        return Ok(());
+    }
+    let owner = if info.hwndMenuOwner.0.is_null() {
+        target
+    } else {
+        info.hwndMenuOwner
+    };
+    unsafe {
+        let _ = PostMessageW(owner, WM_CANCELMODE, WPARAM(0), LPARAM(0));
+    }
+    bail!(
+        "{BACKGROUND_MENU_LOOP}: the key opened a Win32 menu, which stops the app while it is in \
+         the background; the menu was closed again"
+    )
+}
+
 /// Wait for an element-focused embedded renderer to expose its child HWND.
 /// UIA SetFocus can complete before WebView2 updates GUITHREADINFO; polling the
 /// observable focus target avoids posting the key to the native frame in that
@@ -235,7 +356,8 @@ pub fn post_char(hwnd: u64, ch: char) -> Result<()> {
     // Retarget to the focused child if any — top-level WindowProcs typically
     // don't forward WM_CHAR to embedded editor children (Scintilla, RichEdit).
     let h_parent = HWND(hwnd as *mut _);
-    let h = focused_descendant(h_parent).unwrap_or(h_parent);
+    wake_chromium_keyboard(h_parent);
+    let h = keyboard_target(h_parent);
     let code = ch as u32 as usize;
     unsafe {
         PostMessageW(h, WM_CHAR, WPARAM(code), LPARAM(1))?;
@@ -305,9 +427,10 @@ pub fn post_type_text_with_delay(hwnd: u64, text: &str, inter_char_ms: u64) -> R
         anyhow::bail!(msg);
     }
     let h_parent = HWND(hwnd as *mut _);
-    // Resolve focused-child once at entry — re-querying per-character would
+    // Resolve the receiver once at entry — re-querying per-character would
     // race with text-insertion side effects on the focus.
-    let h = focused_descendant(h_parent).unwrap_or(h_parent);
+    wake_chromium_keyboard(h_parent);
+    let h = keyboard_target(h_parent);
 
     let units = text_units(text);
     let batched = type_pacing::is_batched(inter_char_ms);
@@ -425,27 +548,39 @@ fn wait_for_target_pump(h: HWND) {
 }
 
 /// Press a named key (and optional modifiers) via WM_KEYDOWN/WM_KEYUP.
+///
+/// Modifiers are held in the target thread's key state for the press (see
+/// [`crate::input::key_state`]); no modifier key messages are posted. Posted
+/// modifier keydowns do not change what `GetKeyState` reports, so the app saw a bare
+/// key (Ctrl+A typed a control character), and a posted Alt press and release can
+/// open a menu bar by itself.
 pub fn post_key(hwnd: u64, key: &str, modifiers: &[&str]) -> Result<()> {
     if let Some(msg) = crate::input::post_message_blocked_by_uipi(hwnd) {
         anyhow::bail!(msg);
     }
     let hwnd_win = HWND(hwnd as *mut _);
-    // WebView2/Tauri keeps the editable renderer in a focused child HWND.
-    // Posting only to the top-level frame reports success but never reaches
-    // the renderer; mirror the WM_CHAR path and retarget to that child when
-    // the target thread exposes one.
-    let target = focused_descendant(hwnd_win).unwrap_or(hwnd_win);
+    wake_chromium_keyboard(hwnd_win);
+    // WebView2/Tauri keeps the editable renderer in a focused child HWND, a XAML
+    // island reads keys on its input site: posting only to the top-level frame
+    // reports success but never reaches them.
+    let target = keyboard_target(hwnd_win);
     let (vk, scan) = match resolve_press(target, key, modifiers)? {
         Press::Key { vk, scan } => (vk, scan),
         Press::Text(ch) => return post_type_text(hwnd, &ch.to_string()),
     };
-    let has_alt = modifiers.iter().any(|m| *m == "alt" || *m == "menu");
+    let has_alt = modifiers
+        .iter()
+        .any(|m| matches!(m.to_ascii_lowercase().as_str(), "alt" | "menu" | "option"));
 
     let repeat_lp = |scan: u32, extended: bool, key_up: bool| {
         let mut lp: u32 = 1; // repeat count
         lp |= scan << 16;
         if extended {
             lp |= 1 << 24;
+        }
+        if has_alt {
+            // Context code: Alt is down.
+            lp |= 1 << 29;
         }
         if key_up {
             lp |= (1 << 30) | (1 << 31);
@@ -459,20 +594,12 @@ pub fn post_key(hwnd: u64, key: &str, modifiers: &[&str]) -> Result<()> {
         (WM_KEYDOWN, WM_KEYUP)
     };
 
-    let mod_vks: Vec<VIRTUAL_KEY> = modifiers.iter().filter_map(|m| modifier_vk(m)).collect();
-
+    let held: Vec<u16> = modifiers
+        .iter()
+        .flat_map(|m| crate::input::key_state::modifier_keys(m).iter().copied())
+        .collect();
+    let mut held = crate::input::key_state::HeldKeys::hold(target, &held)?;
     unsafe {
-        // Press modifiers.
-        for mvk in &mod_vks {
-            let ms = MapVirtualKeyW(mvk.0 as u32, MAPVK_VK_TO_VSC);
-            PostMessageW(
-                target,
-                down_msg,
-                WPARAM(mvk.0 as usize),
-                repeat_lp(ms, false, false),
-            )?;
-        }
-        // Press key.
         PostMessageW(
             target,
             down_msg,
@@ -480,25 +607,22 @@ pub fn post_key(hwnd: u64, key: &str, modifiers: &[&str]) -> Result<()> {
             repeat_lp(scan, is_extended(vk), false),
         )?;
         sleep(Duration::from_millis(KEY_DELAY_MS));
-        // Release key.
         PostMessageW(
             target,
             up_msg,
             WPARAM(vk.0 as usize),
             repeat_lp(scan, is_extended(vk), true),
         )?;
-        // Release modifiers (reverse order).
-        for mvk in mod_vks.iter().rev() {
-            let ms = MapVirtualKeyW(mvk.0 as u32, MAPVK_VK_TO_VSC);
-            PostMessageW(
-                target,
-                up_msg,
-                WPARAM(mvk.0 as usize),
-                repeat_lp(ms, false, true),
-            )?;
-        }
     }
-    Ok(())
+    if let Some(keys) = held.as_mut() {
+        keys.posted(2);
+    }
+    // Dropping the held keys waits until the target processed the press.
+    match held {
+        Some(keys) => drop(keys),
+        None => wait_for_target_pump(target),
+    }
+    cancel_background_menu_loop(target)
 }
 
 /// Press `key` (with optional `modifiers`) via `SendInput` against the system

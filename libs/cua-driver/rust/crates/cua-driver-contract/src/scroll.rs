@@ -94,7 +94,8 @@ pub struct PointerScrollInput {
     pub delta_y: i32,
     /// State wheel_detents explicitly; the application controls actual displacement.
     pub unit: ScrollUnit,
-    /// Background refuses. Explicit foreground leaves the target and pointer active.
+    /// Background (default) posts wheel messages to the window at the point; the pointer
+    /// and the foreground stay. Foreground moves the pointer and leaves the target active.
     #[serde(default = "background")]
     pub delivery_mode: InputDeliveryMode,
     /// For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
@@ -146,11 +147,11 @@ pub struct PointerScrollOutput {
     pub attempted_axes: Vec<ScrollAxis>,
     /// Axes whose native methods returned successful delivery, in actual order.
     pub delivered_axes: Vec<ScrollAxis>,
-    /// Native OS input, never overlay or browser input.
+    /// Native OS input in the foreground, posted window messages in the background.
     pub route: PointerMoveRoute,
     /// Application effects need an independent fresh observation.
     pub effect: PointerMoveEffect,
-    /// Explicit foreground delivery without automatic restoration.
+    /// Background messages, or explicit foreground delivery without automatic restoration.
     pub delivery_mode: PointerMoveDelivery,
     /// Foreground comparison before input and at receipt time; null means unavailable.
     pub foreground_changed: Option<bool>,
@@ -164,7 +165,23 @@ pub struct PointerScrollOutput {
 
 impl ToolOutput for PointerScrollOutput {
     fn validate(&self) -> Result<(), String> {
-        if !self.attempted || !self.delivered || !self.pointer_attempted || !self.pointer_delivered
+        // Background wheel messages go to the window at the point; the pointer never moves.
+        let posted = self.delivery_mode == PointerMoveDelivery::Background;
+        if posted
+            && (self.route != PointerMoveRoute::Posted
+                || self.pointer_attempted
+                || self.pointer_delivered)
+        {
+            return Err(
+                "background scroll_at posts wheel messages and never moves the pointer".into(),
+            );
+        }
+        if !posted && self.route != PointerMoveRoute::Native {
+            return Err("foreground scroll_at uses native wheel input".into());
+        }
+        if !self.attempted
+            || !self.delivered
+            || !posted && (!self.pointer_attempted || !self.pointer_delivered)
         {
             return Err(
                 "scroll_at success requires attempted and delivered pointer and wheel input".into(),
@@ -185,7 +202,7 @@ impl ToolOutput for PointerScrollOutput {
 pub(crate) fn contracts() -> Vec<ToolContract> {
     vec![ToolContract {
         name: PointerScrollInput::TOOL_NAME.into(),
-        description: "Use scroll_at to deliver native wheel input at a current overview point in one exact Windows window without an accessibility scroll target. Delivery does not prove content displacement; observe the same window again.".into(),
+        description: "Use scroll_at to deliver wheel input at a current overview point in one exact Windows window without an accessibility scroll target. Delivery does not prove content displacement; observe the same window again.".into(),
         platforms: vec![Platform::Windows],
         aliases: vec![],
         capabilities: vec!["input.pointer.scroll".into(), "input.delivery_mode".into()],

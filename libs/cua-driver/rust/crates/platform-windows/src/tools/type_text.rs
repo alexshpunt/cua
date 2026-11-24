@@ -272,12 +272,11 @@ impl Tool for TypeTextTool {
             crate::terminal::TypeTextPolicy::Supported => {}
         }
 
-        // Refuse known background drops before the final WM_CHAR path. WPF is
-        // conditional: indexed text still has a working UIA ValuePattern route,
-        // while unindexed text would be posted to the top-level and disappear.
+        // Refuse known background drops before the final WM_CHAR path. Posted
+        // WM_CHAR reaches WPF's keyboard focus element and Chromium's top-level
+        // window (LPT-1846).
         if delivery == DeliveryMode::Background
-            && (crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::TextInput)
-                || (elem_idx.is_none() && crate::input::delivery::is_wpf_target_window(hwnd)))
+            && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::TextInput)
         {
             return crate::input::delivery::background_unavailable_error(
                 hwnd,

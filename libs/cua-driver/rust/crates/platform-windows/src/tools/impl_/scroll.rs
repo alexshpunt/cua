@@ -32,6 +32,109 @@ fn refusal(code: &str, detail: impl Into<String>) -> ToolResult {
     }))
 }
 
+/// Wheel messages posted to the window at an admitted point: no pointer motion, no
+/// activation. Surfaces that read the wheel only from the system queue refuse first.
+async fn background_scroll(
+    state: Arc<ToolState>,
+    input: PointerScrollInput,
+    args: Value,
+) -> ToolResult {
+    use crate::input::delivery::EventKind;
+    let result = tokio::task::spawn_blocking(move || {
+        let pid = input.pid;
+        let hwnd = input.window_id;
+        if let Err(error) =
+            exact_window_ownership_result(pid, hwnd, crate::win32::window_owner_pid(hwnd))
+        {
+            return error;
+        }
+        if crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseWheel) {
+            return crate::input::delivery::background_unavailable_error(
+                hwnd,
+                EventKind::MouseWheel,
+            );
+        }
+        let Some(bridge) = &state.capture_bridge else {
+            return capture_admission_refusal(anyhow::anyhow!("capture service is unavailable"));
+        };
+        let point = match bridge.admit_click(
+            &args,
+            crate::capture_admission::WindowsCaptureTarget::Window {
+                pid,
+                window_id: hwnd,
+            },
+            input.x,
+            input.y,
+        ) {
+            Ok(Some(point)) => point,
+            Ok(None) => {
+                return refusal(
+                    "capture_action_refused",
+                    "Coordinate scroll requires a capture ID",
+                )
+            }
+            Err(error) => return capture_admission_refusal(error),
+        };
+        let (x, y) = match crate::capture_admission::round_action_point(point.0, point.1) {
+            Ok(point) => point,
+            Err(error) => return capture_admission_refusal(error),
+        };
+        let (sx, sy) = bitmap_to_screen(hwnd, x, y);
+        let foreground = || unsafe {
+            windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 as usize as u64
+        };
+        let foreground_before = foreground();
+        if let Err(error) =
+            crate::input::mouse::post_wheel_screen(hwnd, sx, sy, input.delta_x, input.delta_y)
+        {
+            let message = error.to_string();
+            return if message.starts_with(crate::input::mouse::POINTER_SURFACE_UNAVAILABLE) {
+                crate::input::delivery::background_unavailable_error_with_cause(
+                    hwnd,
+                    EventKind::MouseWheel,
+                    message,
+                )
+            } else {
+                ToolResult::error(message)
+            };
+        }
+        let foreground_after = foreground();
+        let axes: Vec<_> = [
+            (cua_driver_contract::ScrollAxis::Y, input.delta_y),
+            (cua_driver_contract::ScrollAxis::X, input.delta_x),
+        ]
+        .into_iter()
+        .filter_map(|(axis, delta)| (delta != 0).then_some(axis))
+        .collect();
+        let output = PointerScrollOutput {
+            attempted: true,
+            delivered: true,
+            pointer_attempted: false,
+            pointer_delivered: false,
+            delta_x: input.delta_x,
+            delta_y: input.delta_y,
+            unit: input.unit,
+            attempted_axes: axes.clone(),
+            delivered_axes: axes,
+            route: PointerMoveRoute::Posted,
+            effect: PointerMoveEffect::Unverifiable,
+            delivery_mode: PointerMoveDelivery::Background,
+            foreground_changed: Some(foreground_before != foreground_after),
+            pointer_changed: Some(false),
+            foreground_at_target: Some(foreground_after == hwnd),
+            pointer_at_target: None,
+        };
+        let content = serde_json::to_value(output).expect("native scroll receipt is serializable");
+        ToolResult::text(
+            "Wheel messages posted to the window in the background; the pointer did not move. \
+             Content displacement is unverified: observe the window again.",
+        )
+        .with_structured(content)
+    })
+    .await;
+    result.unwrap_or_else(|error| ToolResult::error(format!("scroll worker failed: {error}")))
+}
+
 #[async_trait]
 impl Tool for ScrollAtTool {
     fn def(&self) -> &ToolDef {
@@ -52,16 +155,7 @@ impl Tool for ScrollAtTool {
             return refusal("invalid_arguments", detail);
         }
         if args["delivery_mode"] != "foreground" {
-            return ToolResult::error("Native Windows coordinate scroll requires explicit foreground delivery after this refusal")
-                .with_structured(json!({
-                    "status":"refused", "code":"background_unavailable", "effect":"refused",
-                    "attempted":false, "delivered":false, "activation_attempted":false,
-                    "pointer_attempted":false, "pointer_delivered":false,
-                    "attempted_axes":[], "delivered_axes":[],
-                    "foreground_changed":false, "pointer_changed":false,
-                    "delivery":{"mode":"background"},
-                    "escalation":{"recommended":"foreground","reason":"Coordinate wheel input requires the system input queue"},
-                }));
+            return background_scroll(self.state.clone(), input, args).await;
         }
         let state = self.state.clone();
         let cancelled = Arc::new(AtomicBool::new(false));
@@ -160,7 +254,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn background_refuses_before_native_identity_or_capture_lookup() {
+    async fn background_checks_the_exact_window_before_capture_lookup() {
         let result = tool()
             .invoke(json!({
                 "pid":42,"window_id":7,"capture_id":"not-a-live-capture",
@@ -169,12 +263,36 @@ mod tests {
             .await;
         let content = result.structured_content.unwrap();
         assert_eq!(result.is_error, Some(true));
-        assert_eq!(content["code"], "background_unavailable");
-        assert_eq!(content["attempted"], false);
-        assert_eq!(content["activation_attempted"], false);
-        assert_eq!(content["pointer_attempted"], false);
-        assert_eq!(content["attempted_axes"], json!([]));
-        assert_eq!(content["foreground_changed"], false);
-        assert_eq!(content["pointer_changed"], false);
+        assert_eq!(content["code"], "window_target_not_found");
+        assert_eq!(content["effect"], "refused");
+    }
+
+    #[test]
+    fn background_receipt_posts_without_moving_the_pointer() {
+        use cua_driver_contract::{ScrollAxis, ScrollUnit, ToolOutput};
+        let mut output = PointerScrollOutput {
+            attempted: true,
+            delivered: true,
+            pointer_attempted: false,
+            pointer_delivered: false,
+            delta_x: 0,
+            delta_y: 3,
+            unit: ScrollUnit::WheelDetents,
+            attempted_axes: vec![ScrollAxis::Y],
+            delivered_axes: vec![ScrollAxis::Y],
+            route: PointerMoveRoute::Posted,
+            effect: PointerMoveEffect::Unverifiable,
+            delivery_mode: PointerMoveDelivery::Background,
+            foreground_changed: Some(false),
+            pointer_changed: Some(false),
+            foreground_at_target: Some(false),
+            pointer_at_target: None,
+        };
+        assert_eq!(output.validate(), Ok(()));
+        output.pointer_attempted = true;
+        assert!(output.validate().is_err());
+        output.pointer_attempted = false;
+        output.route = PointerMoveRoute::Native;
+        assert!(output.validate().is_err());
     }
 }

@@ -473,6 +473,10 @@ impl Tool for ExactPidWindowTargetGuard {
         self.inner.def()
     }
 
+    fn has_independent_input_lane(&self, args: &Value) -> bool {
+        self.inner.has_independent_input_lane(args)
+    }
+
     async fn protected_resource_ownership(
         &self,
         adapter_id: &str,
@@ -551,6 +555,7 @@ impl Tool for FocusReturnGuard {
 
     fn has_independent_input_lane(&self, args: &Value) -> bool {
         self.inner.has_independent_input_lane(args)
+            || background_window_input(&self.inner.def().name, args)
     }
 
     async fn protected_resource_ownership(
@@ -725,16 +730,50 @@ fn foreground_input_window(tool: &str, args: &Value) -> Option<u64> {
         .or_else(|| args.get("target")?.get("window_id")?.as_u64())
 }
 
+/// Input tools whose background routes address one window and never insert global
+/// input: posted window messages, thread-local key state and UIA patterns.
+const BACKGROUND_WINDOW_INPUT_TOOLS: &[&str] = &[
+    "click",
+    "double_click",
+    "right_click",
+    "drag",
+    "type_text",
+    "press_key",
+    "hotkey",
+    "scroll",
+    "scroll_at",
+];
+
+/// A background call into one exact window: it leaves the shared desktop input lane
+/// to foreground actions, so agents working in their own windows do not queue behind
+/// another agent's foreground action (LPT-1847).
+fn background_window_input(tool: &str, args: &Value) -> bool {
+    let exact = |key: &str| {
+        args.get(key)
+            .or_else(|| args.get("target")?.get(key))
+            .and_then(Value::as_u64)
+            .is_some_and(|value| value > 0)
+    };
+    BACKGROUND_WINDOW_INPUT_TOOLS.contains(&tool)
+        && args.get("scope").and_then(Value::as_str) != Some("desktop")
+        && crate::input::delivery::DeliveryMode::from_args(args)
+            == crate::input::delivery::DeliveryMode::Background
+        && exact("pid")
+        && exact("window_id")
+}
+
 type PidWindowGuardParts = (
     WindowTargetCandidates,
     cua_driver_core::window_target::TokenPidResolver,
 );
 
+/// A tool on an exact window: refused while another agent holds the window, then checked against its
+/// pid, then given focus return.
 fn pid_window_guarded<T: Tool + 'static>(
     tool: T,
     (candidates, token_pid_resolver): &PidWindowGuardParts,
 ) -> Box<dyn Tool> {
-    Box::new(ExactPidWindowTargetGuard {
+    let guarded: Box<dyn Tool> = Box::new(ExactPidWindowTargetGuard {
         inner: Box::new(
             PidOnlyWindowTargetGuard::new(
                 Box::new(FocusReturnGuard {
@@ -744,7 +783,8 @@ fn pid_window_guarded<T: Tool + 'static>(
             )
             .with_token_pid_resolver(token_pid_resolver.clone()),
         ),
-    })
+    });
+    Box::new(super::window_claims::WindowClaimGuard { inner: guarded })
 }
 
 /// The pid an `element_token` was minted for, so a token-only action (no
@@ -1292,32 +1332,6 @@ pub(crate) fn focus_cached_element_for_foreground(
 // `GetWindowStateTool` — that's where the actual screenshot machinery
 // lives now.
 
-/// Refuse legacy non-activating global input on Chromium. A fixed wait cannot
-/// safely restore foreground or z-order while the target may still have unread
-/// pointer input. Other targets keep their fixed-HWND PostMessage route.
-pub(crate) async fn chromium_click_short_circuit(
-    hwnd: u64,
-    _sx: i32,
-    _sy: i32,
-    _count: usize,
-    _button: &str,
-    _pid: u32,
-    _gesture: &str,
-) -> Option<ToolResult> {
-    let is_chromium =
-        tokio::task::spawn_blocking(move || crate::input::is_chromium_target_window(hwnd))
-            .await
-            .unwrap_or(false);
-    is_chromium.then(|| {
-        crate::input::delivery::background_unavailable_error_with_cause(
-            hwnd,
-            crate::input::delivery::EventKind::MouseClick,
-            "non-activating global pointer input has no supported receiver-read witness; \
-             no input was sent",
-        )
-    })
-}
-
 /// Fire UIA `InvokePattern.Invoke()` `count` times (min 2) in rapid succession
 /// on a cached WinUI3 element. Two rapid Invokes land within the system
 /// double-click time, so a Button's Click handler folds them into a
@@ -1595,8 +1609,14 @@ pub fn build_registry_with_provider(
         },
         &pid_window_candidates,
     ));
-    r.register(Box::new(SetWindowFrameTool));
-    r.register(Box::new(InvokeMenuTool));
+    r.register(super::window_claims::WindowClaimGuard::boxed(
+        SetWindowFrameTool,
+    ));
+    r.register(super::window_claims::WindowClaimGuard::boxed(
+        InvokeMenuTool,
+    ));
+    r.register(Box::new(super::window_claims::ClaimWindowTool));
+    r.register(Box::new(super::window_claims::ReleaseWindowTool));
     r.register(Box::new(DebugWindowInfoTool));
     r.register(pid_window_guarded(
         ClickTool {

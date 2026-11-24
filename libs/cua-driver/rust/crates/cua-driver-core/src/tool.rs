@@ -860,7 +860,8 @@ fn deprecated_name_note(old: &str, new: &str) -> String {
 ///   `accessibility.element_tokens` (Surface 6 — tool accepts the
 ///   opaque `element_token` arg)
 /// - `app.launch`, `app.list`, `app.kill`, `window.list`,
-///   `window.activate`, `window.state`, `window.manage`, `window.restore`, `window.frame.set`, `window.debug_info`
+///   `window.activate`, `window.state`, `window.manage`, `window.restore`, `window.frame.set`, `window.debug_info`,
+///   `window.claim`
 /// - `system.permissions.tcc`,
 ///   `system.permissions.tcc.accessibility`,
 ///   `system.permissions.tcc.screen_recording`
@@ -971,6 +972,8 @@ pub fn default_capabilities_for(tool_name: &str) -> Vec<String> {
         "list_windows" => &["window.list"],
         "bring_to_front" => &["window.activate"],
         "set_window_frame" => &["window.frame.set"],
+        "claim_window" => &["window.claim"],
+        "release_window" => &["window.claim"],
         "debug_window_info" => &["window.debug_info"],
 
         // ── permissions / config ─────────────────────────────────────
@@ -3674,8 +3677,15 @@ fn requires_desktop_coordination(tool: &str, args: &Value, independent_lane: boo
     }
     // Only an implementation-attested, exact-window background route can
     // leave the shared lane. Explicit desktop and foreground calls never do.
-    let exact_background_window = args["pid"].as_u64().is_some_and(|pid| pid > 0)
-        && args["window_id"].as_u64().is_some_and(|id| id > 0)
+    // The window is named flat or as a window target (`target: {kind: "window", ...}`).
+    let exact = |key: &str| {
+        args.get(key)
+            .or_else(|| args.pointer(&format!("/target/{key}")))
+            .and_then(Value::as_u64)
+            .is_some_and(|value| value > 0)
+    };
+    let exact_background_window = exact("pid")
+        && exact("window_id")
         && args["scope"] != "desktop"
         && args.pointer("/target/kind").and_then(Value::as_str) != Some("desktop")
         && args["delivery_mode"] != "foreground"
@@ -7701,6 +7711,8 @@ mod capability_tests {
         "restore_window",
         "manage_window",
         "set_window_frame",
+        "claim_window",
+        "release_window",
         "debug_window_info",
         // permissions / config
         "check_permissions",
@@ -7793,6 +7805,7 @@ mod capability_tests {
         "window.restore",
         "window.frame.set",
         "window.debug_info",
+        "window.claim",
         // permissions
         "system.permissions.tcc",
         "system.permissions.tcc.accessibility",

@@ -159,26 +159,70 @@ pub fn post_click(root: u64, x: i32, y: i32, count: usize, button: &str) -> Resu
     // Find deepest child and its local client coordinates.
     let (target, client) = deepest_child(root_hwnd, screen_pt);
 
-    post_click_on(target, client.x, client.y, count, button)
+    post_click_on(target, client.x, client.y, count, button, &[])
 }
 
 /// Post a click at **screen** coordinates, resolving the deepest child of
 /// `root_hwnd` at that point.  Call this when you already have screen coords.
-pub fn post_click_screen(root: u64, sx: i32, sy: i32, count: usize, button: &str) -> Result<()> {
+/// `modifiers` (ctrl, shift, alt, win) are held in the target thread's key state.
+pub fn post_click_screen(
+    root: u64,
+    sx: i32,
+    sy: i32,
+    count: usize,
+    button: &str,
+    modifiers: &[&str],
+) -> Result<()> {
     let root_hwnd = HWND(root as *mut _);
     let screen_pt = POINT { x: sx, y: sy };
     let (target, client) = deepest_child(root_hwnd, screen_pt);
-    post_click_on(target, client.x, client.y, count, button)
+    post_click_on(target, client.x, client.y, count, button, modifiers)
+}
+
+/// Prefix of the error when posted pointer input cannot reach the window at the point.
+pub(crate) const POINTER_SURFACE_UNAVAILABLE: &str = "background_pointer_surface_unavailable";
+
+/// XAML islands and UWP frames ignore posted pointer messages: their input stack
+/// reads pointer input only from the system queue (LPT-1846: Notepad's menu bar,
+/// Explorer's command bar, Paint's canvas, Windows Terminal, Calculator buttons).
+/// Their elements still take UIA patterns, and keys posted to their input site.
+fn refuses_posted_pointer(hwnd: HWND) -> Result<()> {
+    let class = crate::input::delivery::read_class_name(hwnd.0 as u64);
+    let island = class.ends_with("DesktopChildSiteBridge")
+        || class.ends_with("DesktopWindowContentBridge")
+        || matches!(
+            class.as_str(),
+            "InputSiteWindowClass"
+                | "Windows.UI.Input.InputSite.WindowClass"
+                | "Windows.UI.Core.CoreWindow"
+                | "ApplicationFrameWindow"
+                | "ApplicationFrameInputSinkWindow"
+        );
+    if island {
+        bail!(
+            "{POINTER_SURFACE_UNAVAILABLE}: the point is on a XAML or UWP surface ({class}), which \
+             ignores pointer input sent to its window; nothing was sent"
+        );
+    }
+    Ok(())
 }
 
 /// Internal: post click messages to `hwnd` using its own client coordinates.
-fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Result<()> {
+fn post_click_on(
+    hwnd: HWND,
+    x: i32,
+    y: i32,
+    count: usize,
+    button: &str,
+    modifiers: &[&str],
+) -> Result<()> {
     // UIPI check — Medium-IL daemon → High-IL target silently drops mouse
     // messages just like keyboard ones. Surface an actionable error before
     // PostMessage returns its misleading TRUE. See post_message_blocked_by_uipi.
     if let Some(msg) = crate::input::post_message_blocked_by_uipi(hwnd.0 as u64) {
         anyhow::bail!(msg);
     }
+    refuses_posted_pointer(hwnd)?;
 
     let (down_msg, double_msg, up_msg, mk_flag) = match button {
         "right" => (WM_RBUTTONDOWN, WM_RBUTTONDBLCLK, WM_RBUTTONUP, MK_RBUTTON),
@@ -186,8 +230,14 @@ fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Resu
         _ => (WM_LBUTTONDOWN, WM_LBUTTONDBLCLK, WM_LBUTTONUP, MK_LBUTTON),
     };
     let lparam = make_lparam(x, y);
-    let wdown = WPARAM(mk_flag as usize);
-    let wup = WPARAM(0);
+    let held_flags = crate::input::key_state::mouse_key_flags(modifiers);
+    let wdown = WPARAM(mk_flag as usize | held_flags);
+    let wup = WPARAM(held_flags);
+    let held: Vec<u16> = modifiers
+        .iter()
+        .flat_map(|m| crate::input::key_state::modifier_keys(m).iter().copied())
+        .collect();
+    let mut held = crate::input::key_state::HeldKeys::hold(hwnd, &held)?;
     let wants_double = unsafe { (GetClassLongPtrW(hwnd, GCL_STYLE) as u32 & CS_DBLCLKS.0) != 0 };
     let prev_fg = unsafe { GetForegroundWindow() };
     let target_root = unsafe {
@@ -209,7 +259,7 @@ fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Resu
         let suspended = SuspendedThread::suspend(hwnd).map_err(unavailable)?;
         let posted = unsafe {
             // WM_MOUSEMOVE first so hover state is correct before the click.
-            PostMessageW(hwnd, WM_MOUSEMOVE, WPARAM(0), lparam)
+            PostMessageW(hwnd, WM_MOUSEMOVE, wup, lparam)
                 // Win32 controls do not infer a double-click from two posted DOWN
                 // messages. The second press must use WM_*BUTTONDBLCLK.
                 .and_then(|()| PostMessageW(hwnd, press_msg, wdown, lparam))
@@ -223,6 +273,11 @@ fn post_click_on(hwnd: HWND, x: i32, y: i32, count: usize, button: &str) -> Resu
             sleep(Duration::from_millis(80));
         }
     }
+    // Held modifiers go up once the target processed the clicks.
+    if let Some(keys) = held.as_mut() {
+        keys.posted(3 * count);
+    }
+    drop(held);
     sleep(Duration::from_millis(50));
     unsafe {
         if !prev_fg.0.is_null()
@@ -309,6 +364,7 @@ pub fn post_drag_screen(
     duration_ms: u64,
     steps: usize,
     button: &str,
+    modifiers: &[&str],
 ) -> Result<()> {
     let root_hwnd = HWND(root as *mut _);
     let (target, c_from) = deepest_child(
@@ -325,26 +381,40 @@ pub fn post_drag_screen(
     if let Some(msg) = crate::input::post_message_blocked_by_uipi(target.0 as u64) {
         anyhow::bail!(msg);
     }
+    refuses_posted_pointer(target)?;
     let (down_msg, up_msg, mk_flag) = match button {
         "right" => (WM_RBUTTONDOWN, WM_RBUTTONUP, MK_RBUTTON),
         "middle" => (WM_MBUTTONDOWN, WM_MBUTTONUP, MK_MBUTTON),
         _ => (WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON),
     };
-    let wparam = WPARAM(mk_flag as usize);
+    let held_flags = crate::input::key_state::mouse_key_flags(modifiers);
+    let wparam = WPARAM(mk_flag as usize | held_flags);
+    let wfree = WPARAM(held_flags);
     let steps = steps.max(1);
     let step_delay_ms = if steps > 1 {
         duration_ms / steps as u64
     } else {
         duration_ms
     };
+    let held: Vec<u16> = modifiers
+        .iter()
+        .flat_map(|m| crate::input::key_state::modifier_keys(m).iter().copied())
+        .collect();
+    let mut held = crate::input::key_state::HeldKeys::hold(target, &held)?;
+    let prev_fg = unsafe { GetForegroundWindow() };
+    let target_root = unsafe {
+        let root = GetAncestor(target, GA_ROOT);
+        if root.0.is_null() {
+            target
+        } else {
+            root
+        }
+    };
+    // An app that recently had real input may activate itself on a posted press.
+    let _noact = crate::input::NoActivateGuard::arm(target);
     unsafe {
-        // Pre-drag MOUSEMOVE (wParam=0, no buttons down yet) then DOWN at from.
-        PostMessageW(
-            target,
-            WM_MOUSEMOVE,
-            WPARAM(0),
-            make_lparam(c_from.x, c_from.y),
-        )?;
+        // Pre-drag MOUSEMOVE (no buttons down yet) then DOWN at from.
+        PostMessageW(target, WM_MOUSEMOVE, wfree, make_lparam(c_from.x, c_from.y))?;
         PostMessageW(target, down_msg, wparam, make_lparam(c_from.x, c_from.y))?;
     }
     sleep(Duration::from_millis(CLICK_DELAY_MS));
@@ -360,8 +430,54 @@ pub fn post_drag_screen(
         }
     }
     unsafe {
-        PostMessageW(target, up_msg, WPARAM(0), make_lparam(c_to.x, c_to.y))?;
+        PostMessageW(target, up_msg, wfree, make_lparam(c_to.x, c_to.y))?;
     }
+    if let Some(keys) = held.as_mut() {
+        keys.posted(steps + 3);
+    }
+    drop(held);
+    sleep(Duration::from_millis(50));
+    unsafe {
+        if !prev_fg.0.is_null()
+            && prev_fg != target_root
+            && GetForegroundWindow() == target_root
+            && !crate::focus_return::has_unconfirmed_input()
+        {
+            crate::input::force_foreground_attached(prev_fg);
+            sleep(Duration::from_millis(12));
+            crate::input::force_foreground_attached(prev_fg);
+        }
+    }
+    Ok(())
+}
+
+/// Post wheel notches at a **screen** point to the deepest child of `root` there.
+/// Positive `delta_y` scrolls content down, positive `delta_x` scrolls right, as in
+/// `scroll_at`. The vertical axis goes first. The pointer and the foreground stay.
+pub fn post_wheel_screen(root: u64, sx: i32, sy: i32, delta_x: i32, delta_y: i32) -> Result<()> {
+    use windows::Win32::UI::WindowsAndMessaging::{WM_MOUSEHWHEEL, WM_MOUSEWHEEL};
+    const WHEEL_DELTA: i32 = 120;
+    let root_hwnd = HWND(root as *mut _);
+    let (target, _) = deepest_child(root_hwnd, POINT { x: sx, y: sy });
+    if let Some(msg) = crate::input::post_message_blocked_by_uipi(target.0 as u64) {
+        anyhow::bail!(msg);
+    }
+    refuses_posted_pointer(target)?;
+    // Wheel messages carry screen coordinates.
+    let lparam = make_lparam(sx, sy);
+    let wheel = |message: u32, notches: i32, step: i32| -> Result<()> {
+        for _ in 0..notches.unsigned_abs() {
+            let delta = (step * notches.signum()) as i16 as u16 as usize;
+            unsafe {
+                PostMessageW(target, message, WPARAM(delta << 16), lparam)?;
+            }
+            sleep(Duration::from_millis(10));
+        }
+        Ok(())
+    };
+    // Windows counts a wheel turn away from the user (content up) as positive.
+    wheel(WM_MOUSEWHEEL, delta_y, -WHEEL_DELTA)?;
+    wheel(WM_MOUSEHWHEEL, delta_x, WHEEL_DELTA)?;
     Ok(())
 }
 

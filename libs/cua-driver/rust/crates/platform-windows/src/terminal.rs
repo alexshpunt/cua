@@ -74,6 +74,10 @@ pub(crate) fn type_text_policy_for_class(
 ) -> TypeTextPolicy {
     if windows_arm64 && class_name.starts_with("ConsoleWindowClass") {
         TypeTextPolicy::Unsupported
+    } else if class_name.starts_with("CASCADIA_HOSTING_WINDOW_CLASS") {
+        // Windows Terminal's UI is one XAML island: WM_CHAR posted to its input
+        // site reaches the shell (LPT-1846), and the posting path targets it.
+        TypeTextPolicy::Supported
     } else if class_matches_terminal(class_name) && !foreground {
         TypeTextPolicy::ForegroundRequired
     } else {
@@ -220,8 +224,13 @@ mod tests {
     #[test]
     fn other_terminals_still_allow_foreground_delivery() {
         assert_eq!(
-            type_text_policy_for_class("CASCADIA_HOSTING_WINDOW_CLASS", false, true),
+            type_text_policy_for_class("mintty", false, true),
             TypeTextPolicy::ForegroundRequired
+        );
+        // Windows Terminal takes posted text on its XAML input site.
+        assert_eq!(
+            type_text_policy_for_class("CASCADIA_HOSTING_WINDOW_CLASS", false, true),
+            TypeTextPolicy::Supported
         );
         assert_eq!(
             type_text_policy_for_class("CASCADIA_HOSTING_WINDOW_CLASS", true, true),

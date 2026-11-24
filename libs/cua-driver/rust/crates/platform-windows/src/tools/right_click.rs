@@ -10,9 +10,9 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use super::impl_::{
-    bitmap_to_screen, chromium_click_short_circuit, element_target_rect, overlay_glide_to,
-    overlay_glide_to_target, pin_overlay_above, resolve_cursor_key,
-    resolve_onscreen_point_with_scroll, screenshot_scale, winui3_background_gesture, ToolState,
+    bitmap_to_screen, element_target_rect, overlay_glide_to, overlay_glide_to_target,
+    pin_overlay_above, resolve_cursor_key, resolve_onscreen_point_with_scroll, screenshot_scale,
+    winui3_background_gesture, ToolState,
 };
 
 // ── right_click ───────────────────────────────────────────────────────────────
@@ -43,8 +43,8 @@ impl Tool for RightClickTool {
                 child window at that point.\n\n\
                 Exactly one of `element_token` or (`x` AND `y`) must be provided. `pid` is \
                 required with `x`, `y`; an `element_token` carries its own pid. \
-                `modifier` is accepted for parity (no-op on Windows — PostMessage doesn't \
-                propagate modifier-key state).".into(),
+                `modifier` holds keys during the click: real keys in the foreground, the \
+                target thread's key state in the background.".into(),
             input_schema: json!({"type":"object","required":[],"properties":{
                 "session": cua_driver_core::tool_schema::session_schema(),
                 "pid":{"type":"integer","description":"Target process ID. Optional with element_token (the token carries the pid)."},
@@ -81,6 +81,9 @@ impl Tool for RightClickTool {
         let y = args.opt_f64("y");
         let delivery = DeliveryMode::from_args(&args);
         let cursor_key = resolve_cursor_key(&args);
+        // Held keys (ctrl, shift, alt, win): real keys in the foreground, the target
+        // thread's key state in the background.
+        let modifiers: Vec<String> = args.str_array("modifier");
         // Port Swift's full validation set.
         let has_xy = x.is_some() && y.is_some();
         let partial_xy = x.is_some() != y.is_some();
@@ -184,17 +187,14 @@ impl Tool for RightClickTool {
                 );
             }
             if delivery == DeliveryMode::Foreground {
+                let mods = modifiers.clone();
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
+                        let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
                         crate::input::send_click_synthesized_active_mods(
-                            hwnd,
-                            cx,
-                            cy,
-                            1,
-                            "right",
-                            &[],
+                            hwnd, cx, cy, 1, "right", &mods,
                         )
                     }
                 })
@@ -207,17 +207,13 @@ impl Tool for RightClickTool {
                     Err(e) => ToolResult::error(format!("Task error: {e}")),
                 };
             }
-            // Chromium/Electron silently drops PostMessage clicks (#1984) — route via SendInput.
-            if let Some(r) =
-                chromium_click_short_circuit(hwnd, cx, cy, 1, "right", pid, "right-click").await
-            {
-                return r;
-            }
+            let mods = modifiers.clone();
             let result = tokio::task::spawn_blocking({
                 let admitted = admitted.clone();
                 move || -> anyhow::Result<String> {
                     let _admission = &admitted;
-                    crate::input::post_click_screen(hwnd, cx, cy, 1, "right")?;
+                    let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
+                    crate::input::post_click_screen(hwnd, cx, cy, 1, "right", &mods)?;
                     // Match Swift's element-path text 1:1
                     // (`"✅ Shown menu for [N] role \"title\"."`).  UIA role/title
                     // placeholder pending element-cache enrichment.
@@ -227,7 +223,9 @@ impl Tool for RightClickTool {
             .await;
             match result {
                 Ok(Ok(msg)) => ToolResult::text(msg),
-                Ok(Err(e)) => ToolResult::error(e.to_string()),
+                Ok(Err(e)) => {
+                    crate::input::delivery::posted_input_error(hwnd, EventKind::MouseClick, e)
+                }
                 Err(e) => ToolResult::error(format!("Task error: {e}")),
             }
         } else if let (Some(mut px), Some(mut py)) = (x, y) {
@@ -282,17 +280,14 @@ impl Tool for RightClickTool {
                 );
             }
             if delivery == DeliveryMode::Foreground {
+                let mods = modifiers.clone();
                 let send_result = tokio::task::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
+                        let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
                         crate::input::send_click_synthesized_active_mods(
-                            hwnd,
-                            sx_i,
-                            sy_i,
-                            1,
-                            "right",
-                            &[],
+                            hwnd, sx_i, sy_i, 1, "right", &mods,
                         )
                     }
                 })
@@ -306,17 +301,13 @@ impl Tool for RightClickTool {
                 };
             }
             let (xi, yi) = (px as i32, py as i32);
-            // Chromium/Electron silently drops PostMessage clicks (#1984) — route via SendInput.
-            if let Some(r) =
-                chromium_click_short_circuit(hwnd, sx_i, sy_i, 1, "right", pid, "right-click").await
-            {
-                return r;
-            }
+            let mods = modifiers.clone();
             let result = tokio::task::spawn_blocking({
                 let admitted = admitted.clone();
                 move || {
                     let _admission = &admitted;
-                    crate::input::post_click_screen(hwnd, sx_i, sy_i, 1, "right")
+                    let mods: Vec<&str> = mods.iter().map(String::as_str).collect();
+                    crate::input::post_click_screen(hwnd, sx_i, sy_i, 1, "right", &mods)
                 }
             })
             .await;
@@ -326,7 +317,9 @@ impl Tool for RightClickTool {
                     ToolResult::text(format!(
                         "✅ Posted right-click to pid {pid} at window-pixel ({xi}, {yi}) → screen-point ({sx_i}, {sy_i})."))
                 }
-                Ok(Err(e)) => ToolResult::error(e.to_string()),
+                Ok(Err(e)) => {
+                    crate::input::delivery::posted_input_error(hwnd, EventKind::MouseClick, e)
+                }
                 Err(e) => ToolResult::error(format!("Task error: {e}")),
             }
         } else {

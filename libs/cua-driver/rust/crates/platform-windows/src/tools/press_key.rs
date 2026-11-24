@@ -356,7 +356,7 @@ impl Tool for PressKeyTool {
                                with delivery_mode:\"foreground\" if a screenshot shows the key didn't land."
                 },
             })),
-            Ok(Err(e)) => ToolResult::error(e.to_string()),
+            Ok(Err(e)) => crate::input::delivery::posted_input_error(hwnd, event_kind, e),
             Err(e) => ToolResult::error(format!("Task error: {e}")),
         }
     }

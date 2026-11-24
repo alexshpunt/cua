@@ -109,11 +109,12 @@ impl ToolInput for PointerMoveInput {
     }
 }
 
-/// Only native motion is a successful route for this tool.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+/// Native OS input, or (scroll_at in the background) wheel messages posted to the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PointerMoveRoute {
     Native,
+    Posted,
 }
 
 /// Native delivery never claims a verified tooltip or other application effect.
@@ -123,11 +124,12 @@ pub enum PointerMoveEffect {
     Unverifiable,
 }
 
-/// The first Windows implementation supports only explicit foreground delivery.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
+/// Foreground system input, or (scroll_at only) background messages to the window.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PointerMoveDelivery {
     Foreground,
+    Background,
 }
 
 /// Successful native delivery plus measured effects; null means measurement unavailable.

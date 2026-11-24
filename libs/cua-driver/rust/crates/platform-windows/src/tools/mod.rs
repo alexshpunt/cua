@@ -74,6 +74,8 @@ mod type_text;
 #[cfg(target_os = "windows")]
 mod type_text_chars;
 #[cfg(target_os = "windows")]
+mod window_claims;
+#[cfg(target_os = "windows")]
 mod zoom;
 
 pub(crate) mod displays;

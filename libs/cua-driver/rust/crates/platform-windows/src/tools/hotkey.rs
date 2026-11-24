@@ -35,30 +35,22 @@ impl Tool for HotkeyTool {
         HOTKEY_DEF.get_or_init(|| ToolDef {
             name: "hotkey".into(),
             // Description ported from Swift `HotkeyTool.swift` with the
-            // Windows-specific dispatch (UIA accelerator for XAML; SendInput
-            // for legacy Win32 with modifiers per #1614 / #1618; PostMessage
-            // for modifier-less keys).
+            // Windows-specific dispatch (posted keys with thread key state in the
+            // background, SendInput in the foreground).
             description: "Press a combination of keys simultaneously — e.g. `[\"ctrl\", \"c\"]` \
-                for Copy, `[\"ctrl\", \"shift\", \"t\"]` for reopen-closed-tab. Dispatch is \
-                target-aware:\n\n\
-                - **Modern XAML / WinUI / UWP targets** route through UI Automation: the driver \
-                walks the target's accessibility subtree, finds a descendant whose AcceleratorKey \
-                matches the combo, and invokes it. No focus steal, no system-queue input.\n\n\
-                - **Legacy Win32 targets with modifiers** (Ctrl+S, Alt+Tab, etc.) route through \
-                `SendInput` against the system input queue, with a brief `SetForegroundWindow` \
-                swap so the events land on the target. This path is necessary because \
-                PostMessage(WM_KEYDOWN, VK_CONTROL) does NOT update the OS-wide modifier state \
-                visible to `GetKeyState` / `TranslateAccelerator`, so Win32 apps that bind \
-                accelerators via `TranslateAccelerator` (LibreOffice, FAR, classic Notepad, etc.) \
-                never see the combo as a real accelerator on the PostMessage-only path. \
-                Foreground return requires supported receiver-read evidence for every inserted \
-                event and no older unconfirmed input; otherwise the target stays in front. \
-                Windows can deny activation under foreground-lock or integrity rules. \
-                Any unconfirmed activation input also prevents automatic foreground return.\n\n\
-                - **Legacy Win32 targets without modifiers** (plain `enter`, `tab`, `f5`, etc.) \
-                route through `PostMessage(WM_KEYDOWN/UP)` — no focus steal, no need to update \
-                modifier state.\n\n\
-                The target does NOT need to be frontmost in any branch.\n\n\
+                for Copy, `[\"ctrl\", \"shift\", \"t\"]` for reopen-closed-tab. Dispatch:\n\n\
+                - **delivery_mode:\"background\"** (default) posts the key to the target's \
+                keyboard window (its focused child, a XAML island's input site, a Chromium \
+                frame) and holds the modifiers in the target thread's key state, so \
+                `GetKeyState` and `TranslateAccelerator` see the chord. No focus steal; the \
+                global keyboard state and the foreground stay. A key that opens a Win32 menu \
+                loop is closed again and reported as background_unavailable.\n\n\
+                - **delivery_mode:\"foreground\"** routes through `SendInput` against the \
+                system input queue, with a brief `SetForegroundWindow` swap so the events land \
+                on the target. Foreground return requires supported receiver-read evidence for \
+                every inserted event and no older unconfirmed input; otherwise the target stays \
+                in front. Windows can deny activation under foreground-lock or integrity rules.\n\n\
+                The target does NOT need to be frontmost in the background.\n\n\
                 **`window_id`** (optional): explicit HWND when the pid owns more than one \
                 window; otherwise the pid's first visible window is used.\n\n\
                 Recognized modifiers: ctrl/control, shift, alt, win/windows. Non-modifier \
@@ -219,9 +211,8 @@ impl Tool for HotkeyTool {
         let key_display = full_keys.join("+");
 
         // px form: pixel-click to focus, then the combo acts on the focused field
-        // (e.g. Ctrl+V into a Chromium input). A background pixel focus does not
-        // make Chromium's modifier PostMessage path reliable, so it still goes
-        // through the capability guard below; foreground remains explicit.
+        // (e.g. Ctrl+V into a Chromium input). A background focus click is posted
+        // like any background click; the chord follows on the posted route.
         let px_focus = {
             let px = args.get("x").and_then(|v| v.as_f64());
             let py = args.get("y").and_then(|v| v.as_f64());
@@ -266,92 +257,28 @@ impl Tool for HotkeyTool {
             position_keyboard_cursor(&self.state, &args, hwnd, element_center).await;
         }
 
-        if !px_focus && crate::input::is_xaml_host_hwnd(hwnd) {
-            let mut accelerator_keys = mods.clone();
-            accelerator_keys.push(key.clone());
-            let accelerator_combo = accelerator_keys.join("+");
-            let key_display_for_result = key_display.clone();
-            // UIA cross-process subtree walks can wedge on a bad provider —
-            // bound the call so a hung provider returns an error instead of
-            // blocking the daemon indefinitely. 4 s matches the budget
-            // `get_window_state.rs` uses for similar UIA scans (`UIA_SCREENSHOT_TIMEOUT`).
-            let result = tokio::task::spawn_blocking({
-                let admitted = admitted.clone();
-                move || {
-                    let _admission = &admitted;
-                    crate::uia::windows_enum::try_invoke_accelerator_in_window(
-                        hwnd as isize,
-                        &accelerator_combo,
-                    )
-                }
-            })
-            .await;
-            return match result {
-                Ok(Ok((true, _))) => ToolResult::text(format!(
-                    "✅ Pressed {key_display_for_result} on pid {raw_pid} via UIA \
-                     InvokePattern/TogglePattern (XAML / UWP target)."
-                )),
-                Ok(Ok((false, scanned))) => ToolResult::error(format!(
-                    "hotkey on a modern XAML / UWP target (pid {raw_pid}, hwnd {hwnd}) \
-                     could not find a UIA AcceleratorKey or `(Ctrl+X)`-style name hint \
-                     matching `{key_display_for_result}` (scanned {scanned} element(s)). \
-                     PostMessage WM_KEYDOWN/UP is ignored by this target's input pipeline. \
-                     Common cause: the action is nested behind a closed menu (e.g. modern \
-                     Notepad's Save under the File menu) — its element isn't in the visible \
-                     subtree until the menu is opened. Call \
-                     `get_window_state(pid={raw_pid}, window_id={hwnd})` to inspect available \
-                     UIA actions, then use an exposed accelerator or `click` the matching \
-                     element directly."
-                )),
-                Ok(Err(e)) => ToolResult::error(format!("hotkey (UIA path): {e}")),
-                Err(e) => ToolResult::error(format!("Task error: {e}")),
-            };
-        }
-
-        // Non-XAML target. Three routing decisions:
-        //   1. PostMessage WM_KEYDOWN/UP — no foreground swap, no focus
-        //      theft. Modifier state is encoded in the LPARAM bits, not
-        //      in GetKeyState, so apps that read modifier state directly
-        //      from the message (Chromium's `Browser::HandleKeyboardEvent`,
-        //      Chromium renderer's input handler, every web app) see
-        //      Ctrl+X correctly. Apps that consult `GetKeyState` via
-        //      `TranslateAccelerator` (LibreOffice, FAR, classic Notepad)
-        //      DON'T fire the accelerator — the modifier looks unset to
-        //      them.
-        //   2. SendInput synthesized hotkey — pushes events onto the
-        //      *system input queue*. Updates GetKeyState system-wide, so
-        //      TranslateAccelerator-based apps see Ctrl+S as a real
-        //      accelerator. Trade-off: brief foreground swap so SendInput
-        //      lands on the right HWND. **This is the only path that
-        //      violates the no-foreground contract** — we minimise its
-        //      use to apps that genuinely require it.
-        //
-        // Routing:
-        //   - No modifiers → PostMessage (no accelerator concern).
-        //   - Modifiers + Chromium-family target → PostMessage. Chromium
-        //     processes accelerators in `Browser::HandleKeyboardEvent`,
-        //     which reads modifier state from the WM_KEYDOWN LPARAM
-        //     directly (not via GetKeyState). Every Chromium browser
-        //     (Chrome/Edge/Brave/Arc/Vivaldi) AND every Electron app
-        //     (Slack/VS Code/Discord/Teams/Notion) detects as Chromium
-        //     via `is_chromium_target_window` and gets the no-foreground
-        //     path.
-        //   - Modifiers + non-Chromium Win32 → SendInput (the
-        //     TranslateAccelerator path). The foreground swap stays.
+        // Routing decisions:
+        //   1. Background: PostMessage WM_KEYDOWN/UP to the keyboard target (the
+        //      focused child, a XAML island's input site, Chromium's top-level
+        //      window), with the modifiers held in the target thread's key state
+        //      so GetKeyState and TranslateAccelerator see the chord (LPT-1846).
+        //      No foreground swap, no focus theft, global key state untouched.
+        //   2. Foreground: SendInput synthesized hotkey on the system input
+        //      queue, with a brief foreground swap.
         let has_modifiers = !mods.is_empty();
         // delivery_mode:"background" — refuse if PostMessage of the key combo
-        // would be silently dropped on this target (Chromium with modifiers).
+        // would be silently dropped on this target (see the class table in
+        // `input::delivery::would_be_silently_dropped`).
         let event_kind = if has_modifiers {
             EventKind::KeyCombo
         } else {
             EventKind::Keystroke
         };
         if delivery == DeliveryMode::Background
-            && (px_focus || crate::input::delivery::would_be_silently_dropped(hwnd, event_kind))
+            && crate::input::delivery::would_be_silently_dropped(hwnd, event_kind)
         {
             // macOS-aligned: a `background` hotkey never fronts. This combo would
-            // be silently dropped (VCL/classic-Win32 TranslateAccelerator, or
-            // Chromium key-combos) and only a foreground/focus grab lands it —
+            // be silently dropped and only a foreground/focus grab lands it —
             // which background must not do. Surface background_unavailable; the
             // agent escalates to delivery_mode:"foreground".
             return crate::input::delivery::background_unavailable_error(hwnd, event_kind);
@@ -361,10 +288,6 @@ impl Tool for HotkeyTool {
         // reaches here means the key combo is NOT silently dropped on this
         // target (the drop-check above returned early otherwise), so it stays
         // on PostMessage and the no-foreground contract holds.
-        // Foreground is an explicit request for system-queue delivery. This is
-        // still required after a PX focus click: PostMessage does not update
-        // global modifier state, so Chromium never observes Ctrl+Shift+H as a
-        // chord even though the renderer control is focused.
         let use_send_input = delivery == DeliveryMode::Foreground;
         let focus_target = elem_idx.map(|idx| {
             let point = admitted.as_ref().map(|element| element.center);
@@ -411,7 +334,8 @@ impl Tool for HotkeyTool {
                     result
                 }
             }
-            Ok(Err(e)) => crate::typing_turn::foreground_input_error(e),
+            Ok(Err(e)) if use_send_input => crate::typing_turn::foreground_input_error(e),
+            Ok(Err(e)) => crate::input::delivery::posted_input_error(hwnd, event_kind, e),
             Err(e) => ToolResult::error(format!("Task error: {e}")),
         }
     }
