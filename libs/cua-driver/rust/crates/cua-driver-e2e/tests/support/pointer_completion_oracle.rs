@@ -348,7 +348,9 @@ fn harness_wpf_legacy_click_keeps_unread_pointer_at_target() {
 #[test]
 #[ignore]
 fn harness_wpf_straight_drag_keeps_unread_release_at_target() {
-    run_pointer_owner("straight_drag_unread_posture", 1200, "down", |pair| {
+    // The receiver stays busy past the release witness's one-second timeout, so the
+    // release is still unread when the drag returns.
+    run_pointer_owner("straight_drag_unread_posture", 3000, "down", |pair| {
         let (from_x, from_y) = pair.local_point(0.25);
         let (to_x, to_y) = pair.local_point(0.75);
         // No `via`: this must exercise the legacy straight-drag actuator,
@@ -390,6 +392,23 @@ fn harness_wpf_legacy_wheel_keeps_pointer_over_busy_receiver() {
     run_pointer_owner("legacy_wheel_unread_posture", 1200, "wheel", |pair| {
         let initial = pair.click(0.25);
         assert!(!initial.is_error(), "{}", initial.text());
+        // The receiver read that click, so focus return gave the human window the
+        // foreground back. The legacy foreground wheel does not activate its target:
+        // bring the target to the front so the wheel lands on it.
+        assert_eq!(
+            foreground(),
+            pair.human_wid,
+            "a read click returns the foreground"
+        );
+        let _ = pair.driver.call(
+            "bring_to_front",
+            serde_json::json!({"pid": pair.target_pid, "window_id": pair.target_wid}),
+        );
+        assert_eq!(
+            foreground(),
+            pair.target_wid,
+            "target is in front for the wheel"
+        );
         let (x, y) = pair.local_point(0.75);
         let response = pair.driver.call(
             "scroll",
