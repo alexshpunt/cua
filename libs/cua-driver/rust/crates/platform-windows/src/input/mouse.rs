@@ -1118,7 +1118,7 @@ pub fn send_drag_synthesized(
     steps: usize,
     button: &str,
     modifiers: &[&str],
-) -> Result<()> {
+) -> Result<cua_driver_core::protocol::InputReadCompletion> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(target as *mut _);
     if target.0.is_null() {
@@ -1181,9 +1181,6 @@ pub fn send_drag_synthesized(
             },
         },
     };
-    let send = |input: INPUT| unsafe {
-        send_unconfirmed_input(&[input], std::mem::size_of::<INPUT>() as i32) == 1
-    };
     let release_modifiers =
         || crate::input::keyboard::release_inserted_keys(&mod_downs, mod_downs.len());
 
@@ -1197,29 +1194,47 @@ pub fn send_drag_synthesized(
     }
     // Only the press point matters: the window that takes the press captures the moves.
     crate::input::occlusion::check_point(target.0 as usize as u64, sx_from, sy_from)?;
+    // Input is read in order, so a release seen read means every move before it was read.
+    let mut witness = ClickWitness::start(
+        true,
+        button,
+        modifiers
+            .iter()
+            .filter_map(|name| {
+                crate::input::key_state::modifier_keys(name)
+                    .first()
+                    .copied()
+            })
+            .collect(),
+    );
+    let send = |witness: &mut ClickWitness, input: INPUT| witness.insert(&[input]) == 1;
     // Hold the modifiers before the press.
     if !mod_downs.is_empty() {
-        let sent =
-            unsafe { send_unconfirmed_input(&mod_downs, std::mem::size_of::<INPUT>() as i32) };
+        let sent = witness.insert(&mod_downs);
         if sent as usize != mod_downs.len() {
             let _ = crate::input::keyboard::release_inserted_keys(&mod_downs, sent as usize);
+            witness.give_up();
             bail!(
                 "SendInput inserted {sent}/{} modifier key presses; no mouse input was sent",
                 mod_downs.len()
             );
         }
+        witness.await_modifiers(true);
         sleep(Duration::from_millis(5));
     }
     let (nfx, nfy) = norm(sx_from, sy_from);
-    if !send(make_input(nfx, nfy, MOUSEEVENTF_MOVE)) {
+    if !send(&mut witness, make_input(nfx, nfy, MOUSEEVENTF_MOVE)) {
         let _ = release_modifiers();
+        witness.give_up();
         bail!("SendInput did not insert the drag's first move; no button was pressed");
     }
     sleep(Duration::from_millis(30));
-    if !send(button_input(down_flag)) {
+    if !send(&mut witness, button_input(down_flag)) {
         let _ = release_modifiers();
+        witness.give_up();
         bail!("SendInput did not insert the drag's button press");
     }
+    witness.await_button(true);
     sleep(Duration::from_millis(30));
     let mut moves_ok = true;
     let mut cursor_at = (sx_from, sy_from);
@@ -1228,7 +1243,7 @@ pub fn send_drag_synthesized(
         let x = sx_from + ((sx_to - sx_from) as f64 * t).round() as i32;
         let y = sy_from + ((sy_to - sy_from) as f64 * t).round() as i32;
         let (nx, ny) = norm(x, y);
-        if !send(make_input(nx, ny, MOUSEEVENTF_MOVE)) {
+        if !send(&mut witness, make_input(nx, ny, MOUSEEVENTF_MOVE)) {
             moves_ok = false;
             break;
         }
@@ -1238,11 +1253,22 @@ pub fn send_drag_synthesized(
         }
     }
     // Always release, even after a failed move, so no button stays held.
-    let released = send(button_input(up_flag)) || send(button_input(up_flag));
+    let released =
+        send(&mut witness, button_input(up_flag)) || send(&mut witness, button_input(up_flag));
+    if released {
+        witness.await_button(false);
+    }
     // A target that samples live key state while handling the release still
     // sees the modifiers held; release them after the settle.
     sleep(Duration::from_millis(40));
     let modifiers_released = release_modifiers();
+    if modifiers_released && !mod_downs.is_empty() {
+        witness.await_modifiers(false);
+    }
+    if !released || !modifiers_released || !moves_ok {
+        witness.give_up();
+    }
+    let read = witness.finish();
     if !released {
         let (cx, cy) = cursor_at;
         bail!(
@@ -1259,7 +1285,7 @@ pub fn send_drag_synthesized(
     if !moves_ok {
         bail!("SendInput inserted fewer drag moves than expected; the button was released.");
     }
-    Ok(())
+    Ok(read)
 }
 
 /// Explicit-window entry point, with the same exact-target guards and physical
@@ -1275,7 +1301,7 @@ pub fn send_drag_synthesized_active(
     steps: usize,
     button: &str,
     modifiers: &[&str],
-) -> Result<()> {
+) -> Result<cua_driver_core::protocol::InputReadCompletion> {
     send_drag_synthesized(
         target,
         sx_from,

@@ -255,7 +255,7 @@ impl Tool for DragTool {
             let native_drag =
                 crate::activity::alongside_presentation(native_drag, visual_drag).await;
             return match native_drag {
-                Ok(Ok(())) => complete_held_input(
+                Ok(Ok(_)) => complete_held_input(
                     ToolResult::text(format!(
                         "Dragged from ({from_x}, {from_y}) to ({to_x}, {to_y}) (scope:desktop)."
                     ))
@@ -455,13 +455,14 @@ impl Tool for DragTool {
                 format!(" ({} button)", button)
             };
             return match send_result {
-                Ok(Ok(())) => complete_held_input(
+                // Drained when the target was seen reading the press and the release.
+                Ok(Ok(read)) => complete_held_input(
                     ToolResult::text(format!(
                         "✅ Sent drag{button_suffix} via SendInput on pid {raw_pid} \
                          from screen ({sx_from},{sy_from}) → ({sx_to},{sy_to}) \
                          in {duration_ms}ms / {steps} steps (delivery_mode:foreground)."
                     )),
-                    crate::typing_turn::TypingTurn::Unobservable,
+                    read,
                 ),
                 Ok(Err(e)) => complete_held_input(
                     crate::input::occlusion::input_error(e),
