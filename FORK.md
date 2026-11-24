@@ -2,7 +2,7 @@
 
 This fork integrates the full upstream [trycua/cua](https://github.com/trycua/cua) history through Cua Driver 0.52.0 (upstream `main` at `ca6a6434`) while retaining the Windows Cua Driver extensions used by [Pi Agent Computer Use](https://github.com/alexshpunt/pi-agent-computer-use). Upstream code retains its original authorship and license.
 
-The current source of Pi Agent Computer Use selects Windows Cua Driver 0.52.0 built from commit `9dd83311e1521d60b578ee942ae9fe47c90dab54`, attached to the [`pi-runtime-0.52.0-9dd83311` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.52.0-9dd83311). These unsigned AMD64 binaries were built on GitHub's Windows runner with a static CRT. The package pins and checks the SHA-256 of every file before starting the driver. This does not establish UIAccess deployment, elevated/UWP support or physical display coverage.
+The current source of Pi Agent Computer Use selects Windows Cua Driver 0.52.0 built from commit `0cd994cb4a0516418fc7ba92b3ca08106fdc82c5`, attached to the [`pi-runtime-0.52.0-0cd994cb` release](https://github.com/alexshpunt/cua/releases/tag/pi-runtime-0.52.0-0cd994cb). These unsigned AMD64 binaries were built on GitHub's Windows runner with a static CRT. The package pins and checks the SHA-256 of every file before starting the driver. This does not establish UIAccess deployment, elevated/UWP support or physical display coverage.
 
 Where upstream and the fork change the same behavior, this build keeps both:
 
@@ -47,7 +47,7 @@ The native macOS desktop matrix was not rerun for this build.
 ## Windows and displays
 
 - Restore a minimized window, and move, resize, minimize, maximize or focus an exact window, with a receipt of what actually changed. A resize may land up to 2 px away in width or height and still counts as done: Windows keeps a window that is not DPI aware in whole logical pixels on a scaled display, so some sizes are unreachable. Position and every other operation stay exact.
-- Focus activates a window while another app holds the foreground the same way input does, with a no-op key event that gives the driver foreground rights.
+- Focus activates a window while another app holds the foreground the same way input does: a null mouse input, which reaches no window, gives the driver foreground rights, with a no-op key event as the fallback. Only the key fallback counts as unconfirmed input, so the null mouse input does not stop focus return.
 - Read a selected display with its native topology, not only the primary one.
 - Report which virtual desktop a window belongs to.
 - Confirm that a window hasn't changed from its frame size instead of capturing it again before each capture-bound action.
