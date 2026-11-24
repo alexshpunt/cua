@@ -41,10 +41,10 @@ fn menu_refusal(message: String) -> ToolResult {
 
 /// Activate a window for a visible native-menu operation. Windows may reject
 /// the first foreground request after the test/user session has been idle even
-/// when we attach to the current foreground thread. A reserved no-name key has
-/// no application meaning but makes this process the owner of the most recent
-/// input, allowing a bounded retry without sending a real shortcut or text to
-/// whichever application currently has focus.
+/// when we attach to the current foreground thread. A null mouse input (or, as a
+/// fallback, a reserved no-name key pulse) makes this process the source of the
+/// most recent input, allowing a bounded retry without sending a real shortcut,
+/// text or pointer move to whichever application currently has focus.
 fn activate_window_for_menu(hwnd: windows::Win32::Foundation::HWND) -> Result<bool, String> {
     let (activated, assisted) = unsafe { crate::input::force_foreground_assisted(hwnd) };
     if activated {
@@ -144,7 +144,7 @@ impl Tool for InvokeMenuTool {
                         .into(),
                 })
                 .detail(if used_activation_retry {
-                    "target activation required a bounded reserved-key foreground-lock retry"
+                    "target activation required a bounded foreground-lock unlock and retry"
                 } else {
                     "target was already foreground or activated without a foreground-lock retry"
                 })
