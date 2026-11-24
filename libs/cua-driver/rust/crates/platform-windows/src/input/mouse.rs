@@ -664,7 +664,7 @@ pub fn send_click_synthesized_active_mods(
     count: usize,
     button: &str,
     modifiers: &[&str],
-) -> Result<Option<u64>> {
+) -> Result<ClickReceipt> {
     send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers)
 }
 
@@ -680,6 +680,131 @@ pub fn send_click_synthesized_desktop_mods(
     send_click_synthesized_mods_impl(target, sx, sy, count, button, modifiers).map(|_| ())
 }
 
+/// What a foreground click reports.
+#[derive(Clone, Copy, Debug)]
+pub struct ClickReceipt {
+    /// The window of the target's process that took the foreground when the click closed
+    /// the target, such as OK in a dialog.
+    pub after: Option<u64>,
+    /// `Drained` when the target's input thread was seen reading every inserted event.
+    pub read: cua_driver_core::protocol::InputReadCompletion,
+}
+
+/// How long one press or release may take to be read by the target.
+const CLICK_READ_TIMEOUT: Duration = Duration::from_millis(1000);
+
+/// Watches a foreground click being read by the target's input thread. Attached to that
+/// thread, the shared key state shows a mouse button or a modifier as down once the thread
+/// has read its press and as up once it has read its release. Events are inserted one phase
+/// at a time; when a phase is not seen in time, the rest of the click is unconfirmed input.
+struct ClickWitness {
+    attachment: Option<crate::input::keyboard::InputQueueAttachment>,
+    button: u16,
+    modifiers: Vec<u16>,
+    inserted: bool,
+}
+
+impl ClickWitness {
+    fn start(enabled: bool, button: &str, modifiers: Vec<u16>) -> Self {
+        use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LBUTTON, VK_MBUTTON, VK_RBUTTON};
+        use windows::Win32::UI::WindowsAndMessaging::SM_SWAPBUTTON;
+        // With swapped buttons, the physical left button is the logical right one.
+        let swapped = unsafe { GetSystemMetrics(SM_SWAPBUTTON) } != 0;
+        let button = match (button, swapped) {
+            ("middle", _) => VK_MBUTTON.0,
+            ("right", false) | ("left", true) => VK_RBUTTON.0,
+            ("right", true) => VK_LBUTTON.0,
+            _ => VK_LBUTTON.0,
+        };
+        let mut witness = Self {
+            attachment: None,
+            button,
+            modifiers,
+            inserted: false,
+        };
+        if !enabled {
+            return witness;
+        }
+        witness.attachment =
+            crate::input::keyboard::InputQueueAttachment::attach(unsafe { GetForegroundWindow() });
+        // A button or key that is already down cannot show this click's press.
+        let all_up = crate::input::keyboard::keyboard_state().is_some_and(|state| {
+            std::iter::once(witness.button)
+                .chain(witness.modifiers.iter().copied())
+                .all(|key| state[key as usize] & 0x80 == 0)
+        });
+        if !all_up {
+            witness.attachment = None;
+        }
+        witness
+    }
+
+    /// Insert events; without a working witness they are unconfirmed input.
+    fn insert(&mut self, events: &[INPUT]) -> u32 {
+        let size = std::mem::size_of::<INPUT>() as i32;
+        if self.attachment.is_none() {
+            return unsafe { send_unconfirmed_input(events, size) };
+        }
+        let sent = unsafe { SendInput(events, size) };
+        self.inserted |= sent > 0;
+        sent
+    }
+
+    fn await_keys(&mut self, keys: &[u16], down: bool) {
+        if self.attachment.is_none() || keys.is_empty() {
+            return;
+        }
+        let deadline = Instant::now() + CLICK_READ_TIMEOUT;
+        loop {
+            crate::input::keyboard::service_own_messages();
+            if let Some(state) = crate::input::keyboard::keyboard_state() {
+                if keys
+                    .iter()
+                    .all(|key| (state[*key as usize] & 0x80 != 0) == down)
+                {
+                    return;
+                }
+            }
+            if Instant::now() >= deadline {
+                self.give_up();
+                return;
+            }
+            sleep(Duration::from_millis(1));
+        }
+    }
+
+    fn await_button(&mut self, down: bool) {
+        let button = [self.button];
+        self.await_keys(&button, down);
+    }
+
+    fn await_modifiers(&mut self, down: bool) {
+        let modifiers = std::mem::take(&mut self.modifiers);
+        self.await_keys(&modifiers, down);
+        self.modifiers = modifiers;
+    }
+
+    /// The witness lost sight of the click: what it inserted is unconfirmed from now on.
+    fn give_up(&mut self) {
+        if self.attachment.take().is_some() && self.inserted {
+            crate::focus_return::note_unconfirmed_input();
+        }
+    }
+
+    fn finish(mut self) -> cua_driver_core::protocol::InputReadCompletion {
+        use cua_driver_core::protocol::InputReadCompletion;
+        let read = if self.attachment.is_some() && self.inserted {
+            InputReadCompletion::Drained
+        } else if self.inserted || self.attachment.is_none() {
+            InputReadCompletion::Unobservable
+        } else {
+            InputReadCompletion::NotSent
+        };
+        self.attachment = None;
+        read
+    }
+}
+
 fn send_click_synthesized_mods_impl(
     target: u64,
     sx: i32,
@@ -687,7 +812,7 @@ fn send_click_synthesized_mods_impl(
     count: usize,
     button: &str,
     modifiers: &[&str],
-) -> Result<Option<u64>> {
+) -> Result<ClickReceipt> {
     crate::human_input::check().map_err(anyhow::Error::msg)?;
     let target = HWND(target as *mut _);
     if target.0.is_null() {
@@ -798,12 +923,28 @@ fn send_click_synthesized_mods_impl(
         let (mod_downs, _) = crate::input::keyboard::modifier_hold_inputs(modifiers);
         // After the target is raised, a window still on top at the point would take the press.
         let occluded = crate::input::occlusion::check_point(target.0 as usize as u64, sx, sy).err();
+        // Read witness: attached to the target's input thread, its key state shows a button or a
+        // key as down once the thread has read the press, and as up once it has read the release.
+        // While every phase is seen, the inserted click is read and the foreground can go back.
+        let mut witness = ClickWitness::start(
+            occluded.is_none(),
+            button,
+            modifiers
+                .iter()
+                .filter_map(|name| {
+                    crate::input::key_state::modifier_keys(name)
+                        .first()
+                        .copied()
+                })
+                .collect(),
+        );
         let mut sent_ok = true;
         let mut held_modifiers = 0;
         if occluded.is_none() && !mod_downs.is_empty() {
-            let sent = send_unconfirmed_input(&mod_downs, std::mem::size_of::<INPUT>() as i32);
+            let sent = witness.insert(&mod_downs);
             held_modifiers = sent as usize;
             sent_ok = held_modifiers == mod_downs.len();
+            witness.await_modifiers(true);
             sleep(Duration::from_millis(5));
         }
 
@@ -826,18 +967,17 @@ fn send_click_synthesized_mods_impl(
                 if index > 0 {
                     sleep(Duration::from_millis(if index == 1 { 30 } else { 15 }));
                 }
-                let inserted = send_unconfirmed_input(
-                    std::slice::from_ref(event),
-                    std::mem::size_of::<INPUT>() as i32,
-                );
+                let inserted = witness.insert(std::slice::from_ref(event));
                 sent += inserted;
                 if inserted == 0 {
                     break;
                 }
                 if index == 1 {
                     button_held = true;
+                    witness.await_button(true);
                 } else if index == 2 {
                     button_held = false;
+                    witness.await_button(false);
                 }
             }
             if sent != 3 {
@@ -854,10 +994,14 @@ fn send_click_synthesized_mods_impl(
             let _ = send_unconfirmed_input(&[up_input], std::mem::size_of::<INPUT>() as i32);
         }
         sent_ok &= crate::input::keyboard::release_inserted_keys(&mod_downs, held_modifiers);
+        if held_modifiers > 0 {
+            witness.await_modifiers(false);
+        }
+        let read = witness.finish();
 
-        // SendInput success confirms insertion, not receiver retrieval. Keep
-        // pointer and foreground with the target: a timed restore can divert
-        // the queued release. The tool reports that the read is unobservable.
+        // SendInput success confirms insertion, not receiver retrieval. Without a
+        // complete read witness, pointer and foreground stay with the target: a
+        // timed restore can divert the queued release.
         if let Some(occluded) = occluded {
             return Err(occluded.into());
         }
@@ -875,10 +1019,17 @@ fn send_click_synthesized_mods_impl(
         loop {
             let actual = GetForegroundWindow().0 as usize as u64;
             if crate::win32::foreground_after_target_closed(snapshot, actual) {
-                return Ok(Some(actual));
+                // A successor window never supplies a restoration receipt.
+                if read == crate::typing_turn::TypingTurn::Drained {
+                    crate::focus_return::note_unconfirmed_input();
+                }
+                return Ok(ClickReceipt {
+                    after: Some(actual),
+                    read: crate::typing_turn::TypingTurn::Unobservable,
+                });
             }
             if crate::win32::foreground_matches_target_or_owned_window(snapshot, actual) {
-                return Ok(None);
+                return Ok(ClickReceipt { after: None, read });
             }
             if Instant::now() >= deadline {
                 bail!(
@@ -891,6 +1042,21 @@ fn send_click_synthesized_mods_impl(
             }
             sleep(Duration::from_millis(10));
         }
+    }
+}
+
+/// A foreground click's result with its receipt: the window that took the foreground
+/// (see [`note_foreground_after`]) and, when the target was seen reading every inserted
+/// event, the read evidence that lets focus return hand the foreground back.
+pub fn note_click_receipt(
+    result: cua_driver_core::protocol::ToolResult,
+    receipt: ClickReceipt,
+) -> cua_driver_core::protocol::ToolResult {
+    let result = note_foreground_after(result, receipt.after);
+    if receipt.read == cua_driver_core::protocol::InputReadCompletion::Drained {
+        crate::typing_turn::completion_result(result, receipt.read)
+    } else {
+        result
     }
 }
 

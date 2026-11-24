@@ -203,7 +203,7 @@ impl Tool for DoubleClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(ToolResult::text(format!(
                         "✅ Sent double-click via SendInput on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
                     )), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),
@@ -299,7 +299,7 @@ impl Tool for DoubleClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(ToolResult::text(format!(
                         "✅ Sent double-click via SendInput to pid {pid} at screen ({sx_i},{sy_i}) (delivery_mode:foreground)."
                     )), after),
                     Ok(Err(e)) => crate::input::occlusion::input_error(e),

@@ -1168,7 +1168,7 @@ pub(crate) fn service_own_messages() {
     let _ = unsafe { PeekMessageW(&mut message, None, 0, 0, PM_NOREMOVE) };
 }
 
-fn keyboard_state() -> Option<[u8; 256]> {
+pub(crate) fn keyboard_state() -> Option<[u8; 256]> {
     let mut state = [0u8; 256];
     unsafe { windows::Win32::UI::Input::KeyboardAndMouse::GetKeyboardState(&mut state) }
         .is_ok()

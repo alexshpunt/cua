@@ -616,7 +616,7 @@ impl Tool for ClickTool {
                 .await;
                 let half = if want_expand { "dropdown" } else { "press" };
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(
                         ToolResult::text(format!(
                         "✅ Performed SendInput click on MSAA [{idx}] {half} half at ({tx},{ty})."
                     ))
@@ -780,7 +780,7 @@ impl Tool for ClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(ToolResult::text(format!(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(ToolResult::text(format!(
                         "✅ Performed SendInput click on [{idx}] at screen ({cx},{cy}) (delivery_mode:foreground)."
                     ))
                     .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" })), after),
@@ -1154,7 +1154,7 @@ impl Tool for ClickTool {
                 })
                 .await;
                 return match send_result {
-                    Ok(Ok(after)) => crate::input::mouse::note_foreground_after(
+                    Ok(Ok(after)) => crate::input::mouse::note_click_receipt(
                         {
                             let click_word = match count {
                                 2 => "double-click",
