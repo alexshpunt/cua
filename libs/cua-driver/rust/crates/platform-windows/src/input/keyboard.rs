@@ -274,10 +274,72 @@ pub(crate) fn keyboard_target(root: HWND) -> HWND {
             return site;
         }
     }
-    descendant_of_class(root, is_input_site_class)
+    if let Some(focused) = focused {
+        return focused;
+    }
+    // No thread of the target has a focus window, which is the case after the app was in
+    // the foreground and lost it: Windows clears its thread focus. Keys then go to the
+    // window that holds the app's content, the largest visible child at each level: a
+    // document editor such as Notepad's RichEdit, or the input site of a XAML island that
+    // covers the window (Windows Terminal, Paint). Hidden and small islands such as a
+    // menu bar are skipped.
+    content_window(root)
         .or_else(|| descendant_of_class(root, |class| class == "Windows.UI.Core.CoreWindow"))
-        .or(focused)
         .unwrap_or(root)
+}
+
+/// The largest visible child at each level below `root`, ending at a window with no
+/// visible children, or at the input site of a XAML island bridge.
+fn content_window(root: HWND) -> Option<HWND> {
+    use windows::Win32::Foundation::RECT;
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, IsWindowVisible};
+    struct Children {
+        parent: HWND,
+        best: Option<(i64, HWND)>,
+    }
+    unsafe extern "system" fn visit(child: HWND, lparam: LPARAM) -> BOOL {
+        let search = &mut *(lparam.0 as *mut Children);
+        // Direct children only; EnumChildWindows walks the whole subtree.
+        if GetParent(child).ok() != Some(search.parent) || !IsWindowVisible(child).as_bool() {
+            return TRUE;
+        }
+        if class_name(child).is_some_and(|class| class == "InputNonClientPointerSource") {
+            return TRUE;
+        }
+        let mut rect = RECT::default();
+        if GetWindowRect(child, &mut rect).is_err() {
+            return TRUE;
+        }
+        let area = i64::from(rect.right - rect.left) * i64::from(rect.bottom - rect.top);
+        if area > 0 && search.best.is_none_or(|(best, _)| area > best) {
+            search.best = Some((area, child));
+        }
+        TRUE
+    }
+    let mut current = root;
+    let mut chosen = None;
+    for _ in 0..16 {
+        if class_name(current).is_some_and(|class| is_island_bridge_class(&class)) {
+            return descendant_of_class(current, is_input_site_class).or(Some(current));
+        }
+        let mut search = Children {
+            parent: current,
+            best: None,
+        };
+        unsafe {
+            let _ = EnumChildWindows(
+                current,
+                Some(visit),
+                LPARAM(&mut search as *mut Children as isize),
+            );
+        }
+        let Some((_, child)) = search.best else {
+            break;
+        };
+        current = child;
+        chosen = Some(child);
+    }
+    chosen
 }
 
 /// Chromium stops reading posted keys once it has been activated and deactivated
