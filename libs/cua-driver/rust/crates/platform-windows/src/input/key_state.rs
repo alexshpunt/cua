@@ -17,8 +17,8 @@ use std::time::Duration;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyboardState, SetKeyboardState, VK_CONTROL, VK_LBUTTON, VK_LCONTROL, VK_LMENU, VK_LSHIFT,
-    VK_LWIN, VK_MBUTTON, VK_MENU, VK_RBUTTON, VK_SHIFT,
+    GetKeyboardState, SetKeyboardState, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN,
+    VK_MENU, VK_SHIFT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowThreadProcessId, SendMessageTimeoutW, SMTO_ABORTIFHUNG, SMTO_BLOCK, WM_NULL,
@@ -35,15 +35,6 @@ pub(crate) fn modifier_keys(name: &str) -> &'static [u16] {
         "alt" | "menu" | "option" => &[VK_MENU.0, VK_LMENU.0],
         "win" | "meta" | "windows" | "cmd" | "command" => &[VK_LWIN.0],
         _ => &[],
-    }
-}
-
-/// The virtual key of a mouse button, for toolkits that read the button from the key state.
-pub(crate) fn button_key(button: &str) -> u16 {
-    match button {
-        "right" => VK_RBUTTON.0,
-        "middle" => VK_MBUTTON.0,
-        _ => VK_LBUTTON.0,
     }
 }
 
@@ -169,12 +160,5 @@ mod tests {
     fn mouse_flags_carry_ctrl_and_shift_only() {
         assert_eq!(mouse_key_flags(&["ctrl", "shift", "alt"]), 0x000C);
         assert_eq!(mouse_key_flags(&[]), 0);
-    }
-
-    #[test]
-    fn buttons_map_to_their_virtual_keys() {
-        assert_eq!(button_key("left"), 0x01);
-        assert_eq!(button_key("right"), 0x02);
-        assert_eq!(button_key("middle"), 0x04);
     }
 }
