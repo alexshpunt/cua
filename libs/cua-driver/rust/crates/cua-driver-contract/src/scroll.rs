@@ -110,8 +110,7 @@ pub struct PointerScrollInput {
     pub delta_y: i32,
     /// State wheel_detents explicitly; the application controls actual displacement.
     pub unit: ScrollUnit,
-    /// Background (default) posts wheel messages to the window at the point; the pointer
-    /// and the foreground stay. Foreground moves the pointer and leaves the target active.
+    /// Background posts wheel messages to the window at the point; foreground moves the pointer and leaves the target active.
     #[serde(default = "background")]
     pub delivery_mode: InputDeliveryMode,
     /// For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
