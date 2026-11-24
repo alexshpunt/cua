@@ -207,6 +207,15 @@ A later keyboard action must not clear the earlier pointer uncertainty or replay
 the gesture. The 3,000 ms row starts without a prior input action. Every row
 requires exactly one target DOWN/UP and no extra input in the human receiver.
 The ordinary WPF harness layout is unchanged.
+
+`harness_wpf_unlock_pulse_permits_focus_return` owns the activation unlock pulse.
+The test process inserts the latest input itself and puts the human receiver in
+front, so the driver has no foreground right and must insert its no-name unlock
+key before a foreground click on the target. The human receiver's journal must
+show that key's DOWN and UP after the click starts; with both read, the click
+result reports `focus_return: restored` and the human receiver is in front again.
+The target gets exactly one DOWN/UP and the human receiver none.
+
 The companion `pointer_completion_oracle` owners cover legacy click, straight drag
 and wheel posture, plus the complete `move_pointer`/`scroll_at` no-return contract.
 Cursor oracles use a scoped per-monitor-aware observer and physical screen points.

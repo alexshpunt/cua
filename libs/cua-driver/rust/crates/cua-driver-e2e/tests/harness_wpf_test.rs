@@ -2124,6 +2124,155 @@ fn harness_wpf_pointer_release_precedes_focus_return() {
     }
 }
 
+/// Put `window` in front the way a human switching windows would: this process inserts the
+/// latest input, so the driver no longer owns the most-recent-input token and its next
+/// activation needs its unlock pulse.
+fn take_foreground_from_driver(window: u64) {
+    use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, VIRTUAL_KEY,
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetWindowThreadProcessId, SetForegroundWindow,
+    };
+    // The reserved no-name key has no application meaning.
+    let key = |flags| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: VIRTUAL_KEY(0xFC),
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    let pulse = [key(KEYBD_EVENT_FLAGS(0)), key(KEYEVENTF_KEYUP)];
+    assert_eq!(
+        unsafe { SendInput(&pulse, std::mem::size_of::<INPUT>() as i32) },
+        2,
+        "take the most-recent-input token"
+    );
+    let target = HWND(window as *mut _);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let foreground = unsafe { GetForegroundWindow() };
+        if foreground == target {
+            return;
+        }
+        let own = unsafe { GetCurrentThreadId() };
+        let thread = unsafe { GetWindowThreadProcessId(foreground, None) };
+        let attached =
+            thread != 0 && thread != own && unsafe { AttachThreadInput(own, thread, true) }.as_bool();
+        let _ = unsafe { BringWindowToTop(target) };
+        let _ = unsafe { SetForegroundWindow(target) };
+        if attached {
+            let _ = unsafe { AttachThreadInput(own, thread, false) };
+        }
+        assert!(
+            Instant::now() < deadline,
+            "the test could not put window {window} in front"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// The driver activates a target it has no foreground right for with an unlock pulse that the
+/// human's window reads. That pulse leaves nothing queued, so focus return hands the
+/// foreground back after the click (LPT-1855).
+#[test]
+#[ignore]
+fn harness_wpf_unlock_pulse_permits_focus_return() {
+    let _coordinates = pointer_completion_oracle::PhysicalCoordinates::enter();
+    let mut case = native_foreground_case(
+        "wpf",
+        "unlock_pulse_focus_return",
+        Targeting::Px,
+        DriverRoute::WindowsSendInput,
+    );
+    case.oracles
+        .extend([OracleKind::Focus, OracleKind::NoLeakedInput]);
+    let cell_id = case.cell_id.clone();
+    execute_case(case, |evidence| {
+        let temporary = tempfile::tempdir().expect("pointer fixture state directory");
+        let mut driver = McpDriver::spawn_named_with_env(&cell_id, &[("CUA_FOCUS_RETURN", "1")])
+            .expect("required Windows driver did not start");
+        *evidence = recording_evidence(driver.recording_dir());
+        let state_root = driver
+            .recording_dir()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_else(|| temporary.path().to_path_buf());
+        let target_path = state_root.join("unlock-target-state.json");
+        let human_path = state_root.join("unlock-human-state.json");
+        let (target_pid, target_wid) =
+            launch_pointer_receiver(&mut driver, &target_path, "target", 0, false, "held_move");
+        let (human_pid, human_wid) =
+            launch_pointer_receiver(&mut driver, &human_path, "human", 0, false, "held_move");
+        assert_ne!(target_pid, human_pid, "receivers need independent UI threads");
+
+        // Read the target's canvas while it is in front, then hand the foreground to the human.
+        take_foreground_from_driver(target_wid);
+        let target = snapshot(&mut driver, target_pid, target_wid);
+        let target_bounds = window_bounds(&mut driver, target_pid, target_wid);
+        let (x, y) = pixel_center(&target, "pointer-canvas", target_bounds);
+        take_foreground_from_driver(human_wid);
+        // Let the human receiver read this process's own pulse before the driver acts.
+        std::thread::sleep(Duration::from_millis(300));
+
+        let started_ms = pointer_oracle_time_ms();
+        let response = driver.call(
+            "click",
+            serde_json::json!({
+                "pid": target_pid, "window_id": target_wid,
+                "x": x, "y": y, "delivery_mode": "foreground"
+            }),
+        );
+        let foreground_after = unsafe { GetForegroundWindow() }.0 as usize as u64;
+        assert!(!response.is_error(), "click failed: {}", response.text());
+        let target_state =
+            wait_pointer_receiver(&target_path, started_ms, |state| state["up"] == 1);
+        let human_state = wait_pointer_receiver(&human_path, started_ms, |_| true);
+        assert_eq!(target_state["down"], 1, "target state: {target_state}");
+        assert_eq!(human_state["down"], 0, "click DOWN leaked: {human_state}");
+        assert_eq!(human_state["up"], 0, "click UP leaked: {human_state}");
+        // The human's window read the driver's unlock pulse: both halves, after the click began.
+        let pulse: Vec<_> = human_state["events"]
+            .as_array()
+            .expect("human event journal")
+            .iter()
+            .filter(|event| {
+                event["virtual_key"] == 0xFC
+                    && event["utc_ms"].as_u64().is_some_and(|time| time >= started_ms)
+            })
+            .map(|event| event["message"].as_u64().unwrap_or_default())
+            .collect();
+        assert!(
+            pulse.contains(&0x0100) && pulse.contains(&0x0101),
+            "the driver did not need its unlock pulse, so this run does not cover it: {pulse:?}"
+        );
+        assert!(
+            response.text().contains("focus_return: restored"),
+            "focus return kept the target after a read unlock pulse: {}",
+            response.text()
+        );
+        assert_eq!(
+            foreground_after, human_wid,
+            "the human's window must be in front again"
+        );
+        drop(driver);
+        Observation::delivered(
+            vec![
+                OracleKind::FixtureState,
+                OracleKind::Focus,
+                OracleKind::NoLeakedInput,
+            ],
+            Evidence::default(),
+        )
+    });
+}
+
 #[test]
 #[ignore]
 fn harness_wpf_slider_drag_holds_modifier() {
