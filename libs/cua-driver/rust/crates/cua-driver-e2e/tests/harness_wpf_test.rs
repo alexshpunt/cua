@@ -2180,16 +2180,16 @@ fn take_foreground_from_driver(window: u64) {
     }
 }
 
-/// The driver activates a target it has no foreground right for with an unlock pulse that the
-/// human's window reads. That pulse leaves nothing queued, so focus return hands the
-/// foreground back after the click (LPT-1855).
+/// The driver has no foreground right when the human used the computer last, so it unlocks
+/// activation with a null mouse input before a foreground click. That input reaches no window,
+/// so focus return still hands the foreground back after the click (LPT-1855).
 #[test]
 #[ignore]
-fn harness_wpf_unlock_pulse_permits_focus_return() {
+fn harness_wpf_activation_unlock_permits_focus_return() {
     let _coordinates = pointer_completion_oracle::PhysicalCoordinates::enter();
     let mut case = native_foreground_case(
         "wpf",
-        "unlock_pulse_focus_return",
+        "activation_unlock_focus_return",
         Targeting::Px,
         DriverRoute::WindowsSendInput,
     );
@@ -2222,8 +2222,9 @@ fn harness_wpf_unlock_pulse_permits_focus_return() {
         let target_bounds = window_bounds(&mut driver, target_pid, target_wid);
         let (x, y) = pixel_center(&target, "pointer-canvas", target_bounds);
         take_foreground_from_driver(human_wid);
-        // Let the human receiver read this process's own pulse before the driver acts.
+        // Let the human receiver read this process's own input before the driver acts.
         std::thread::sleep(Duration::from_millis(300));
+        let human_before = wait_pointer_receiver(&human_path, pointer_oracle_time_ms(), |_| true);
 
         let started_ms = pointer_oracle_time_ms();
         let response = driver.call(
@@ -2241,27 +2242,29 @@ fn harness_wpf_unlock_pulse_permits_focus_return() {
         assert_eq!(target_state["down"], 1, "target state: {target_state}");
         assert_eq!(human_state["down"], 0, "click DOWN leaked: {human_state}");
         assert_eq!(human_state["up"], 0, "click UP leaked: {human_state}");
-        // The human's window read the driver's unlock pulse: both halves, after the click began.
-        let pulse: Vec<_> = human_state["events"]
+        assert_eq!(
+            human_state["moves"], human_before["moves"],
+            "the unlock moved the pointer over the human's window: {human_state}"
+        );
+        let keys: Vec<_> = human_state["events"]
             .as_array()
             .expect("human event journal")
             .iter()
             .filter(|event| {
-                event["virtual_key"] == 0xFC
+                event["kind"] == "keyboard"
                     && event["utc_ms"]
                         .as_u64()
                         .is_some_and(|time| time >= started_ms)
             })
-            .map(|event| event["message"].as_u64().unwrap_or_default())
             .collect();
         assert!(
-            pulse.contains(&0x0100) && pulse.contains(&0x0101),
-            "the driver did not need its unlock pulse, so this run does not cover it: {pulse:?}"
+            keys.is_empty(),
+            "the unlock reached the human's window: {keys:?}"
         );
         assert_eq!(
             foreground_after,
             human_wid,
-            "focus return kept the target after a read unlock pulse: {}",
+            "focus return kept the target after an unlock that reached no window: {}",
             response.text()
         );
         drop(driver);
