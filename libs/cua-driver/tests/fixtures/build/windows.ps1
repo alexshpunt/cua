@@ -85,6 +85,9 @@ if (Should-Build "electron") {
     if (Test-Path $elecBuild) {
         Write-Host ""
         Write-Host "[BUILD] electron -> $testAppsDir\harness-electron\" -ForegroundColor Cyan
+        # A PowerShell script sets $LASTEXITCODE only when it runs a native command or exits
+        # with a code; strict mode refuses to read it unset.
+        $global:LASTEXITCODE = 0
         & $elecBuild
         if ($LASTEXITCODE -ne 0) { throw "Electron harness build failed" }
     } else {
@@ -96,6 +99,7 @@ if (Should-Build "tauri") {
     if (Test-Path $tauriBuild) {
         Write-Host ""
         Write-Host "[BUILD] tauri -> $testAppsDir\harness-tauri\" -ForegroundColor Cyan
+        $global:LASTEXITCODE = 0
         & $tauriBuild
         if ($LASTEXITCODE -ne 0) { throw "Tauri harness build failed" }
     } else {
