@@ -1236,6 +1236,25 @@ pub(crate) fn keyboard_state() -> Option<[u8; 256]> {
         .is_ok()
         .then_some(state)
 }
+
+/// Wait until the key state of the attached reader shows every key in `keys` down (or up):
+/// the reader has read the press (or the release). `false` when `deadline` passes first.
+pub(crate) fn await_key_state(keys: &[u16], down: bool, deadline: Instant) -> bool {
+    loop {
+        service_own_messages();
+        if keyboard_state().is_some_and(|state| {
+            keys.iter()
+                .all(|key| (state[*key as usize] & 0x80 != 0) == down)
+        }) {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        sleep(Duration::from_millis(1));
+    }
+}
+
 /// The caller's thread attached to the foreground thread's input queue for
 /// the duration of one foreground input transaction; detaches on drop.
 pub(crate) struct InputQueueAttachment {

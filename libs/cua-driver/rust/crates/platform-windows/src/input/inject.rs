@@ -18,9 +18,7 @@ use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
 };
 use windows::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    keybd_event, KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP,
-};
+use windows::Win32::UI::Input::KeyboardAndMouse::{KEYBD_EVENT_FLAGS, KEYEVENTF_KEYUP};
 use windows::Win32::UI::Shell::{IVirtualDesktopManager, VirtualDesktopManager};
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetForegroundWindow, GetWindowLongPtrW, GetWindowThreadProcessId,
@@ -144,14 +142,7 @@ pub(crate) unsafe fn force_foreground_assisted(target: HWND) -> (bool, bool) {
         return (true, false);
     }
 
-    const VK_NONAME: u8 = 0xFC;
-    // keybd_event has no insertion or receiver-read receipt. Its unlock pulse
-    // cannot authorize automatic restoration or a later queue attachment.
-    crate::focus_return::note_unconfirmed_input();
-    unsafe {
-        keybd_event(VK_NONAME, 0, KEYBD_EVENT_FLAGS(0), 0);
-        keybd_event(VK_NONAME, 0, KEYEVENTF_KEYUP, 0);
-    }
+    unlock_pulse();
     for _ in 0..3 {
         if unsafe { force_foreground_attached(target) } {
             return (true, true);
@@ -159,6 +150,65 @@ pub(crate) unsafe fn force_foreground_assisted(target: HWND) -> (bool, bool) {
         sleep(Duration::from_millis(25));
     }
     (false, true)
+}
+
+/// The reserved no-name key of the unlock pulse.
+const VK_NONAME: u16 = 0xFC;
+
+/// How long the foreground window's thread may take to read each half of the unlock pulse.
+const UNLOCK_READ_TIMEOUT: Duration = Duration::from_millis(500);
+
+/// Insert the unlock pulse, a press and a release of the no-name key, while attached to the
+/// input thread of the window in front, usually the human's. Its shared key state shows the key
+/// down once that thread has read the press and up once it has read the release. A pulse seen
+/// read leaves nothing queued, so it does not stop focus return from handing the foreground
+/// back later. A pulse without that witness is unconfirmed input.
+fn unlock_pulse() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
+    };
+    let key = |flags| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: windows::Win32::UI::Input::KeyboardAndMouse::VIRTUAL_KEY(VK_NONAME),
+                wScan: 0,
+                dwFlags: flags,
+                time: 0,
+                dwExtraInfo: 0,
+            },
+        },
+    };
+    let size = std::mem::size_of::<INPUT>() as i32;
+    // Attaching resets key state; it must not reset the receiver state of an earlier
+    // unconfirmed prefix.
+    let attachment = (!crate::focus_return::has_unconfirmed_input())
+        .then(|| super::keyboard::InputQueueAttachment::attach(unsafe { GetForegroundWindow() }))
+        .flatten();
+    // A key that is already down cannot show this pulse's press.
+    let mut witnessed = attachment.is_some()
+        && super::keyboard::keyboard_state()
+            .is_some_and(|state| state[VK_NONAME as usize] & 0x80 == 0);
+    if !witnessed {
+        // No reader to watch: the pulse is unconfirmed from the start.
+        crate::focus_return::note_unconfirmed_input();
+    }
+    for (flags, down) in [(KEYBD_EVENT_FLAGS(0), true), (KEYEVENTF_KEYUP, false)] {
+        let inserted = unsafe { SendInput(&[key(flags)], size) } == 1;
+        if witnessed
+            && !(inserted
+                && super::keyboard::await_key_state(
+                    &[VK_NONAME],
+                    down,
+                    std::time::Instant::now() + UNLOCK_READ_TIMEOUT,
+                ))
+        {
+            witnessed = false;
+            crate::focus_return::note_unconfirmed_input();
+        }
+    }
+    drop(attachment);
+    tracing::debug!(witnessed, "foreground unlock pulse");
 }
 
 /// RAII guard that makes a specific target window **unable to become the
