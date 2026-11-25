@@ -95,11 +95,35 @@ fn desktop_activity_refuses_untrusted_action_evidence() {
     let _ = driver.recv();
 
     let click = json!({"operation":"action_start","id":1,"kind":"click","location":"desktop"});
-    for (index, (key, value)) in [
-        ("typed_text", json!("sentinel")),
-        ("position", json!({"x":10,"y":15})),
-        ("delivery", json!("shared")),
-        ("kind", json!("session_started")),
+    // Unknown fields fail at the registry; known fields with internal-only
+    // enum values reach the typed Windows decoder and fail there.
+    let registry_code = "/result/structuredContent/refusal/code";
+    let activity_code = "/result/structuredContent/code";
+    for (index, (key, value, code_path, expected_code)) in [
+        (
+            "typed_text",
+            json!("sentinel"),
+            registry_code,
+            "invalid_arguments",
+        ),
+        (
+            "position",
+            json!({"x":10,"y":15}),
+            registry_code,
+            "invalid_arguments",
+        ),
+        (
+            "delivery",
+            json!("shared"),
+            activity_code,
+            "invalid_desktop_activity",
+        ),
+        (
+            "kind",
+            json!("session_started"),
+            activity_code,
+            "invalid_desktop_activity",
+        ),
     ]
     .into_iter()
     .enumerate()
@@ -113,7 +137,10 @@ fn desktop_activity_refuses_untrusted_action_evidence() {
         let response = driver.recv();
         assert_eq!(response["result"]["isError"], true, "{key}: {response}");
         assert_eq!(
-            response["result"]["structuredContent"]["code"], "invalid_desktop_activity",
+            response
+                .pointer(code_path)
+                .and_then(serde_json::Value::as_str),
+            Some(expected_code),
             "{key}: {response}"
         );
     }
