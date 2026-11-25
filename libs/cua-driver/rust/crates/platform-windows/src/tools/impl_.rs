@@ -1744,9 +1744,7 @@ pub fn build_registry_with_provider(
     r.register(Box::new(SetAgentCursorMotionV2Tool));
     r.register(Box::new(activity::SetAgentVisualsTool));
     r.register(Box::new(activity::PresentAgentActivityTool));
-    if cua_driver_core::desktop_activity::enabled() {
-        r.register(Box::new(activity::DesktopActivityTool));
-    }
+    r.register(Box::new(activity::DesktopActivityTool));
     r.register(Box::new(GetAgentCursorStateV2Tool {
         state: state.clone(),
     }));

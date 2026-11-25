@@ -59,6 +59,30 @@ fn tools_list_schema_shape() {
     );
 }
 
+#[cfg(target_os = "windows")]
+#[test]
+fn desktop_activity_refuses_without_opt_in() {
+    use cua_driver_core::desktop_activity::TOOL;
+    use serde_json::json;
+
+    let mut driver = RawDriver::spawn_with_env(&[("CUA_DESKTOP_ACTIVITY", "0")])
+        .expect("spawn source-built Windows driver");
+    driver.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}));
+    let _ = driver.recv();
+    driver.send(&json!({
+        "jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+            "name":TOOL,
+            "arguments":{"operation":"configure","label":"Agent","panel":true,"outline":false,"point":false}
+        }
+    }));
+    let response = driver.recv();
+    assert_eq!(response["result"]["isError"], true, "{response}");
+    assert_eq!(
+        response["result"]["structuredContent"]["code"], "desktop_activity_disabled",
+        "{response}"
+    );
+}
+
 #[cfg(target_os = "linux")]
 #[test]
 fn explicit_direct_tools_list_schema_shape() {

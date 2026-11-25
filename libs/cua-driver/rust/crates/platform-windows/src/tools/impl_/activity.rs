@@ -61,6 +61,9 @@ impl Tool for DesktopActivityTool {
     }
 
     async fn invoke(&self, mut args: Value) -> ToolResult {
+        if !cua_driver_core::desktop_activity::enabled() {
+            return failure("desktop_activity_disabled");
+        }
         let Some(owner) = args["_transport_session_id"]
             .as_str()
             .or_else(|| args["_session_id"].as_str())
