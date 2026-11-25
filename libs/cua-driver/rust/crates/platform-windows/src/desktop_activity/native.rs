@@ -80,7 +80,7 @@ impl<T: PartialEq> Hud<T> {
             }
             return;
         }
-        let Some(mut surface) = (unsafe {
+        let Some(surface) = (unsafe {
             WinSurface::create(
                 bounds.x,
                 bounds.y,

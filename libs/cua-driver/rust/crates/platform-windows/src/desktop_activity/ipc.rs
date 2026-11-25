@@ -8,6 +8,7 @@ use super::*;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Mutex, OnceLock};
 use std::time::Duration;
 use windows::Win32::System::StationsAndDesktops::{
@@ -26,12 +27,45 @@ struct Snapshot {
     rows: Vec<Agent>,
 }
 
+#[derive(Default)]
+struct Publications {
+    sessions: BTreeMap<String, Session>,
+    retired: Vec<Agent>,
+    next_id: u64,
+}
+
+impl Publications {
+    fn project(&mut self, now: u64) -> Vec<Agent> {
+        self.retired.retain_mut(|row| {
+            expire(row, now, now);
+            !row.recent.is_empty()
+        });
+        self.sessions
+            .values_mut()
+            .map(|session| session.project(now))
+            .filter(|row| row.active || !row.recent.is_empty())
+            .chain(self.retired.iter().cloned())
+            .collect()
+    }
+
+    fn retire(&mut self, owner: &str, now: u64) {
+        if let Some(mut session) = self.sessions.remove(owner) {
+            session.finish(Outcome::Interrupted, now);
+            let row = session.project(now);
+            if !row.recent.is_empty() {
+                self.retired.insert(0, row);
+                self.retired.truncate(MAX_LOCAL);
+            }
+        }
+    }
+}
 struct Publisher {
     id: String,
     folder: PathBuf,
     path: PathBuf,
     staging: PathBuf,
-    sessions: Mutex<BTreeMap<String, Session>>,
+    publications: Mutex<Publications>,
+    visible_here: AtomicBool,
     io: Mutex<()>,
     wake: mpsc::SyncSender<()>,
 }
@@ -99,7 +133,8 @@ fn init() -> Option<Publisher> {
         staging: folder.join(format!("{id}.tmp")),
         id,
         folder,
-        sessions: Mutex::default(),
+        publications: Mutex::default(),
+        visible_here: AtomicBool::new(false),
         io: Mutex::default(),
         wake,
     })
@@ -125,14 +160,16 @@ impl Publisher {
             .lock()
             .map_err(|_| std::io::Error::other("activity publisher lock poisoned"))?;
         let seen = now();
-        let rows: Vec<_> = self
-            .sessions
+        let rows = self
+            .publications
             .lock()
-            .map_err(|_| std::io::Error::other("activity sessions lock poisoned"))?
-            .values_mut()
-            .map(|session| session.project(seen))
-            .filter(|row| row.active || !row.recent.is_empty())
-            .collect();
+            .map_err(|_| std::io::Error::other("activity publisher state poisoned"))?
+            .project(seen);
+        self.visible_here.store(
+            rows.iter()
+                .any(|row| row.panel || (row.active && (row.outline || row.point))),
+            Ordering::Relaxed,
+        );
         if rows.is_empty() {
             let _ = fs::remove_file(&self.path);
             return Ok(());
@@ -172,7 +209,7 @@ impl Publisher {
                 }
                 continue;
             }
-            for mut row in snapshot.rows.into_iter().take(MAX_LOCAL) {
+            for mut row in snapshot.rows.into_iter().take(2 * MAX_LOCAL) {
                 expire(&mut row, snapshot.seen, observed);
                 if row.active || !row.recent.is_empty() {
                     rows.push(row);
@@ -190,10 +227,13 @@ impl Publisher {
         let mut last_publish = 0;
         let mut dirty = false;
         let mut last_lease_attempt = 0;
-        let mut rows = Vec::new();
-        let mut last_scan = 0;
         loop {
-            let wake = match rx.recv_timeout(Duration::from_millis(70)) {
+            let interval = if self.visible_here.load(Ordering::Relaxed) {
+                70
+            } else {
+                HEARTBEAT_MS
+            };
+            let wake = match rx.recv_timeout(Duration::from_millis(interval)) {
                 Ok(()) => true,
                 Err(mpsc::RecvTimeoutError::Timeout) => false,
                 Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -208,24 +248,15 @@ impl Publisher {
                 last_publish = now;
             }
             if cua_driver_core::human_stop::stopped() {
-                if let Ok(mut sessions) = self.sessions.lock() {
-                    for session in sessions.values_mut() {
+                if let Ok(mut state) = self.publications.lock() {
+                    for session in state.sessions.values_mut() {
                         session.finish(Outcome::Interrupted, now);
                     }
                 }
                 let _ = self.publish();
                 break;
             }
-            if wake || now.saturating_sub(last_scan) >= 70 {
-                rows = self.rows(now);
-                last_scan = now;
-            }
-            let panel = rows.iter().any(|row| row.panel);
-            let visible = panel
-                || rows
-                    .iter()
-                    .any(|row| row.active && (row.outline || row.point));
-            if !visible {
+            if !self.visible_here.load(Ordering::Relaxed) {
                 renderer = None;
                 lease = None;
                 continue;
@@ -248,7 +279,8 @@ impl Publisher {
                 }
             }
             if let Some(renderer) = &mut renderer {
-                renderer.render(&rows, panel);
+                let rows = self.rows(now);
+                renderer.render(&rows, rows.iter().any(|row| row.panel));
             }
         }
         // Drop every native surface before another process can acquire the lease.
@@ -262,29 +294,31 @@ pub(crate) fn apply(owner: &str, update: Update) -> Result<bool, &'static str> {
         .get_or_init(init)
         .as_ref()
         .ok_or("desktop_activity_unavailable")?;
-    let mut sessions = publisher
-        .sessions
+    let mut state = publisher
+        .publications
         .lock()
         .map_err(|_| "desktop_activity_unavailable")?;
-    if !sessions.contains_key(owner) {
+    if !state.sessions.contains_key(owner) {
         if !matches!(update, Update::Configure { .. }) {
             return Ok(false);
         }
-        if sessions.len() >= MAX_LOCAL {
+        if state.sessions.len() >= MAX_LOCAL {
             return Err("desktop_activity_busy");
         }
-        let next = format!("{}/{:02}", publisher.id, sessions.len());
-        sessions.insert(owner.to_owned(), Session::new(next));
+        let next = format!("{}/{:02}", publisher.id, state.next_id);
+        state.next_id += 1;
+        state.sessions.insert(owner.to_owned(), Session::new(next));
     }
     let synchronous = matches!(
         update,
         Update::Begin { .. } | Update::End { .. } | Update::Configure { .. }
     );
-    let changed = sessions
+    let changed = state
+        .sessions
         .get_mut(owner)
         .expect("this owner was prepared")
         .apply(update, now())?;
-    drop(sessions);
+    drop(state);
     if changed {
         if synchronous {
             let _ = publisher.publish();
@@ -298,10 +332,8 @@ pub(crate) fn end(owner: &str) {
     let Some(publisher) = PUBLISHER.get().and_then(Option::as_ref) else {
         return;
     };
-    if let Ok(mut sessions) = publisher.sessions.lock() {
-        if let Some(session) = sessions.get_mut(owner) {
-            session.finish(Outcome::Interrupted, now());
-        }
+    if let Ok(mut state) = publisher.publications.lock() {
+        state.retire(owner, now());
     }
     let _ = publisher.publish();
     let _ = publisher.wake.try_send(());
@@ -314,8 +346,8 @@ fn note(shared: bool, position: Option<(i32, i32)>) {
     let Some(publisher) = PUBLISHER.get().and_then(Option::as_ref) else {
         return;
     };
-    if let Ok(mut sessions) = publisher.sessions.lock() {
-        if let Some(session) = sessions.get_mut(&call.owner) {
+    if let Ok(mut state) = publisher.publications.lock() {
+        if let Some(session) = state.sessions.get_mut(&call.owner) {
             session.note(&call, shared, position);
         }
     }
@@ -339,5 +371,50 @@ pub(crate) fn note_pointer_arrival(x: i32, y: i32) {
     let mut point = POINT::default();
     if unsafe { GetPhysicalCursorPos(&mut point) }.is_ok() && (point.x, point.y) == (x, y) {
         note(true, Some((x, y)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_a_transport_frees_its_slot_and_keeps_only_bounded_recent_activity() {
+        let mut state = Publications::default();
+        for i in 0..MAX_LOCAL + 3 {
+            let mut session = Session::new(format!("agent-{i}"));
+            session
+                .apply(
+                    Update::Configure {
+                        label: format!("Agent {i}"),
+                        panel: true,
+                        outline: true,
+                        point: false,
+                    },
+                    1,
+                )
+                .unwrap();
+            session
+                .apply(
+                    Update::Begin {
+                        intent: "Check a scratch window".into(),
+                    },
+                    2,
+                )
+                .unwrap();
+            state.sessions.insert("transport".into(), session);
+            state.retire("transport", 3);
+            assert!(state.sessions.is_empty());
+        }
+        let rows = state.project(4);
+        assert_eq!(rows.len(), MAX_LOCAL);
+        assert!(rows.iter().all(|row| {
+            !row.active
+                && row.intent.is_empty()
+                && row.action.is_none()
+                && row.recent[0].outcome == Outcome::Interrupted
+        }));
+        assert_eq!(rows.last().unwrap().id, "agent-3");
+        assert!(state.project(RECENT_MS + 3).is_empty());
     }
 }
