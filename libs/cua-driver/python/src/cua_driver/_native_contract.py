@@ -1619,6 +1619,182 @@ class _UniffiFfiConverterTypeActionResult(_UniffiConverterRustBuffer):
         _UniffiFfiConverterOptionalTypeActionNextCall.write(value.next_call, buf)
         _UniffiFfiConverterOptionalString.write(value.fast_path, buf)
 
+
+
+
+
+
+class AgentActivityImageMime(enum.Enum):
+
+    PNG = 0
+
+    JPEG = 1
+
+
+
+class _UniffiFfiConverterTypeAgentActivityImageMime(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return AgentActivityImageMime.PNG
+        if variant == 2:
+            return AgentActivityImageMime.JPEG
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == AgentActivityImageMime.PNG:
+            return
+        if value == AgentActivityImageMime.JPEG:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == AgentActivityImageMime.PNG:
+            buf.write_i32(1)
+        if value == AgentActivityImageMime.JPEG:
+            buf.write_i32(2)
+
+
+
+@dataclass
+class AgentActivityImage:
+    """
+    No Debug implementation: image bytes must not enter diagnostics.
+"""
+    def __init__(self, *, data:str, mime_type:AgentActivityImageMime):
+        self.data = data
+        self.mime_type = mime_type
+
+
+
+
+    def __str__(self):
+        return "AgentActivityImage(data={}, mime_type={})".format(self.data, self.mime_type)
+    def __eq__(self, other):
+        if self.data != other.data:
+            return False
+        if self.mime_type != other.mime_type:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeAgentActivityImage(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return AgentActivityImage(
+            data=_UniffiFfiConverterString.read(buf),
+            mime_type=_UniffiFfiConverterTypeAgentActivityImageMime.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterString.check_lower(value.data)
+        _UniffiFfiConverterTypeAgentActivityImageMime.check_lower(value.mime_type)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterString.write(value.data, buf)
+        _UniffiFfiConverterTypeAgentActivityImageMime.write(value.mime_type, buf)
+
+class _UniffiFfiConverterInt32(_UniffiConverterPrimitiveInt):
+    CLASS_NAME = "i32"
+    VALUE_MIN = -2**31
+    VALUE_MAX = 2**31
+
+    @staticmethod
+    def read(buf):
+        return buf.read_i32()
+
+    @staticmethod
+    def write(value, buf):
+        buf.write_i32(value)
+
+@dataclass
+class AgentActivityPoint:
+    def __init__(self, *, x:int, y:int):
+        self.x = x
+        self.y = y
+
+
+
+
+    def __str__(self):
+        return "AgentActivityPoint(x={}, y={})".format(self.x, self.y)
+    def __eq__(self, other):
+        if self.x != other.x:
+            return False
+        if self.y != other.y:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeAgentActivityPoint(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return AgentActivityPoint(
+            x=_UniffiFfiConverterInt32.read(buf),
+            y=_UniffiFfiConverterInt32.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterInt32.check_lower(value.x)
+        _UniffiFfiConverterInt32.check_lower(value.y)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterInt32.write(value.x, buf)
+        _UniffiFfiConverterInt32.write(value.y, buf)
+
+@dataclass
+class AgentActivityRect:
+    def __init__(self, *, x:int, y:int, width:int, height:int):
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+
+
+
+
+    def __str__(self):
+        return "AgentActivityRect(x={}, y={}, width={}, height={})".format(self.x, self.y, self.width, self.height)
+    def __eq__(self, other):
+        if self.x != other.x:
+            return False
+        if self.y != other.y:
+            return False
+        if self.width != other.width:
+            return False
+        if self.height != other.height:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeAgentActivityRect(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return AgentActivityRect(
+            x=_UniffiFfiConverterInt32.read(buf),
+            y=_UniffiFfiConverterInt32.read(buf),
+            width=_UniffiFfiConverterUInt32.read(buf),
+            height=_UniffiFfiConverterUInt32.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterInt32.check_lower(value.x)
+        _UniffiFfiConverterInt32.check_lower(value.y)
+        _UniffiFfiConverterUInt32.check_lower(value.width)
+        _UniffiFfiConverterUInt32.check_lower(value.height)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterInt32.write(value.x, buf)
+        _UniffiFfiConverterInt32.write(value.y, buf)
+        _UniffiFfiConverterUInt32.write(value.width, buf)
+        _UniffiFfiConverterUInt32.write(value.height, buf)
+
 class _UniffiFfiConverterBoolean:
     @classmethod
     def check_lower(cls, value):
@@ -3509,6 +3685,195 @@ class _UniffiFfiConverterTypeCursorVisualOutput(_UniffiConverterRustBuffer):
         _UniffiFfiConverterUInt64.write(value.frame, buf)
         _UniffiFfiConverterUInt64.write(value.preempted_count, buf)
 
+@dataclass
+class DesktopActivityWindow:
+    def __init__(self, *, window_id:int, pid:int, identity:str):
+        self.window_id = window_id
+        self.pid = pid
+        self.identity = identity
+
+
+
+
+    def __str__(self):
+        return "DesktopActivityWindow(window_id={}, pid={}, identity={})".format(self.window_id, self.pid, self.identity)
+    def __eq__(self, other):
+        if self.window_id != other.window_id:
+            return False
+        if self.pid != other.pid:
+            return False
+        if self.identity != other.identity:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeDesktopActivityWindow(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return DesktopActivityWindow(
+            window_id=_UniffiFfiConverterUInt64.read(buf),
+            pid=_UniffiFfiConverterUInt32.read(buf),
+            identity=_UniffiFfiConverterString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterUInt64.check_lower(value.window_id)
+        _UniffiFfiConverterUInt32.check_lower(value.pid)
+        _UniffiFfiConverterString.check_lower(value.identity)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterUInt64.write(value.window_id, buf)
+        _UniffiFfiConverterUInt32.write(value.pid, buf)
+        _UniffiFfiConverterString.write(value.identity, buf)
+
+
+
+
+
+
+class DesktopQueryErrorCode(enum.Enum):
+    """
+    Failure stages do not stand in for the current desktop or a successful query.
+"""
+
+    COM_INITIALIZATION_FAILED = 0
+
+    MANAGER_UNAVAILABLE = 1
+
+    WINDOW_UNAVAILABLE = 2
+
+    DESKTOP_ID_QUERY_FAILED = 3
+
+    CURRENT_DESKTOP_QUERY_FAILED = 4
+
+    INVALID_DESKTOP_ID = 5
+
+    QUERY_WORKER_FAILED = 6
+
+
+
+class _UniffiFfiConverterTypeDesktopQueryErrorCode(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return DesktopQueryErrorCode.COM_INITIALIZATION_FAILED
+        if variant == 2:
+            return DesktopQueryErrorCode.MANAGER_UNAVAILABLE
+        if variant == 3:
+            return DesktopQueryErrorCode.WINDOW_UNAVAILABLE
+        if variant == 4:
+            return DesktopQueryErrorCode.DESKTOP_ID_QUERY_FAILED
+        if variant == 5:
+            return DesktopQueryErrorCode.CURRENT_DESKTOP_QUERY_FAILED
+        if variant == 6:
+            return DesktopQueryErrorCode.INVALID_DESKTOP_ID
+        if variant == 7:
+            return DesktopQueryErrorCode.QUERY_WORKER_FAILED
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == DesktopQueryErrorCode.COM_INITIALIZATION_FAILED:
+            return
+        if value == DesktopQueryErrorCode.MANAGER_UNAVAILABLE:
+            return
+        if value == DesktopQueryErrorCode.WINDOW_UNAVAILABLE:
+            return
+        if value == DesktopQueryErrorCode.DESKTOP_ID_QUERY_FAILED:
+            return
+        if value == DesktopQueryErrorCode.CURRENT_DESKTOP_QUERY_FAILED:
+            return
+        if value == DesktopQueryErrorCode.INVALID_DESKTOP_ID:
+            return
+        if value == DesktopQueryErrorCode.QUERY_WORKER_FAILED:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == DesktopQueryErrorCode.COM_INITIALIZATION_FAILED:
+            buf.write_i32(1)
+        if value == DesktopQueryErrorCode.MANAGER_UNAVAILABLE:
+            buf.write_i32(2)
+        if value == DesktopQueryErrorCode.WINDOW_UNAVAILABLE:
+            buf.write_i32(3)
+        if value == DesktopQueryErrorCode.DESKTOP_ID_QUERY_FAILED:
+            buf.write_i32(4)
+        if value == DesktopQueryErrorCode.CURRENT_DESKTOP_QUERY_FAILED:
+            buf.write_i32(5)
+        if value == DesktopQueryErrorCode.INVALID_DESKTOP_ID:
+            buf.write_i32(6)
+        if value == DesktopQueryErrorCode.QUERY_WORKER_FAILED:
+            buf.write_i32(7)
+
+
+
+class _UniffiFfiConverterOptionalInt32(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterInt32.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterInt32.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterInt32.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+@dataclass
+class DesktopQueryError:
+    """
+    Native query failure. HRESULT is kept as its signed 32-bit value when Windows supplied one.
+"""
+    def __init__(self, *, code:DesktopQueryErrorCode, hresult:typing.Optional[int]):
+        self.code = code
+        self.hresult = hresult
+
+
+
+
+    def __str__(self):
+        return "DesktopQueryError(code={}, hresult={})".format(self.code, self.hresult)
+    def __eq__(self, other):
+        if self.code != other.code:
+            return False
+        if self.hresult != other.hresult:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeDesktopQueryError(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return DesktopQueryError(
+            code=_UniffiFfiConverterTypeDesktopQueryErrorCode.read(buf),
+            hresult=_UniffiFfiConverterOptionalInt32.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterTypeDesktopQueryErrorCode.check_lower(value.code)
+        _UniffiFfiConverterOptionalInt32.check_lower(value.hresult)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterTypeDesktopQueryErrorCode.write(value.code, buf)
+        _UniffiFfiConverterOptionalInt32.write(value.hresult, buf)
+
 class _UniffiFfiConverterOptionalTypeActionTarget(_UniffiConverterRustBuffer):
     @classmethod
     def check_lower(cls, value):
@@ -3895,6 +4260,51 @@ class _UniffiFfiConverterTypeElementPredicate(_UniffiConverterRustBuffer):
         _UniffiFfiConverterOptionalBoolean.write(value.selected, buf)
 
 @dataclass
+class ElementRange:
+    """
+    Windows UIA RangeValuePattern of a slider, spinner or progress bar.
+"""
+    def __init__(self, *, value:float, min:float, max:float):
+        self.value = value
+        self.min = min
+        self.max = max
+
+
+
+
+    def __str__(self):
+        return "ElementRange(value={}, min={}, max={})".format(self.value, self.min, self.max)
+    def __eq__(self, other):
+        if self.value != other.value:
+            return False
+        if self.min != other.min:
+            return False
+        if self.max != other.max:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeElementRange(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return ElementRange(
+            value=_UniffiFfiConverterFloat64.read(buf),
+            min=_UniffiFfiConverterFloat64.read(buf),
+            max=_UniffiFfiConverterFloat64.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterFloat64.check_lower(value.value)
+        _UniffiFfiConverterFloat64.check_lower(value.min)
+        _UniffiFfiConverterFloat64.check_lower(value.max)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterFloat64.write(value.value, buf)
+        _UniffiFfiConverterFloat64.write(value.min, buf)
+        _UniffiFfiConverterFloat64.write(value.max, buf)
+
+@dataclass
 class EndSessionInput:
     def __init__(self, *, session:typing.Optional[str]):
         self.session = session
@@ -4151,6 +4561,57 @@ class _UniffiFfiConverterTypeGetDesktopStateInput(_UniffiConverterRustBuffer):
     def write(value, buf):
         _UniffiFfiConverterOptionalString.write(value.session, buf)
         _UniffiFfiConverterOptionalString.write(value.screenshot_out_file, buf)
+        _UniffiFfiConverterOptionalUInt32.write(value.max_image_dimension, buf)
+
+@dataclass
+class GetDisplayStateInput:
+    """
+    Read exactly the enumerated display in this topology; never fall back to primary.
+"""
+    def __init__(self, *, display_id:str, topology_id:str, session:typing.Optional[str], max_image_dimension:typing.Optional[int]):
+        self.display_id = display_id
+        self.topology_id = topology_id
+        self.session = session
+        self.max_image_dimension = max_image_dimension
+
+
+
+
+    def __str__(self):
+        return "GetDisplayStateInput(display_id={}, topology_id={}, session={}, max_image_dimension={})".format(self.display_id, self.topology_id, self.session, self.max_image_dimension)
+    def __eq__(self, other):
+        if self.display_id != other.display_id:
+            return False
+        if self.topology_id != other.topology_id:
+            return False
+        if self.session != other.session:
+            return False
+        if self.max_image_dimension != other.max_image_dimension:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeGetDisplayStateInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return GetDisplayStateInput(
+            display_id=_UniffiFfiConverterString.read(buf),
+            topology_id=_UniffiFfiConverterString.read(buf),
+            session=_UniffiFfiConverterOptionalString.read(buf),
+            max_image_dimension=_UniffiFfiConverterOptionalUInt32.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterString.check_lower(value.display_id)
+        _UniffiFfiConverterString.check_lower(value.topology_id)
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+        _UniffiFfiConverterOptionalUInt32.check_lower(value.max_image_dimension)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterString.write(value.display_id, buf)
+        _UniffiFfiConverterString.write(value.topology_id, buf)
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
         _UniffiFfiConverterOptionalUInt32.write(value.max_image_dimension, buf)
 
 @dataclass
@@ -4560,6 +5021,39 @@ class _UniffiFfiConverterTypeListAppsOutput(_UniffiConverterRustBuffer):
     @staticmethod
     def write(value, buf):
         _UniffiFfiConverterSequenceTypeAppInfo.write(value.apps, buf)
+
+@dataclass
+class ListDisplaysInput:
+    """
+    Enumerate connected displays without reading pixels.
+"""
+    def __init__(self, *, session:typing.Optional[str]):
+        self.session = session
+
+
+
+
+    def __str__(self):
+        return "ListDisplaysInput(session={})".format(self.session)
+    def __eq__(self, other):
+        if self.session != other.session:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeListDisplaysInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return ListDisplaysInput(
+            session=_UniffiFfiConverterOptionalString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
 
 @dataclass
 class ListSessionsInput:
@@ -5019,44 +5513,6 @@ class _UniffiFfiConverterOptionalInt64(_UniffiConverterRustBuffer):
         else:
             raise InternalError("Unexpected flag byte for optional type")
 
-class _UniffiFfiConverterInt32(_UniffiConverterPrimitiveInt):
-    CLASS_NAME = "i32"
-    VALUE_MIN = -2**31
-    VALUE_MAX = 2**31
-
-    @staticmethod
-    def read(buf):
-        return buf.read_i32()
-
-    @staticmethod
-    def write(value, buf):
-        buf.write_i32(value)
-
-class _UniffiFfiConverterOptionalInt32(_UniffiConverterRustBuffer):
-    @classmethod
-    def check_lower(cls, value):
-        if value is not None:
-            _UniffiFfiConverterInt32.check_lower(value)
-
-    @classmethod
-    def write(cls, value, buf):
-        if value is None:
-            buf.write_u8(0)
-            return
-
-        buf.write_u8(1)
-        _UniffiFfiConverterInt32.write(value, buf)
-
-    @classmethod
-    def read(cls, buf):
-        flag = buf.read_u8()
-        if flag == 0:
-            return None
-        elif flag == 1:
-            return _UniffiFfiConverterInt32.read(buf)
-        else:
-            raise InternalError("Unexpected flag byte for optional type")
-
 class _UniffiFfiConverterSequenceUInt64(_UniffiConverterRustBuffer):
     @classmethod
     def check_lower(cls, value):
@@ -5105,9 +5561,117 @@ class _UniffiFfiConverterOptionalSequenceUInt64(_UniffiConverterRustBuffer):
         else:
             raise InternalError("Unexpected flag byte for optional type")
 
+class _UniffiFfiConverterOptionalTypeDesktopQueryError(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeDesktopQueryError.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeDesktopQueryError.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeDesktopQueryError.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+@dataclass
+class VirtualDesktopMembership:
+    """
+    Sample of two independent documented IVirtualDesktopManager queries.
+    Missing portable metadata differs from this record's explicit failed native queries.
+"""
+    def __init__(self, *, desktop_id:typing.Optional[str], on_current_desktop:typing.Optional[bool], desktop_id_error:typing.Optional[DesktopQueryError], on_current_desktop_error:typing.Optional[DesktopQueryError], sampled_at_unix_ms:int):
+        self.desktop_id = desktop_id
+        self.on_current_desktop = on_current_desktop
+        self.desktop_id_error = desktop_id_error
+        self.on_current_desktop_error = on_current_desktop_error
+        self.sampled_at_unix_ms = sampled_at_unix_ms
+
+
+
+
+    def __str__(self):
+        return "VirtualDesktopMembership(desktop_id={}, on_current_desktop={}, desktop_id_error={}, on_current_desktop_error={}, sampled_at_unix_ms={})".format(self.desktop_id, self.on_current_desktop, self.desktop_id_error, self.on_current_desktop_error, self.sampled_at_unix_ms)
+    def __eq__(self, other):
+        if self.desktop_id != other.desktop_id:
+            return False
+        if self.on_current_desktop != other.on_current_desktop:
+            return False
+        if self.desktop_id_error != other.desktop_id_error:
+            return False
+        if self.on_current_desktop_error != other.on_current_desktop_error:
+            return False
+        if self.sampled_at_unix_ms != other.sampled_at_unix_ms:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeVirtualDesktopMembership(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return VirtualDesktopMembership(
+            desktop_id=_UniffiFfiConverterOptionalString.read(buf),
+            on_current_desktop=_UniffiFfiConverterOptionalBoolean.read(buf),
+            desktop_id_error=_UniffiFfiConverterOptionalTypeDesktopQueryError.read(buf),
+            on_current_desktop_error=_UniffiFfiConverterOptionalTypeDesktopQueryError.read(buf),
+            sampled_at_unix_ms=_UniffiFfiConverterUInt64.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterOptionalString.check_lower(value.desktop_id)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.on_current_desktop)
+        _UniffiFfiConverterOptionalTypeDesktopQueryError.check_lower(value.desktop_id_error)
+        _UniffiFfiConverterOptionalTypeDesktopQueryError.check_lower(value.on_current_desktop_error)
+        _UniffiFfiConverterUInt64.check_lower(value.sampled_at_unix_ms)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterOptionalString.write(value.desktop_id, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.on_current_desktop, buf)
+        _UniffiFfiConverterOptionalTypeDesktopQueryError.write(value.desktop_id_error, buf)
+        _UniffiFfiConverterOptionalTypeDesktopQueryError.write(value.on_current_desktop_error, buf)
+        _UniffiFfiConverterUInt64.write(value.sampled_at_unix_ms, buf)
+
+class _UniffiFfiConverterOptionalTypeVirtualDesktopMembership(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeVirtualDesktopMembership.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeVirtualDesktopMembership.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeVirtualDesktopMembership.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
 @dataclass
 class WindowInfo:
-    def __init__(self, *, window_id:int, pid:typing.Optional[int], app_name:str, title:str, bounds:WindowBounds, is_on_screen:bool, z_index:typing.Optional[int], layer:typing.Optional[int], minimized:typing.Optional[bool], current_space_id:typing.Optional[int], on_current_space:typing.Optional[bool], space_ids:typing.Optional[typing.List[int]]):
+    def __init__(self, *, window_id:int, pid:typing.Optional[int], app_name:str, title:str, bounds:WindowBounds, is_on_screen:bool, z_index:typing.Optional[int], layer:typing.Optional[int], minimized:typing.Optional[bool], current_space_id:typing.Optional[int], on_current_space:typing.Optional[bool], space_ids:typing.Optional[typing.List[int]], virtual_desktop:typing.Optional[VirtualDesktopMembership]):
         self.window_id = window_id
         self.pid = pid
         self.app_name = app_name
@@ -5120,12 +5684,13 @@ class WindowInfo:
         self.current_space_id = current_space_id
         self.on_current_space = on_current_space
         self.space_ids = space_ids
+        self.virtual_desktop = virtual_desktop
 
 
 
 
     def __str__(self):
-        return "WindowInfo(window_id={}, pid={}, app_name={}, title={}, bounds={}, is_on_screen={}, z_index={}, layer={}, minimized={}, current_space_id={}, on_current_space={}, space_ids={})".format(self.window_id, self.pid, self.app_name, self.title, self.bounds, self.is_on_screen, self.z_index, self.layer, self.minimized, self.current_space_id, self.on_current_space, self.space_ids)
+        return "WindowInfo(window_id={}, pid={}, app_name={}, title={}, bounds={}, is_on_screen={}, z_index={}, layer={}, minimized={}, current_space_id={}, on_current_space={}, space_ids={}, virtual_desktop={})".format(self.window_id, self.pid, self.app_name, self.title, self.bounds, self.is_on_screen, self.z_index, self.layer, self.minimized, self.current_space_id, self.on_current_space, self.space_ids, self.virtual_desktop)
     def __eq__(self, other):
         if self.window_id != other.window_id:
             return False
@@ -5151,6 +5716,8 @@ class WindowInfo:
             return False
         if self.space_ids != other.space_ids:
             return False
+        if self.virtual_desktop != other.virtual_desktop:
+            return False
         return True
 
 class _UniffiFfiConverterTypeWindowInfo(_UniffiConverterRustBuffer):
@@ -5169,6 +5736,7 @@ class _UniffiFfiConverterTypeWindowInfo(_UniffiConverterRustBuffer):
             current_space_id=_UniffiFfiConverterOptionalUInt64.read(buf),
             on_current_space=_UniffiFfiConverterOptionalBoolean.read(buf),
             space_ids=_UniffiFfiConverterOptionalSequenceUInt64.read(buf),
+            virtual_desktop=_UniffiFfiConverterOptionalTypeVirtualDesktopMembership.read(buf),
         )
 
     @staticmethod
@@ -5185,6 +5753,7 @@ class _UniffiFfiConverterTypeWindowInfo(_UniffiConverterRustBuffer):
         _UniffiFfiConverterOptionalUInt64.check_lower(value.current_space_id)
         _UniffiFfiConverterOptionalBoolean.check_lower(value.on_current_space)
         _UniffiFfiConverterOptionalSequenceUInt64.check_lower(value.space_ids)
+        _UniffiFfiConverterOptionalTypeVirtualDesktopMembership.check_lower(value.virtual_desktop)
 
     @staticmethod
     def write(value, buf):
@@ -5200,6 +5769,7 @@ class _UniffiFfiConverterTypeWindowInfo(_UniffiConverterRustBuffer):
         _UniffiFfiConverterOptionalUInt64.write(value.current_space_id, buf)
         _UniffiFfiConverterOptionalBoolean.write(value.on_current_space, buf)
         _UniffiFfiConverterOptionalSequenceUInt64.write(value.space_ids, buf)
+        _UniffiFfiConverterOptionalTypeVirtualDesktopMembership.write(value.virtual_desktop, buf)
 
 class _UniffiFfiConverterSequenceTypeWindowInfo(_UniffiConverterRustBuffer):
     @classmethod
@@ -6325,6 +6895,209 @@ class _UniffiFfiConverterTypeParseVisualRegionsOutput(_UniffiConverterRustBuffer
         _UniffiFfiConverterTypeVisualParseTiming.write(value.timing, buf)
         _UniffiFfiConverterOptionalString.write(value.request_id, buf)
 
+@dataclass
+class PointerMoveInput:
+    """
+    One capture-bound point or snapshot token belonging to an exact Windows window.
+"""
+    def __init__(self, *, pid:int, window_id:int, capture_id:typing.Optional[str], x:typing.Optional[float], y:typing.Optional[float], element_token:typing.Optional[str], dwell_ms:int, delivery_mode:InputDeliveryMode, session:typing.Optional[str]):
+        self.pid = pid
+        self.window_id = window_id
+        self.capture_id = capture_id
+        self.x = x
+        self.y = y
+        self.element_token = element_token
+        self.dwell_ms = dwell_ms
+        self.delivery_mode = delivery_mode
+        self.session = session
+
+
+
+
+    def __str__(self):
+        return "PointerMoveInput(pid={}, window_id={}, capture_id={}, x={}, y={}, element_token={}, dwell_ms={}, delivery_mode={}, session={})".format(self.pid, self.window_id, self.capture_id, self.x, self.y, self.element_token, self.dwell_ms, self.delivery_mode, self.session)
+    def __eq__(self, other):
+        if self.pid != other.pid:
+            return False
+        if self.window_id != other.window_id:
+            return False
+        if self.capture_id != other.capture_id:
+            return False
+        if self.x != other.x:
+            return False
+        if self.y != other.y:
+            return False
+        if self.element_token != other.element_token:
+            return False
+        if self.dwell_ms != other.dwell_ms:
+            return False
+        if self.delivery_mode != other.delivery_mode:
+            return False
+        if self.session != other.session:
+            return False
+        return True
+
+class _UniffiFfiConverterTypePointerMoveInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return PointerMoveInput(
+            pid=_UniffiFfiConverterUInt32.read(buf),
+            window_id=_UniffiFfiConverterUInt64.read(buf),
+            capture_id=_UniffiFfiConverterOptionalString.read(buf),
+            x=_UniffiFfiConverterOptionalFloat64.read(buf),
+            y=_UniffiFfiConverterOptionalFloat64.read(buf),
+            element_token=_UniffiFfiConverterOptionalString.read(buf),
+            dwell_ms=_UniffiFfiConverterUInt64.read(buf),
+            delivery_mode=_UniffiFfiConverterTypeInputDeliveryMode.read(buf),
+            session=_UniffiFfiConverterOptionalString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterUInt32.check_lower(value.pid)
+        _UniffiFfiConverterUInt64.check_lower(value.window_id)
+        _UniffiFfiConverterOptionalString.check_lower(value.capture_id)
+        _UniffiFfiConverterOptionalFloat64.check_lower(value.x)
+        _UniffiFfiConverterOptionalFloat64.check_lower(value.y)
+        _UniffiFfiConverterOptionalString.check_lower(value.element_token)
+        _UniffiFfiConverterUInt64.check_lower(value.dwell_ms)
+        _UniffiFfiConverterTypeInputDeliveryMode.check_lower(value.delivery_mode)
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterUInt32.write(value.pid, buf)
+        _UniffiFfiConverterUInt64.write(value.window_id, buf)
+        _UniffiFfiConverterOptionalString.write(value.capture_id, buf)
+        _UniffiFfiConverterOptionalFloat64.write(value.x, buf)
+        _UniffiFfiConverterOptionalFloat64.write(value.y, buf)
+        _UniffiFfiConverterOptionalString.write(value.element_token, buf)
+        _UniffiFfiConverterUInt64.write(value.dwell_ms, buf)
+        _UniffiFfiConverterTypeInputDeliveryMode.write(value.delivery_mode, buf)
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
+
+
+
+
+
+
+class ScrollUnit(enum.Enum):
+    """
+    One detent is 120 native wheel-delta units, not a line or content pixel.
+"""
+
+    WHEEL_DETENTS = 0
+
+
+
+class _UniffiFfiConverterTypeScrollUnit(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return ScrollUnit.WHEEL_DETENTS
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == ScrollUnit.WHEEL_DETENTS:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == ScrollUnit.WHEEL_DETENTS:
+            buf.write_i32(1)
+
+
+
+@dataclass
+class PointerScrollInput:
+    """
+    A current overview point belonging to one exact Windows window.
+"""
+    def __init__(self, *, pid:int, window_id:int, capture_id:str, x:float, y:float, delta_x:int, delta_y:int, unit:ScrollUnit, delivery_mode:InputDeliveryMode, session:typing.Optional[str]):
+        self.pid = pid
+        self.window_id = window_id
+        self.capture_id = capture_id
+        self.x = x
+        self.y = y
+        self.delta_x = delta_x
+        self.delta_y = delta_y
+        self.unit = unit
+        self.delivery_mode = delivery_mode
+        self.session = session
+
+
+
+
+    def __str__(self):
+        return "PointerScrollInput(pid={}, window_id={}, capture_id={}, x={}, y={}, delta_x={}, delta_y={}, unit={}, delivery_mode={}, session={})".format(self.pid, self.window_id, self.capture_id, self.x, self.y, self.delta_x, self.delta_y, self.unit, self.delivery_mode, self.session)
+    def __eq__(self, other):
+        if self.pid != other.pid:
+            return False
+        if self.window_id != other.window_id:
+            return False
+        if self.capture_id != other.capture_id:
+            return False
+        if self.x != other.x:
+            return False
+        if self.y != other.y:
+            return False
+        if self.delta_x != other.delta_x:
+            return False
+        if self.delta_y != other.delta_y:
+            return False
+        if self.unit != other.unit:
+            return False
+        if self.delivery_mode != other.delivery_mode:
+            return False
+        if self.session != other.session:
+            return False
+        return True
+
+class _UniffiFfiConverterTypePointerScrollInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return PointerScrollInput(
+            pid=_UniffiFfiConverterUInt32.read(buf),
+            window_id=_UniffiFfiConverterUInt64.read(buf),
+            capture_id=_UniffiFfiConverterString.read(buf),
+            x=_UniffiFfiConverterFloat64.read(buf),
+            y=_UniffiFfiConverterFloat64.read(buf),
+            delta_x=_UniffiFfiConverterInt32.read(buf),
+            delta_y=_UniffiFfiConverterInt32.read(buf),
+            unit=_UniffiFfiConverterTypeScrollUnit.read(buf),
+            delivery_mode=_UniffiFfiConverterTypeInputDeliveryMode.read(buf),
+            session=_UniffiFfiConverterOptionalString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterUInt32.check_lower(value.pid)
+        _UniffiFfiConverterUInt64.check_lower(value.window_id)
+        _UniffiFfiConverterString.check_lower(value.capture_id)
+        _UniffiFfiConverterFloat64.check_lower(value.x)
+        _UniffiFfiConverterFloat64.check_lower(value.y)
+        _UniffiFfiConverterInt32.check_lower(value.delta_x)
+        _UniffiFfiConverterInt32.check_lower(value.delta_y)
+        _UniffiFfiConverterTypeScrollUnit.check_lower(value.unit)
+        _UniffiFfiConverterTypeInputDeliveryMode.check_lower(value.delivery_mode)
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterUInt32.write(value.pid, buf)
+        _UniffiFfiConverterUInt64.write(value.window_id, buf)
+        _UniffiFfiConverterString.write(value.capture_id, buf)
+        _UniffiFfiConverterFloat64.write(value.x, buf)
+        _UniffiFfiConverterFloat64.write(value.y, buf)
+        _UniffiFfiConverterInt32.write(value.delta_x, buf)
+        _UniffiFfiConverterInt32.write(value.delta_y, buf)
+        _UniffiFfiConverterTypeScrollUnit.write(value.unit, buf)
+        _UniffiFfiConverterTypeInputDeliveryMode.write(value.delivery_mode, buf)
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
+
 
 
 
@@ -6525,6 +7298,497 @@ class _UniffiFfiConverterTypePredicateOutcome(_UniffiConverterRustBuffer):
         _UniffiFfiConverterTypeVerificationStatus.write(value.status, buf)
         _UniffiFfiConverterOptionalTypeUnknownReason.write(value.unknown_reason, buf)
         _UniffiFfiConverterOptionalString.write(value.observed_json, buf)
+
+
+
+
+
+
+class AgentActivityKind(enum.Enum):
+
+    OVERVIEW = 0
+
+    DETAIL = 1
+
+    INSPECT = 2
+
+    VERIFY = 3
+
+    ACTION = 4
+
+    CLEAR = 5
+
+
+
+class _UniffiFfiConverterTypeAgentActivityKind(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return AgentActivityKind.OVERVIEW
+        if variant == 2:
+            return AgentActivityKind.DETAIL
+        if variant == 3:
+            return AgentActivityKind.INSPECT
+        if variant == 4:
+            return AgentActivityKind.VERIFY
+        if variant == 5:
+            return AgentActivityKind.ACTION
+        if variant == 6:
+            return AgentActivityKind.CLEAR
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == AgentActivityKind.OVERVIEW:
+            return
+        if value == AgentActivityKind.DETAIL:
+            return
+        if value == AgentActivityKind.INSPECT:
+            return
+        if value == AgentActivityKind.VERIFY:
+            return
+        if value == AgentActivityKind.ACTION:
+            return
+        if value == AgentActivityKind.CLEAR:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == AgentActivityKind.OVERVIEW:
+            buf.write_i32(1)
+        if value == AgentActivityKind.DETAIL:
+            buf.write_i32(2)
+        if value == AgentActivityKind.INSPECT:
+            buf.write_i32(3)
+        if value == AgentActivityKind.VERIFY:
+            buf.write_i32(4)
+        if value == AgentActivityKind.ACTION:
+            buf.write_i32(5)
+        if value == AgentActivityKind.CLEAR:
+            buf.write_i32(6)
+
+
+
+
+
+
+
+
+class AgentActivitySource:
+    """
+    The variants prevent mixing a display source with window ownership evidence.
+"""
+    def __init__(self):
+        raise RuntimeError("AgentActivitySource cannot be instantiated directly")
+
+    # Each enum variant is a nested class of the enum itself.
+    @dataclass
+    class WINDOW:
+
+        def __init__(self, window_id:int, pid:int, identity:str, bounds:AgentActivityRect):
+            self.window_id = window_id
+
+
+            self.pid = pid
+
+
+            self.identity = identity
+
+
+            self.bounds = bounds
+
+
+            pass
+
+
+
+
+
+        def __str__(self):
+            return "AgentActivitySource.WINDOW(window_id={}, pid={}, identity={}, bounds={})".format(self.window_id, self.pid, self.identity, self.bounds)
+        def __eq__(self, other):
+            if not isinstance(other, AgentActivitySource):
+                return NotImplemented
+            if not other.is_WINDOW():
+                return False
+            if self.window_id != other.window_id:
+                return False
+            if self.pid != other.pid:
+                return False
+            if self.identity != other.identity:
+                return False
+            if self.bounds != other.bounds:
+                return False
+            return True
+
+    @dataclass
+    class DISPLAY:
+
+        def __init__(self, display:str, bounds:AgentActivityRect):
+            self.display = display
+
+
+            self.bounds = bounds
+
+
+            pass
+
+
+
+
+
+        def __str__(self):
+            return "AgentActivitySource.DISPLAY(display={}, bounds={})".format(self.display, self.bounds)
+        def __eq__(self, other):
+            if not isinstance(other, AgentActivitySource):
+                return NotImplemented
+            if not other.is_DISPLAY():
+                return False
+            if self.display != other.display:
+                return False
+            if self.bounds != other.bounds:
+                return False
+            return True
+
+
+
+    # For each variant, we have `is_NAME` and `is_name` methods for easily checking
+    # whether an instance is that variant.
+    def is_WINDOW(self) -> bool:
+        return isinstance(self, AgentActivitySource.WINDOW)
+    def is_window(self) -> bool:
+        return isinstance(self, AgentActivitySource.WINDOW)
+    def is_DISPLAY(self) -> bool:
+        return isinstance(self, AgentActivitySource.DISPLAY)
+    def is_display(self) -> bool:
+        return isinstance(self, AgentActivitySource.DISPLAY)
+
+
+# Now, a little trick - we make each nested variant class be a subclass of the main
+# enum class, so that method calls and instance checks etc will work intuitively.
+# We might be able to do this a little more neatly with a metaclass, but this'll do.
+AgentActivitySource.WINDOW = type("AgentActivitySource.WINDOW", (AgentActivitySource.WINDOW, AgentActivitySource,), {})  # type: ignore
+AgentActivitySource.DISPLAY = type("AgentActivitySource.DISPLAY", (AgentActivitySource.DISPLAY, AgentActivitySource,), {})  # type: ignore
+
+
+
+
+class _UniffiFfiConverterTypeAgentActivitySource(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return AgentActivitySource.WINDOW(
+                _UniffiFfiConverterUInt64.read(buf),
+                _UniffiFfiConverterUInt32.read(buf),
+                _UniffiFfiConverterString.read(buf),
+                _UniffiFfiConverterTypeAgentActivityRect.read(buf),
+            )
+        if variant == 2:
+            return AgentActivitySource.DISPLAY(
+                _UniffiFfiConverterString.read(buf),
+                _UniffiFfiConverterTypeAgentActivityRect.read(buf),
+            )
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value.is_WINDOW():
+            _UniffiFfiConverterUInt64.check_lower(value.window_id)
+            _UniffiFfiConverterUInt32.check_lower(value.pid)
+            _UniffiFfiConverterString.check_lower(value.identity)
+            _UniffiFfiConverterTypeAgentActivityRect.check_lower(value.bounds)
+            return
+        if value.is_DISPLAY():
+            _UniffiFfiConverterString.check_lower(value.display)
+            _UniffiFfiConverterTypeAgentActivityRect.check_lower(value.bounds)
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value.is_WINDOW():
+            buf.write_i32(1)
+            _UniffiFfiConverterUInt64.write(value.window_id, buf)
+            _UniffiFfiConverterUInt32.write(value.pid, buf)
+            _UniffiFfiConverterString.write(value.identity, buf)
+            _UniffiFfiConverterTypeAgentActivityRect.write(value.bounds, buf)
+        if value.is_DISPLAY():
+            buf.write_i32(2)
+            _UniffiFfiConverterString.write(value.display, buf)
+            _UniffiFfiConverterTypeAgentActivityRect.write(value.bounds, buf)
+
+
+
+class _UniffiFfiConverterOptionalTypeAgentActivitySource(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeAgentActivitySource.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeAgentActivitySource.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeAgentActivitySource.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+class _UniffiFfiConverterOptionalTypeAgentActivityRect(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeAgentActivityRect.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeAgentActivityRect.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeAgentActivityRect.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+class _UniffiFfiConverterOptionalTypeAgentActivityPoint(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeAgentActivityPoint.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeAgentActivityPoint.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeAgentActivityPoint.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+class _UniffiFfiConverterOptionalTypeAgentActivityImage(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeAgentActivityImage.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeAgentActivityImage.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeAgentActivityImage.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+
+
+
+
+
+class AgentActivityOutcome(enum.Enum):
+
+    DELIVERED = 0
+
+    REFUSED = 1
+
+    UNKNOWN = 2
+
+    VERIFIED = 3
+
+
+
+class _UniffiFfiConverterTypeAgentActivityOutcome(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return AgentActivityOutcome.DELIVERED
+        if variant == 2:
+            return AgentActivityOutcome.REFUSED
+        if variant == 3:
+            return AgentActivityOutcome.UNKNOWN
+        if variant == 4:
+            return AgentActivityOutcome.VERIFIED
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == AgentActivityOutcome.DELIVERED:
+            return
+        if value == AgentActivityOutcome.REFUSED:
+            return
+        if value == AgentActivityOutcome.UNKNOWN:
+            return
+        if value == AgentActivityOutcome.VERIFIED:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == AgentActivityOutcome.DELIVERED:
+            buf.write_i32(1)
+        if value == AgentActivityOutcome.REFUSED:
+            buf.write_i32(2)
+        if value == AgentActivityOutcome.UNKNOWN:
+            buf.write_i32(3)
+        if value == AgentActivityOutcome.VERIFIED:
+            buf.write_i32(4)
+
+
+
+class _UniffiFfiConverterOptionalTypeAgentActivityOutcome(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeAgentActivityOutcome.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeAgentActivityOutcome.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeAgentActivityOutcome.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+@dataclass
+class PresentAgentActivityInput:
+    """
+    One bounded publication of already-returned pixels; this request captures nothing.
+"""
+    def __init__(self, *, session:typing.Optional[str], generation:int, kind:AgentActivityKind, source:typing.Optional[AgentActivitySource], region:typing.Optional[AgentActivityRect], point:typing.Optional[AgentActivityPoint], image:typing.Optional[AgentActivityImage], action:typing.Optional[str], outcome:typing.Optional[AgentActivityOutcome], typed_text:typing.Optional[str]):
+        self.session = session
+        self.generation = generation
+        self.kind = kind
+        self.source = source
+        self.region = region
+        self.point = point
+        self.image = image
+        self.action = action
+        self.outcome = outcome
+        self.typed_text = typed_text
+
+
+
+
+    def __str__(self):
+        return "PresentAgentActivityInput(session={}, generation={}, kind={}, source={}, region={}, point={}, image={}, action={}, outcome={}, typed_text={})".format(self.session, self.generation, self.kind, self.source, self.region, self.point, self.image, self.action, self.outcome, self.typed_text)
+    def __eq__(self, other):
+        if self.session != other.session:
+            return False
+        if self.generation != other.generation:
+            return False
+        if self.kind != other.kind:
+            return False
+        if self.source != other.source:
+            return False
+        if self.region != other.region:
+            return False
+        if self.point != other.point:
+            return False
+        if self.image != other.image:
+            return False
+        if self.action != other.action:
+            return False
+        if self.outcome != other.outcome:
+            return False
+        if self.typed_text != other.typed_text:
+            return False
+        return True
+
+class _UniffiFfiConverterTypePresentAgentActivityInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return PresentAgentActivityInput(
+            session=_UniffiFfiConverterOptionalString.read(buf),
+            generation=_UniffiFfiConverterUInt64.read(buf),
+            kind=_UniffiFfiConverterTypeAgentActivityKind.read(buf),
+            source=_UniffiFfiConverterOptionalTypeAgentActivitySource.read(buf),
+            region=_UniffiFfiConverterOptionalTypeAgentActivityRect.read(buf),
+            point=_UniffiFfiConverterOptionalTypeAgentActivityPoint.read(buf),
+            image=_UniffiFfiConverterOptionalTypeAgentActivityImage.read(buf),
+            action=_UniffiFfiConverterOptionalString.read(buf),
+            outcome=_UniffiFfiConverterOptionalTypeAgentActivityOutcome.read(buf),
+            typed_text=_UniffiFfiConverterOptionalString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+        _UniffiFfiConverterUInt64.check_lower(value.generation)
+        _UniffiFfiConverterTypeAgentActivityKind.check_lower(value.kind)
+        _UniffiFfiConverterOptionalTypeAgentActivitySource.check_lower(value.source)
+        _UniffiFfiConverterOptionalTypeAgentActivityRect.check_lower(value.region)
+        _UniffiFfiConverterOptionalTypeAgentActivityPoint.check_lower(value.point)
+        _UniffiFfiConverterOptionalTypeAgentActivityImage.check_lower(value.image)
+        _UniffiFfiConverterOptionalString.check_lower(value.action)
+        _UniffiFfiConverterOptionalTypeAgentActivityOutcome.check_lower(value.outcome)
+        _UniffiFfiConverterOptionalString.check_lower(value.typed_text)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
+        _UniffiFfiConverterUInt64.write(value.generation, buf)
+        _UniffiFfiConverterTypeAgentActivityKind.write(value.kind, buf)
+        _UniffiFfiConverterOptionalTypeAgentActivitySource.write(value.source, buf)
+        _UniffiFfiConverterOptionalTypeAgentActivityRect.write(value.region, buf)
+        _UniffiFfiConverterOptionalTypeAgentActivityPoint.write(value.point, buf)
+        _UniffiFfiConverterOptionalTypeAgentActivityImage.write(value.image, buf)
+        _UniffiFfiConverterOptionalString.write(value.action, buf)
+        _UniffiFfiConverterOptionalTypeAgentActivityOutcome.write(value.outcome, buf)
+        _UniffiFfiConverterOptionalString.write(value.typed_text, buf)
 
 @dataclass
 class PressKeyInput:
@@ -6772,6 +8036,120 @@ class _UniffiFfiConverterTypeScrollInput(_UniffiConverterRustBuffer):
         _UniffiFfiConverterOptionalString.write(value.session, buf)
         _UniffiFfiConverterOptionalTypeScrollBy.write(value.by, buf)
         _UniffiFfiConverterOptionalUInt64.write(value.amount, buf)
+
+
+
+
+
+
+class SemanticOperation(enum.Enum):
+    """
+    An exact semantic intent, not an action ladder.
+"""
+
+    INVOKE = 0
+
+    SELECT = 1
+
+    SET_VALUE = 2
+
+
+
+class _UniffiFfiConverterTypeSemanticOperation(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return SemanticOperation.INVOKE
+        if variant == 2:
+            return SemanticOperation.SELECT
+        if variant == 3:
+            return SemanticOperation.SET_VALUE
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == SemanticOperation.INVOKE:
+            return
+        if value == SemanticOperation.SELECT:
+            return
+        if value == SemanticOperation.SET_VALUE:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == SemanticOperation.INVOKE:
+            buf.write_i32(1)
+        if value == SemanticOperation.SELECT:
+            buf.write_i32(2)
+        if value == SemanticOperation.SET_VALUE:
+            buf.write_i32(3)
+
+
+
+@dataclass
+class SemanticActionInput:
+    """
+    Snapshot-bound Windows UIA operation. Physical and foreground delivery are not accepted.
+"""
+    def __init__(self, *, pid:int, window_id:int, element_token:str, operation:SemanticOperation, value:typing.Optional[str], session:typing.Optional[str]):
+        self.pid = pid
+        self.window_id = window_id
+        self.element_token = element_token
+        self.operation = operation
+        self.value = value
+        self.session = session
+
+
+
+
+    def __str__(self):
+        return "SemanticActionInput(pid={}, window_id={}, element_token={}, operation={}, value={}, session={})".format(self.pid, self.window_id, self.element_token, self.operation, self.value, self.session)
+    def __eq__(self, other):
+        if self.pid != other.pid:
+            return False
+        if self.window_id != other.window_id:
+            return False
+        if self.element_token != other.element_token:
+            return False
+        if self.operation != other.operation:
+            return False
+        if self.value != other.value:
+            return False
+        if self.session != other.session:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeSemanticActionInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return SemanticActionInput(
+            pid=_UniffiFfiConverterUInt32.read(buf),
+            window_id=_UniffiFfiConverterUInt64.read(buf),
+            element_token=_UniffiFfiConverterString.read(buf),
+            operation=_UniffiFfiConverterTypeSemanticOperation.read(buf),
+            value=_UniffiFfiConverterOptionalString.read(buf),
+            session=_UniffiFfiConverterOptionalString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterUInt32.check_lower(value.pid)
+        _UniffiFfiConverterUInt64.check_lower(value.window_id)
+        _UniffiFfiConverterString.check_lower(value.element_token)
+        _UniffiFfiConverterTypeSemanticOperation.check_lower(value.operation)
+        _UniffiFfiConverterOptionalString.check_lower(value.value)
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterUInt32.write(value.pid, buf)
+        _UniffiFfiConverterUInt64.write(value.window_id, buf)
+        _UniffiFfiConverterString.write(value.element_token, buf)
+        _UniffiFfiConverterTypeSemanticOperation.write(value.operation, buf)
+        _UniffiFfiConverterOptionalString.write(value.value, buf)
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
 
 
 
@@ -7205,6 +8583,239 @@ class _UniffiFfiConverterTypeSetAgentCursorThemeOutput(_UniffiConverterRustBuffe
     def write(value, buf):
         _UniffiFfiConverterString.write(value.session, buf)
         _UniffiFfiConverterTypeCursorThemeOutput.write(value.theme, buf)
+
+
+
+
+
+
+class VisualPreset(enum.Enum):
+
+    OFF = 0
+
+    SUBTLE = 1
+
+    FULL = 2
+
+
+
+class _UniffiFfiConverterTypeVisualPreset(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return VisualPreset.OFF
+        if variant == 2:
+            return VisualPreset.SUBTLE
+        if variant == 3:
+            return VisualPreset.FULL
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == VisualPreset.OFF:
+            return
+        if value == VisualPreset.SUBTLE:
+            return
+        if value == VisualPreset.FULL:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == VisualPreset.OFF:
+            buf.write_i32(1)
+        if value == VisualPreset.SUBTLE:
+            buf.write_i32(2)
+        if value == VisualPreset.FULL:
+            buf.write_i32(3)
+
+
+
+class _UniffiFfiConverterOptionalTypeVisualPreset(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeVisualPreset.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeVisualPreset.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeVisualPreset.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+
+
+
+
+
+class VisualQuality(enum.Enum):
+
+    PERFORMANCE = 0
+
+    BALANCED = 1
+
+    HIGH = 2
+
+
+
+class _UniffiFfiConverterTypeVisualQuality(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return VisualQuality.PERFORMANCE
+        if variant == 2:
+            return VisualQuality.BALANCED
+        if variant == 3:
+            return VisualQuality.HIGH
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == VisualQuality.PERFORMANCE:
+            return
+        if value == VisualQuality.BALANCED:
+            return
+        if value == VisualQuality.HIGH:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == VisualQuality.PERFORMANCE:
+            buf.write_i32(1)
+        if value == VisualQuality.BALANCED:
+            buf.write_i32(2)
+        if value == VisualQuality.HIGH:
+            buf.write_i32(3)
+
+
+
+class _UniffiFfiConverterOptionalTypeVisualQuality(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeVisualQuality.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeVisualQuality.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeVisualQuality.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+@dataclass
+class SetAgentVisualsInput:
+    """
+    An omitted setting keeps its current value, rather than resetting the session.
+"""
+    def __init__(self, *, session:typing.Optional[str], preset:typing.Optional[VisualPreset], observations:typing.Optional[bool], previews:typing.Optional[bool], pointer:typing.Optional[bool], scroll_drag:typing.Optional[bool], keyboard:typing.Optional[bool], opacity:typing.Optional[float], quality:typing.Optional[VisualQuality], reduced_motion:typing.Optional[bool]):
+        self.session = session
+        self.preset = preset
+        self.observations = observations
+        self.previews = previews
+        self.pointer = pointer
+        self.scroll_drag = scroll_drag
+        self.keyboard = keyboard
+        self.opacity = opacity
+        self.quality = quality
+        self.reduced_motion = reduced_motion
+
+
+
+
+    def __str__(self):
+        return "SetAgentVisualsInput(session={}, preset={}, observations={}, previews={}, pointer={}, scroll_drag={}, keyboard={}, opacity={}, quality={}, reduced_motion={})".format(self.session, self.preset, self.observations, self.previews, self.pointer, self.scroll_drag, self.keyboard, self.opacity, self.quality, self.reduced_motion)
+    def __eq__(self, other):
+        if self.session != other.session:
+            return False
+        if self.preset != other.preset:
+            return False
+        if self.observations != other.observations:
+            return False
+        if self.previews != other.previews:
+            return False
+        if self.pointer != other.pointer:
+            return False
+        if self.scroll_drag != other.scroll_drag:
+            return False
+        if self.keyboard != other.keyboard:
+            return False
+        if self.opacity != other.opacity:
+            return False
+        if self.quality != other.quality:
+            return False
+        if self.reduced_motion != other.reduced_motion:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeSetAgentVisualsInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return SetAgentVisualsInput(
+            session=_UniffiFfiConverterOptionalString.read(buf),
+            preset=_UniffiFfiConverterOptionalTypeVisualPreset.read(buf),
+            observations=_UniffiFfiConverterOptionalBoolean.read(buf),
+            previews=_UniffiFfiConverterOptionalBoolean.read(buf),
+            pointer=_UniffiFfiConverterOptionalBoolean.read(buf),
+            scroll_drag=_UniffiFfiConverterOptionalBoolean.read(buf),
+            keyboard=_UniffiFfiConverterOptionalBoolean.read(buf),
+            opacity=_UniffiFfiConverterOptionalFloat64.read(buf),
+            quality=_UniffiFfiConverterOptionalTypeVisualQuality.read(buf),
+            reduced_motion=_UniffiFfiConverterOptionalBoolean.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+        _UniffiFfiConverterOptionalTypeVisualPreset.check_lower(value.preset)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.observations)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.previews)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.pointer)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.scroll_drag)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.keyboard)
+        _UniffiFfiConverterOptionalFloat64.check_lower(value.opacity)
+        _UniffiFfiConverterOptionalTypeVisualQuality.check_lower(value.quality)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.reduced_motion)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
+        _UniffiFfiConverterOptionalTypeVisualPreset.write(value.preset, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.observations, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.previews, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.pointer, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.scroll_drag, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.keyboard, buf)
+        _UniffiFfiConverterOptionalFloat64.write(value.opacity, buf)
+        _UniffiFfiConverterOptionalTypeVisualQuality.write(value.quality, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.reduced_motion, buf)
 
 @dataclass
 class SetWindowFrameInput:
@@ -8046,6 +9657,51 @@ class _UniffiFfiConverterTypeVisualParseError(_UniffiConverterRustBuffer):
         _UniffiFfiConverterBoolean.write(value.retryable, buf)
         _UniffiFfiConverterOptionalString.write(value.detail, buf)
 
+@dataclass
+class WindowControlStateInput:
+    """
+    Read exact-window metadata and issue one management admission without capture or activation.
+"""
+    def __init__(self, *, pid:int, window_id:int, session:typing.Optional[str]):
+        self.pid = pid
+        self.window_id = window_id
+        self.session = session
+
+
+
+
+    def __str__(self):
+        return "WindowControlStateInput(pid={}, window_id={}, session={})".format(self.pid, self.window_id, self.session)
+    def __eq__(self, other):
+        if self.pid != other.pid:
+            return False
+        if self.window_id != other.window_id:
+            return False
+        if self.session != other.session:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeWindowControlStateInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return WindowControlStateInput(
+            pid=_UniffiFfiConverterUInt32.read(buf),
+            window_id=_UniffiFfiConverterUInt64.read(buf),
+            session=_UniffiFfiConverterOptionalString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterUInt32.check_lower(value.pid)
+        _UniffiFfiConverterUInt64.check_lower(value.window_id)
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterUInt32.write(value.pid, buf)
+        _UniffiFfiConverterUInt64.write(value.window_id, buf)
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
+
 class _UniffiFfiConverterOptionalTypeElementFrame(_UniffiConverterRustBuffer):
     @classmethod
     def check_lower(cls, value):
@@ -8071,9 +9727,34 @@ class _UniffiFfiConverterOptionalTypeElementFrame(_UniffiConverterRustBuffer):
         else:
             raise InternalError("Unexpected flag byte for optional type")
 
+class _UniffiFfiConverterOptionalTypeElementRange(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeElementRange.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeElementRange.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeElementRange.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
 @dataclass
 class WindowElement:
-    def __init__(self, *, element_index:int, role:str, depth:int, element_token:typing.Optional[str], label:typing.Optional[str], value:typing.Optional[str], value_description:typing.Optional[str], enabled:typing.Optional[bool], selected:typing.Optional[bool], in_web_content:typing.Optional[bool], actions:typing.Optional[typing.List[str]], parent_index:typing.Optional[int], frame:typing.Optional[ElementFrame], min:typing.Optional[float], max:typing.Optional[float]):
+    def __init__(self, *, element_index:int, role:str, depth:int, element_token:typing.Optional[str], label:typing.Optional[str], value:typing.Optional[str], value_description:typing.Optional[str], enabled:typing.Optional[bool], selected:typing.Optional[bool], in_web_content:typing.Optional[bool], actions:typing.Optional[typing.List[str]], parent_index:typing.Optional[int], frame:typing.Optional[ElementFrame], min:typing.Optional[float], max:typing.Optional[float], actionable:typing.Optional[bool], name:typing.Optional[str], automation_id:typing.Optional[str], class_name:typing.Optional[str], help_text:typing.Optional[str], checked:typing.Optional[str], expanded:typing.Optional[bool], offscreen:typing.Optional[bool], focused:typing.Optional[bool], read_only:typing.Optional[bool], password:typing.Optional[bool], required:typing.Optional[bool], range:typing.Optional[ElementRange]):
         self.element_index = element_index
         self.role = role
         self.depth = depth
@@ -8089,12 +9770,25 @@ class WindowElement:
         self.frame = frame
         self.min = min
         self.max = max
+        self.actionable = actionable
+        self.name = name
+        self.automation_id = automation_id
+        self.class_name = class_name
+        self.help_text = help_text
+        self.checked = checked
+        self.expanded = expanded
+        self.offscreen = offscreen
+        self.focused = focused
+        self.read_only = read_only
+        self.password = password
+        self.required = required
+        self.range = range
 
 
 
 
     def __str__(self):
-        return "WindowElement(element_index={}, role={}, depth={}, element_token={}, label={}, value={}, value_description={}, enabled={}, selected={}, in_web_content={}, actions={}, parent_index={}, frame={}, min={}, max={})".format(self.element_index, self.role, self.depth, self.element_token, self.label, self.value, self.value_description, self.enabled, self.selected, self.in_web_content, self.actions, self.parent_index, self.frame, self.min, self.max)
+        return "WindowElement(element_index={}, role={}, depth={}, element_token={}, label={}, value={}, value_description={}, enabled={}, selected={}, in_web_content={}, actions={}, parent_index={}, frame={}, min={}, max={}, actionable={}, name={}, automation_id={}, class_name={}, help_text={}, checked={}, expanded={}, offscreen={}, focused={}, read_only={}, password={}, required={}, range={})".format(self.element_index, self.role, self.depth, self.element_token, self.label, self.value, self.value_description, self.enabled, self.selected, self.in_web_content, self.actions, self.parent_index, self.frame, self.min, self.max, self.actionable, self.name, self.automation_id, self.class_name, self.help_text, self.checked, self.expanded, self.offscreen, self.focused, self.read_only, self.password, self.required, self.range)
     def __eq__(self, other):
         if self.element_index != other.element_index:
             return False
@@ -8126,6 +9820,32 @@ class WindowElement:
             return False
         if self.max != other.max:
             return False
+        if self.actionable != other.actionable:
+            return False
+        if self.name != other.name:
+            return False
+        if self.automation_id != other.automation_id:
+            return False
+        if self.class_name != other.class_name:
+            return False
+        if self.help_text != other.help_text:
+            return False
+        if self.checked != other.checked:
+            return False
+        if self.expanded != other.expanded:
+            return False
+        if self.offscreen != other.offscreen:
+            return False
+        if self.focused != other.focused:
+            return False
+        if self.read_only != other.read_only:
+            return False
+        if self.password != other.password:
+            return False
+        if self.required != other.required:
+            return False
+        if self.range != other.range:
+            return False
         return True
 
 class _UniffiFfiConverterTypeWindowElement(_UniffiConverterRustBuffer):
@@ -8147,6 +9867,19 @@ class _UniffiFfiConverterTypeWindowElement(_UniffiConverterRustBuffer):
             frame=_UniffiFfiConverterOptionalTypeElementFrame.read(buf),
             min=_UniffiFfiConverterOptionalFloat64.read(buf),
             max=_UniffiFfiConverterOptionalFloat64.read(buf),
+            actionable=_UniffiFfiConverterOptionalBoolean.read(buf),
+            name=_UniffiFfiConverterOptionalString.read(buf),
+            automation_id=_UniffiFfiConverterOptionalString.read(buf),
+            class_name=_UniffiFfiConverterOptionalString.read(buf),
+            help_text=_UniffiFfiConverterOptionalString.read(buf),
+            checked=_UniffiFfiConverterOptionalString.read(buf),
+            expanded=_UniffiFfiConverterOptionalBoolean.read(buf),
+            offscreen=_UniffiFfiConverterOptionalBoolean.read(buf),
+            focused=_UniffiFfiConverterOptionalBoolean.read(buf),
+            read_only=_UniffiFfiConverterOptionalBoolean.read(buf),
+            password=_UniffiFfiConverterOptionalBoolean.read(buf),
+            required=_UniffiFfiConverterOptionalBoolean.read(buf),
+            range=_UniffiFfiConverterOptionalTypeElementRange.read(buf),
         )
 
     @staticmethod
@@ -8166,6 +9899,19 @@ class _UniffiFfiConverterTypeWindowElement(_UniffiConverterRustBuffer):
         _UniffiFfiConverterOptionalTypeElementFrame.check_lower(value.frame)
         _UniffiFfiConverterOptionalFloat64.check_lower(value.min)
         _UniffiFfiConverterOptionalFloat64.check_lower(value.max)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.actionable)
+        _UniffiFfiConverterOptionalString.check_lower(value.name)
+        _UniffiFfiConverterOptionalString.check_lower(value.automation_id)
+        _UniffiFfiConverterOptionalString.check_lower(value.class_name)
+        _UniffiFfiConverterOptionalString.check_lower(value.help_text)
+        _UniffiFfiConverterOptionalString.check_lower(value.checked)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.expanded)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.offscreen)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.focused)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.read_only)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.password)
+        _UniffiFfiConverterOptionalBoolean.check_lower(value.required)
+        _UniffiFfiConverterOptionalTypeElementRange.check_lower(value.range)
 
     @staticmethod
     def write(value, buf):
@@ -8184,6 +9930,284 @@ class _UniffiFfiConverterTypeWindowElement(_UniffiConverterRustBuffer):
         _UniffiFfiConverterOptionalTypeElementFrame.write(value.frame, buf)
         _UniffiFfiConverterOptionalFloat64.write(value.min, buf)
         _UniffiFfiConverterOptionalFloat64.write(value.max, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.actionable, buf)
+        _UniffiFfiConverterOptionalString.write(value.name, buf)
+        _UniffiFfiConverterOptionalString.write(value.automation_id, buf)
+        _UniffiFfiConverterOptionalString.write(value.class_name, buf)
+        _UniffiFfiConverterOptionalString.write(value.help_text, buf)
+        _UniffiFfiConverterOptionalString.write(value.checked, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.expanded, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.offscreen, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.focused, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.read_only, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.password, buf)
+        _UniffiFfiConverterOptionalBoolean.write(value.required, buf)
+        _UniffiFfiConverterOptionalTypeElementRange.write(value.range, buf)
+
+
+
+
+
+
+class WindowManagementOperation(enum.Enum):
+    """
+    One native window mutation. Restore remains a separate existing operation.
+"""
+
+    MOVE = 0
+
+    RESIZE = 1
+
+    MINIMIZE = 2
+
+    MAXIMIZE = 3
+
+    FOCUS = 4
+
+
+
+class _UniffiFfiConverterTypeWindowManagementOperation(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return WindowManagementOperation.MOVE
+        if variant == 2:
+            return WindowManagementOperation.RESIZE
+        if variant == 3:
+            return WindowManagementOperation.MINIMIZE
+        if variant == 4:
+            return WindowManagementOperation.MAXIMIZE
+        if variant == 5:
+            return WindowManagementOperation.FOCUS
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == WindowManagementOperation.MOVE:
+            return
+        if value == WindowManagementOperation.RESIZE:
+            return
+        if value == WindowManagementOperation.MINIMIZE:
+            return
+        if value == WindowManagementOperation.MAXIMIZE:
+            return
+        if value == WindowManagementOperation.FOCUS:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == WindowManagementOperation.MOVE:
+            buf.write_i32(1)
+        if value == WindowManagementOperation.RESIZE:
+            buf.write_i32(2)
+        if value == WindowManagementOperation.MINIMIZE:
+            buf.write_i32(3)
+        if value == WindowManagementOperation.MAXIMIZE:
+            buf.write_i32(4)
+        if value == WindowManagementOperation.FOCUS:
+            buf.write_i32(5)
+
+
+
+
+
+
+
+
+class WindowManagementSpace(enum.Enum):
+    """
+    Explicit native desktop pixels, unrelated to overview or CSS coordinates.
+"""
+
+    WINDOWS_DESKTOP_PIXELS = 0
+
+
+
+class _UniffiFfiConverterTypeWindowManagementSpace(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return WindowManagementSpace.WINDOWS_DESKTOP_PIXELS
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == WindowManagementSpace.WINDOWS_DESKTOP_PIXELS:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == WindowManagementSpace.WINDOWS_DESKTOP_PIXELS:
+            buf.write_i32(1)
+
+
+
+class _UniffiFfiConverterOptionalTypeWindowManagementSpace(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeWindowManagementSpace.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeWindowManagementSpace.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeWindowManagementSpace.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+@dataclass
+class WindowManagementInput:
+    """
+    A source-bound one-use operation, with no input-event, delivery-mode or sequence fields.
+"""
+    def __init__(self, *, pid:int, window_id:int, state_id:str, operation:WindowManagementOperation, x:typing.Optional[int], y:typing.Optional[int], width:typing.Optional[int], height:typing.Optional[int], unit:typing.Optional[WindowManagementSpace], session:typing.Optional[str]):
+        self.pid = pid
+        self.window_id = window_id
+        self.state_id = state_id
+        self.operation = operation
+        self.x = x
+        self.y = y
+        self.width = width
+        self.height = height
+        self.unit = unit
+        self.session = session
+
+
+
+
+    def __str__(self):
+        return "WindowManagementInput(pid={}, window_id={}, state_id={}, operation={}, x={}, y={}, width={}, height={}, unit={}, session={})".format(self.pid, self.window_id, self.state_id, self.operation, self.x, self.y, self.width, self.height, self.unit, self.session)
+    def __eq__(self, other):
+        if self.pid != other.pid:
+            return False
+        if self.window_id != other.window_id:
+            return False
+        if self.state_id != other.state_id:
+            return False
+        if self.operation != other.operation:
+            return False
+        if self.x != other.x:
+            return False
+        if self.y != other.y:
+            return False
+        if self.width != other.width:
+            return False
+        if self.height != other.height:
+            return False
+        if self.unit != other.unit:
+            return False
+        if self.session != other.session:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeWindowManagementInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return WindowManagementInput(
+            pid=_UniffiFfiConverterUInt32.read(buf),
+            window_id=_UniffiFfiConverterUInt64.read(buf),
+            state_id=_UniffiFfiConverterString.read(buf),
+            operation=_UniffiFfiConverterTypeWindowManagementOperation.read(buf),
+            x=_UniffiFfiConverterOptionalInt32.read(buf),
+            y=_UniffiFfiConverterOptionalInt32.read(buf),
+            width=_UniffiFfiConverterOptionalUInt32.read(buf),
+            height=_UniffiFfiConverterOptionalUInt32.read(buf),
+            unit=_UniffiFfiConverterOptionalTypeWindowManagementSpace.read(buf),
+            session=_UniffiFfiConverterOptionalString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterUInt32.check_lower(value.pid)
+        _UniffiFfiConverterUInt64.check_lower(value.window_id)
+        _UniffiFfiConverterString.check_lower(value.state_id)
+        _UniffiFfiConverterTypeWindowManagementOperation.check_lower(value.operation)
+        _UniffiFfiConverterOptionalInt32.check_lower(value.x)
+        _UniffiFfiConverterOptionalInt32.check_lower(value.y)
+        _UniffiFfiConverterOptionalUInt32.check_lower(value.width)
+        _UniffiFfiConverterOptionalUInt32.check_lower(value.height)
+        _UniffiFfiConverterOptionalTypeWindowManagementSpace.check_lower(value.unit)
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterUInt32.write(value.pid, buf)
+        _UniffiFfiConverterUInt64.write(value.window_id, buf)
+        _UniffiFfiConverterString.write(value.state_id, buf)
+        _UniffiFfiConverterTypeWindowManagementOperation.write(value.operation, buf)
+        _UniffiFfiConverterOptionalInt32.write(value.x, buf)
+        _UniffiFfiConverterOptionalInt32.write(value.y, buf)
+        _UniffiFfiConverterOptionalUInt32.write(value.width, buf)
+        _UniffiFfiConverterOptionalUInt32.write(value.height, buf)
+        _UniffiFfiConverterOptionalTypeWindowManagementSpace.write(value.unit, buf)
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
+
+@dataclass
+class WindowRestoreInput:
+    """
+    One fresh, narrowly scoped state reference; no screenshot coordinates are accepted.
+"""
+    def __init__(self, *, pid:int, window_id:int, state_id:str, session:typing.Optional[str]):
+        self.pid = pid
+        self.window_id = window_id
+        self.state_id = state_id
+        self.session = session
+
+
+
+
+    def __str__(self):
+        return "WindowRestoreInput(pid={}, window_id={}, state_id={}, session={})".format(self.pid, self.window_id, self.state_id, self.session)
+    def __eq__(self, other):
+        if self.pid != other.pid:
+            return False
+        if self.window_id != other.window_id:
+            return False
+        if self.state_id != other.state_id:
+            return False
+        if self.session != other.session:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeWindowRestoreInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return WindowRestoreInput(
+            pid=_UniffiFfiConverterUInt32.read(buf),
+            window_id=_UniffiFfiConverterUInt64.read(buf),
+            state_id=_UniffiFfiConverterString.read(buf),
+            session=_UniffiFfiConverterOptionalString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterUInt32.check_lower(value.pid)
+        _UniffiFfiConverterUInt64.check_lower(value.window_id)
+        _UniffiFfiConverterString.check_lower(value.state_id)
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterUInt32.write(value.pid, buf)
+        _UniffiFfiConverterUInt64.write(value.window_id, buf)
+        _UniffiFfiConverterString.write(value.state_id, buf)
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
 
 class _UniffiFfiConverterSequenceTypeWindowElement(_UniffiConverterRustBuffer):
     @classmethod
@@ -8283,7 +10307,7 @@ class _UniffiFfiConverterSequenceTypeSnapshotImage(_UniffiConverterRustBuffer):
 
 @dataclass
 class WindowStateOutput:
-    def __init__(self, *, pid:int, window_id:int, snapshot_id:typing.Optional[str], app_name:typing.Optional[str], window_title:typing.Optional[str], tree_markdown:typing.Optional[str], elements:typing.Optional[typing.List[WindowElement]], element_count:typing.Optional[int], total_element_count:typing.Optional[int], returned_element_count:typing.Optional[int], filtered_element_count:typing.Optional[int], elements_complete:typing.Optional[bool], degraded:typing.Optional[bool], degraded_reason:typing.Optional[str], truncated:typing.Optional[bool], truncation_reason:typing.Optional[str], truncation_hint:typing.Optional[str], tree_format:typing.Optional[str], since:typing.Optional[str], since_status:typing.Optional[str], tree_diff:typing.Optional[str], screenshot_width:typing.Optional[int], screenshot_height:typing.Optional[int], screenshot_scale:typing.Optional[float], screenshot_mime_type:typing.Optional[str], screenshot_file_path:typing.Optional[str], screenshot_frame_valid:typing.Optional[bool], window_bounds:typing.Optional[WindowBounds], images:typing.List[SnapshotImage]):
+    def __init__(self, *, pid:int, window_id:int, snapshot_id:typing.Optional[str], app_name:typing.Optional[str], window_title:typing.Optional[str], tree_markdown:typing.Optional[str], elements:typing.Optional[typing.List[WindowElement]], element_count:typing.Optional[int], total_element_count:typing.Optional[int], returned_element_count:typing.Optional[int], filtered_element_count:typing.Optional[int], elements_complete:typing.Optional[bool], degraded:typing.Optional[bool], degraded_reason:typing.Optional[str], truncated:typing.Optional[bool], truncation_reason:typing.Optional[str], truncation_hint:typing.Optional[str], tree_format:typing.Optional[str], since:typing.Optional[str], since_status:typing.Optional[str], tree_diff:typing.Optional[str], screenshot_width:typing.Optional[int], screenshot_height:typing.Optional[int], screenshot_scale:typing.Optional[float], screenshot_mime_type:typing.Optional[str], screenshot_file_path:typing.Optional[str], screenshot_frame_valid:typing.Optional[bool], window_bounds:typing.Optional[WindowBounds], virtual_desktop:typing.Optional[VirtualDesktopMembership], images:typing.List[SnapshotImage]):
         self.pid = pid
         self.window_id = window_id
         self.snapshot_id = snapshot_id
@@ -8312,13 +10336,14 @@ class WindowStateOutput:
         self.screenshot_file_path = screenshot_file_path
         self.screenshot_frame_valid = screenshot_frame_valid
         self.window_bounds = window_bounds
+        self.virtual_desktop = virtual_desktop
         self.images = images
 
 
 
 
     def __str__(self):
-        return "WindowStateOutput(pid={}, window_id={}, snapshot_id={}, app_name={}, window_title={}, tree_markdown={}, elements={}, element_count={}, total_element_count={}, returned_element_count={}, filtered_element_count={}, elements_complete={}, degraded={}, degraded_reason={}, truncated={}, truncation_reason={}, truncation_hint={}, tree_format={}, since={}, since_status={}, tree_diff={}, screenshot_width={}, screenshot_height={}, screenshot_scale={}, screenshot_mime_type={}, screenshot_file_path={}, screenshot_frame_valid={}, window_bounds={}, images={})".format(self.pid, self.window_id, self.snapshot_id, self.app_name, self.window_title, self.tree_markdown, self.elements, self.element_count, self.total_element_count, self.returned_element_count, self.filtered_element_count, self.elements_complete, self.degraded, self.degraded_reason, self.truncated, self.truncation_reason, self.truncation_hint, self.tree_format, self.since, self.since_status, self.tree_diff, self.screenshot_width, self.screenshot_height, self.screenshot_scale, self.screenshot_mime_type, self.screenshot_file_path, self.screenshot_frame_valid, self.window_bounds, self.images)
+        return "WindowStateOutput(pid={}, window_id={}, snapshot_id={}, app_name={}, window_title={}, tree_markdown={}, elements={}, element_count={}, total_element_count={}, returned_element_count={}, filtered_element_count={}, elements_complete={}, degraded={}, degraded_reason={}, truncated={}, truncation_reason={}, truncation_hint={}, tree_format={}, since={}, since_status={}, tree_diff={}, screenshot_width={}, screenshot_height={}, screenshot_scale={}, screenshot_mime_type={}, screenshot_file_path={}, screenshot_frame_valid={}, window_bounds={}, virtual_desktop={}, images={})".format(self.pid, self.window_id, self.snapshot_id, self.app_name, self.window_title, self.tree_markdown, self.elements, self.element_count, self.total_element_count, self.returned_element_count, self.filtered_element_count, self.elements_complete, self.degraded, self.degraded_reason, self.truncated, self.truncation_reason, self.truncation_hint, self.tree_format, self.since, self.since_status, self.tree_diff, self.screenshot_width, self.screenshot_height, self.screenshot_scale, self.screenshot_mime_type, self.screenshot_file_path, self.screenshot_frame_valid, self.window_bounds, self.virtual_desktop, self.images)
     def __eq__(self, other):
         if self.pid != other.pid:
             return False
@@ -8376,6 +10401,8 @@ class WindowStateOutput:
             return False
         if self.window_bounds != other.window_bounds:
             return False
+        if self.virtual_desktop != other.virtual_desktop:
+            return False
         if self.images != other.images:
             return False
         return True
@@ -8412,6 +10439,7 @@ class _UniffiFfiConverterTypeWindowStateOutput(_UniffiConverterRustBuffer):
             screenshot_file_path=_UniffiFfiConverterOptionalString.read(buf),
             screenshot_frame_valid=_UniffiFfiConverterOptionalBoolean.read(buf),
             window_bounds=_UniffiFfiConverterOptionalTypeWindowBounds.read(buf),
+            virtual_desktop=_UniffiFfiConverterOptionalTypeVirtualDesktopMembership.read(buf),
             images=_UniffiFfiConverterSequenceTypeSnapshotImage.read(buf),
         )
 
@@ -8445,6 +10473,7 @@ class _UniffiFfiConverterTypeWindowStateOutput(_UniffiConverterRustBuffer):
         _UniffiFfiConverterOptionalString.check_lower(value.screenshot_file_path)
         _UniffiFfiConverterOptionalBoolean.check_lower(value.screenshot_frame_valid)
         _UniffiFfiConverterOptionalTypeWindowBounds.check_lower(value.window_bounds)
+        _UniffiFfiConverterOptionalTypeVirtualDesktopMembership.check_lower(value.virtual_desktop)
         _UniffiFfiConverterSequenceTypeSnapshotImage.check_lower(value.images)
 
     @staticmethod
@@ -8477,7 +10506,702 @@ class _UniffiFfiConverterTypeWindowStateOutput(_UniffiConverterRustBuffer):
         _UniffiFfiConverterOptionalString.write(value.screenshot_file_path, buf)
         _UniffiFfiConverterOptionalBoolean.write(value.screenshot_frame_valid, buf)
         _UniffiFfiConverterOptionalTypeWindowBounds.write(value.window_bounds, buf)
+        _UniffiFfiConverterOptionalTypeVirtualDesktopMembership.write(value.virtual_desktop, buf)
         _UniffiFfiConverterSequenceTypeSnapshotImage.write(value.images, buf)
+
+@dataclass
+class WindowStatusInput:
+    """
+    Read native state without pixels, a UI tree, activation or input.
+"""
+    def __init__(self, *, pid:int, window_id:int, session:typing.Optional[str]):
+        self.pid = pid
+        self.window_id = window_id
+        self.session = session
+
+
+
+
+    def __str__(self):
+        return "WindowStatusInput(pid={}, window_id={}, session={})".format(self.pid, self.window_id, self.session)
+    def __eq__(self, other):
+        if self.pid != other.pid:
+            return False
+        if self.window_id != other.window_id:
+            return False
+        if self.session != other.session:
+            return False
+        return True
+
+class _UniffiFfiConverterTypeWindowStatusInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        return WindowStatusInput(
+            pid=_UniffiFfiConverterUInt32.read(buf),
+            window_id=_UniffiFfiConverterUInt64.read(buf),
+            session=_UniffiFfiConverterOptionalString.read(buf),
+        )
+
+    @staticmethod
+    def check_lower(value):
+        _UniffiFfiConverterUInt32.check_lower(value.pid)
+        _UniffiFfiConverterUInt64.check_lower(value.window_id)
+        _UniffiFfiConverterOptionalString.check_lower(value.session)
+
+    @staticmethod
+    def write(value, buf):
+        _UniffiFfiConverterUInt32.write(value.pid, buf)
+        _UniffiFfiConverterUInt64.write(value.window_id, buf)
+        _UniffiFfiConverterOptionalString.write(value.session, buf)
+
+
+
+
+
+
+class DesktopActivityDelivery(enum.Enum):
+    """
+    Shared delivery is measured natively and cannot be published by the adapter.
+"""
+
+    NONE = 0
+
+    DIRECT = 1
+
+    UNKNOWN = 2
+
+
+
+class _UniffiFfiConverterTypeDesktopActivityDelivery(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return DesktopActivityDelivery.NONE
+        if variant == 2:
+            return DesktopActivityDelivery.DIRECT
+        if variant == 3:
+            return DesktopActivityDelivery.UNKNOWN
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == DesktopActivityDelivery.NONE:
+            return
+        if value == DesktopActivityDelivery.DIRECT:
+            return
+        if value == DesktopActivityDelivery.UNKNOWN:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == DesktopActivityDelivery.NONE:
+            buf.write_i32(1)
+        if value == DesktopActivityDelivery.DIRECT:
+            buf.write_i32(2)
+        if value == DesktopActivityDelivery.UNKNOWN:
+            buf.write_i32(3)
+
+
+
+
+
+
+
+
+class DesktopActivityOutcome(enum.Enum):
+
+    COMPLETED = 0
+
+    REFUSED = 1
+
+    INTERRUPTED = 2
+
+    UNKNOWN = 3
+
+
+
+class _UniffiFfiConverterTypeDesktopActivityOutcome(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return DesktopActivityOutcome.COMPLETED
+        if variant == 2:
+            return DesktopActivityOutcome.REFUSED
+        if variant == 3:
+            return DesktopActivityOutcome.INTERRUPTED
+        if variant == 4:
+            return DesktopActivityOutcome.UNKNOWN
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == DesktopActivityOutcome.COMPLETED:
+            return
+        if value == DesktopActivityOutcome.REFUSED:
+            return
+        if value == DesktopActivityOutcome.INTERRUPTED:
+            return
+        if value == DesktopActivityOutcome.UNKNOWN:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == DesktopActivityOutcome.COMPLETED:
+            buf.write_i32(1)
+        if value == DesktopActivityOutcome.REFUSED:
+            buf.write_i32(2)
+        if value == DesktopActivityOutcome.INTERRUPTED:
+            buf.write_i32(3)
+        if value == DesktopActivityOutcome.UNKNOWN:
+            buf.write_i32(4)
+
+
+
+
+
+
+
+
+class DesktopActivityKind(enum.Enum):
+
+    READ = 0
+
+    WAIT = 1
+
+    CLICK = 2
+
+    DRAG = 3
+
+    SCROLL = 4
+
+    MOVE_POINTER = 5
+
+    TYPE = 6
+
+    KEY = 7
+
+    OPEN = 8
+
+    MANAGE = 9
+
+    BROWSER = 10
+
+    CLIPBOARD = 11
+
+    FILES = 12
+
+    RECORD = 13
+
+    OTHER = 14
+
+
+
+class _UniffiFfiConverterTypeDesktopActivityKind(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return DesktopActivityKind.READ
+        if variant == 2:
+            return DesktopActivityKind.WAIT
+        if variant == 3:
+            return DesktopActivityKind.CLICK
+        if variant == 4:
+            return DesktopActivityKind.DRAG
+        if variant == 5:
+            return DesktopActivityKind.SCROLL
+        if variant == 6:
+            return DesktopActivityKind.MOVE_POINTER
+        if variant == 7:
+            return DesktopActivityKind.TYPE
+        if variant == 8:
+            return DesktopActivityKind.KEY
+        if variant == 9:
+            return DesktopActivityKind.OPEN
+        if variant == 10:
+            return DesktopActivityKind.MANAGE
+        if variant == 11:
+            return DesktopActivityKind.BROWSER
+        if variant == 12:
+            return DesktopActivityKind.CLIPBOARD
+        if variant == 13:
+            return DesktopActivityKind.FILES
+        if variant == 14:
+            return DesktopActivityKind.RECORD
+        if variant == 15:
+            return DesktopActivityKind.OTHER
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == DesktopActivityKind.READ:
+            return
+        if value == DesktopActivityKind.WAIT:
+            return
+        if value == DesktopActivityKind.CLICK:
+            return
+        if value == DesktopActivityKind.DRAG:
+            return
+        if value == DesktopActivityKind.SCROLL:
+            return
+        if value == DesktopActivityKind.MOVE_POINTER:
+            return
+        if value == DesktopActivityKind.TYPE:
+            return
+        if value == DesktopActivityKind.KEY:
+            return
+        if value == DesktopActivityKind.OPEN:
+            return
+        if value == DesktopActivityKind.MANAGE:
+            return
+        if value == DesktopActivityKind.BROWSER:
+            return
+        if value == DesktopActivityKind.CLIPBOARD:
+            return
+        if value == DesktopActivityKind.FILES:
+            return
+        if value == DesktopActivityKind.RECORD:
+            return
+        if value == DesktopActivityKind.OTHER:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == DesktopActivityKind.READ:
+            buf.write_i32(1)
+        if value == DesktopActivityKind.WAIT:
+            buf.write_i32(2)
+        if value == DesktopActivityKind.CLICK:
+            buf.write_i32(3)
+        if value == DesktopActivityKind.DRAG:
+            buf.write_i32(4)
+        if value == DesktopActivityKind.SCROLL:
+            buf.write_i32(5)
+        if value == DesktopActivityKind.MOVE_POINTER:
+            buf.write_i32(6)
+        if value == DesktopActivityKind.TYPE:
+            buf.write_i32(7)
+        if value == DesktopActivityKind.KEY:
+            buf.write_i32(8)
+        if value == DesktopActivityKind.OPEN:
+            buf.write_i32(9)
+        if value == DesktopActivityKind.MANAGE:
+            buf.write_i32(10)
+        if value == DesktopActivityKind.BROWSER:
+            buf.write_i32(11)
+        if value == DesktopActivityKind.CLIPBOARD:
+            buf.write_i32(12)
+        if value == DesktopActivityKind.FILES:
+            buf.write_i32(13)
+        if value == DesktopActivityKind.RECORD:
+            buf.write_i32(14)
+        if value == DesktopActivityKind.OTHER:
+            buf.write_i32(15)
+
+
+
+
+
+
+
+
+class DesktopActivityLocation(enum.Enum):
+
+    DESKTOP = 0
+
+    BROWSER = 1
+
+    SEPARATE_DESKTOP = 2
+
+
+
+class _UniffiFfiConverterTypeDesktopActivityLocation(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return DesktopActivityLocation.DESKTOP
+        if variant == 2:
+            return DesktopActivityLocation.BROWSER
+        if variant == 3:
+            return DesktopActivityLocation.SEPARATE_DESKTOP
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value == DesktopActivityLocation.DESKTOP:
+            return
+        if value == DesktopActivityLocation.BROWSER:
+            return
+        if value == DesktopActivityLocation.SEPARATE_DESKTOP:
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value == DesktopActivityLocation.DESKTOP:
+            buf.write_i32(1)
+        if value == DesktopActivityLocation.BROWSER:
+            buf.write_i32(2)
+        if value == DesktopActivityLocation.SEPARATE_DESKTOP:
+            buf.write_i32(3)
+
+
+
+class _UniffiFfiConverterOptionalTypeDesktopActivityWindow(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeDesktopActivityWindow.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeDesktopActivityWindow.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeDesktopActivityWindow.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+class _UniffiFfiConverterOptionalTypeDesktopActivityDelivery(_UniffiConverterRustBuffer):
+    @classmethod
+    def check_lower(cls, value):
+        if value is not None:
+            _UniffiFfiConverterTypeDesktopActivityDelivery.check_lower(value)
+
+    @classmethod
+    def write(cls, value, buf):
+        if value is None:
+            buf.write_u8(0)
+            return
+
+        buf.write_u8(1)
+        _UniffiFfiConverterTypeDesktopActivityDelivery.write(value, buf)
+
+    @classmethod
+    def read(cls, buf):
+        flag = buf.read_u8()
+        if flag == 0:
+            return None
+        elif flag == 1:
+            return _UniffiFfiConverterTypeDesktopActivityDelivery.read(buf)
+        else:
+            raise InternalError("Unexpected flag byte for optional type")
+
+
+
+
+
+
+class DesktopActivityInput:
+    """
+    Metadata for the calling transport's desktop activity. No input is sent by this tool.
+"""
+    def __init__(self):
+        raise RuntimeError("DesktopActivityInput cannot be instantiated directly")
+
+    # Each enum variant is a nested class of the enum itself.
+    @dataclass
+    class CONFIGURE:
+
+        def __init__(self, label:str, panel:bool, outline:bool, point:bool):
+            self.label = label
+
+
+            self.panel = panel
+
+
+            self.outline = outline
+
+
+            self.point = point
+
+
+            pass
+
+
+
+
+
+        def __str__(self):
+            return "DesktopActivityInput.CONFIGURE(label={}, panel={}, outline={}, point={})".format(self.label, self.panel, self.outline, self.point)
+        def __eq__(self, other):
+            if not isinstance(other, DesktopActivityInput):
+                return NotImplemented
+            if not other.is_CONFIGURE():
+                return False
+            if self.label != other.label:
+                return False
+            if self.panel != other.panel:
+                return False
+            if self.outline != other.outline:
+                return False
+            if self.point != other.point:
+                return False
+            return True
+
+    @dataclass
+    class BEGIN:
+
+        def __init__(self, intent:str):
+            self.intent = intent
+
+
+            pass
+
+
+
+
+
+        def __str__(self):
+            return "DesktopActivityInput.BEGIN(intent={})".format(self.intent)
+        def __eq__(self, other):
+            if not isinstance(other, DesktopActivityInput):
+                return NotImplemented
+            if not other.is_BEGIN():
+                return False
+            if self.intent != other.intent:
+                return False
+            return True
+
+    @dataclass
+    class END:
+
+        def __init__(self, outcome:DesktopActivityOutcome):
+            self.outcome = outcome
+
+
+            pass
+
+
+
+
+
+        def __str__(self):
+            return "DesktopActivityInput.END(outcome={})".format(self.outcome)
+        def __eq__(self, other):
+            if not isinstance(other, DesktopActivityInput):
+                return NotImplemented
+            if not other.is_END():
+                return False
+            if self.outcome != other.outcome:
+                return False
+            return True
+
+    @dataclass
+    class ACTION_START:
+
+        def __init__(self, id:int, kind:DesktopActivityKind, location:DesktopActivityLocation, window:typing.Optional[DesktopActivityWindow], delivery:typing.Optional[DesktopActivityDelivery]):
+            self.id = id
+
+
+            self.kind = kind
+
+
+            self.location = location
+
+
+            self.window = window
+
+
+            self.delivery = delivery
+
+
+            pass
+
+
+
+
+
+        def __str__(self):
+            return "DesktopActivityInput.ACTION_START(id={}, kind={}, location={}, window={}, delivery={})".format(self.id, self.kind, self.location, self.window, self.delivery)
+        def __eq__(self, other):
+            if not isinstance(other, DesktopActivityInput):
+                return NotImplemented
+            if not other.is_ACTION_START():
+                return False
+            if self.id != other.id:
+                return False
+            if self.kind != other.kind:
+                return False
+            if self.location != other.location:
+                return False
+            if self.window != other.window:
+                return False
+            if self.delivery != other.delivery:
+                return False
+            return True
+
+    @dataclass
+    class ACTION_END:
+
+        def __init__(self, id:int, outcome:DesktopActivityOutcome):
+            self.id = id
+
+
+            self.outcome = outcome
+
+
+            pass
+
+
+
+
+
+        def __str__(self):
+            return "DesktopActivityInput.ACTION_END(id={}, outcome={})".format(self.id, self.outcome)
+        def __eq__(self, other):
+            if not isinstance(other, DesktopActivityInput):
+                return NotImplemented
+            if not other.is_ACTION_END():
+                return False
+            if self.id != other.id:
+                return False
+            if self.outcome != other.outcome:
+                return False
+            return True
+
+
+
+    # For each variant, we have `is_NAME` and `is_name` methods for easily checking
+    # whether an instance is that variant.
+    def is_CONFIGURE(self) -> bool:
+        return isinstance(self, DesktopActivityInput.CONFIGURE)
+    def is_configure(self) -> bool:
+        return isinstance(self, DesktopActivityInput.CONFIGURE)
+    def is_BEGIN(self) -> bool:
+        return isinstance(self, DesktopActivityInput.BEGIN)
+    def is_begin(self) -> bool:
+        return isinstance(self, DesktopActivityInput.BEGIN)
+    def is_END(self) -> bool:
+        return isinstance(self, DesktopActivityInput.END)
+    def is_end(self) -> bool:
+        return isinstance(self, DesktopActivityInput.END)
+    def is_ACTION_START(self) -> bool:
+        return isinstance(self, DesktopActivityInput.ACTION_START)
+    def is_action_start(self) -> bool:
+        return isinstance(self, DesktopActivityInput.ACTION_START)
+    def is_ACTION_END(self) -> bool:
+        return isinstance(self, DesktopActivityInput.ACTION_END)
+    def is_action_end(self) -> bool:
+        return isinstance(self, DesktopActivityInput.ACTION_END)
+
+
+# Now, a little trick - we make each nested variant class be a subclass of the main
+# enum class, so that method calls and instance checks etc will work intuitively.
+# We might be able to do this a little more neatly with a metaclass, but this'll do.
+DesktopActivityInput.CONFIGURE = type("DesktopActivityInput.CONFIGURE", (DesktopActivityInput.CONFIGURE, DesktopActivityInput,), {})  # type: ignore
+DesktopActivityInput.BEGIN = type("DesktopActivityInput.BEGIN", (DesktopActivityInput.BEGIN, DesktopActivityInput,), {})  # type: ignore
+DesktopActivityInput.END = type("DesktopActivityInput.END", (DesktopActivityInput.END, DesktopActivityInput,), {})  # type: ignore
+DesktopActivityInput.ACTION_START = type("DesktopActivityInput.ACTION_START", (DesktopActivityInput.ACTION_START, DesktopActivityInput,), {})  # type: ignore
+DesktopActivityInput.ACTION_END = type("DesktopActivityInput.ACTION_END", (DesktopActivityInput.ACTION_END, DesktopActivityInput,), {})  # type: ignore
+
+
+
+
+class _UniffiFfiConverterTypeDesktopActivityInput(_UniffiConverterRustBuffer):
+    @staticmethod
+    def read(buf):
+        variant = buf.read_i32()
+        if variant == 1:
+            return DesktopActivityInput.CONFIGURE(
+                _UniffiFfiConverterString.read(buf),
+                _UniffiFfiConverterBoolean.read(buf),
+                _UniffiFfiConverterBoolean.read(buf),
+                _UniffiFfiConverterBoolean.read(buf),
+            )
+        if variant == 2:
+            return DesktopActivityInput.BEGIN(
+                _UniffiFfiConverterString.read(buf),
+            )
+        if variant == 3:
+            return DesktopActivityInput.END(
+                _UniffiFfiConverterTypeDesktopActivityOutcome.read(buf),
+            )
+        if variant == 4:
+            return DesktopActivityInput.ACTION_START(
+                _UniffiFfiConverterUInt64.read(buf),
+                _UniffiFfiConverterTypeDesktopActivityKind.read(buf),
+                _UniffiFfiConverterTypeDesktopActivityLocation.read(buf),
+                _UniffiFfiConverterOptionalTypeDesktopActivityWindow.read(buf),
+                _UniffiFfiConverterOptionalTypeDesktopActivityDelivery.read(buf),
+            )
+        if variant == 5:
+            return DesktopActivityInput.ACTION_END(
+                _UniffiFfiConverterUInt64.read(buf),
+                _UniffiFfiConverterTypeDesktopActivityOutcome.read(buf),
+            )
+        raise InternalError("Raw enum value doesn't match any cases")
+
+    @staticmethod
+    def check_lower(value):
+        if value.is_CONFIGURE():
+            _UniffiFfiConverterString.check_lower(value.label)
+            _UniffiFfiConverterBoolean.check_lower(value.panel)
+            _UniffiFfiConverterBoolean.check_lower(value.outline)
+            _UniffiFfiConverterBoolean.check_lower(value.point)
+            return
+        if value.is_BEGIN():
+            _UniffiFfiConverterString.check_lower(value.intent)
+            return
+        if value.is_END():
+            _UniffiFfiConverterTypeDesktopActivityOutcome.check_lower(value.outcome)
+            return
+        if value.is_ACTION_START():
+            _UniffiFfiConverterUInt64.check_lower(value.id)
+            _UniffiFfiConverterTypeDesktopActivityKind.check_lower(value.kind)
+            _UniffiFfiConverterTypeDesktopActivityLocation.check_lower(value.location)
+            _UniffiFfiConverterOptionalTypeDesktopActivityWindow.check_lower(value.window)
+            _UniffiFfiConverterOptionalTypeDesktopActivityDelivery.check_lower(value.delivery)
+            return
+        if value.is_ACTION_END():
+            _UniffiFfiConverterUInt64.check_lower(value.id)
+            _UniffiFfiConverterTypeDesktopActivityOutcome.check_lower(value.outcome)
+            return
+        raise ValueError(value)
+
+    @staticmethod
+    def write(value, buf):
+        if value.is_CONFIGURE():
+            buf.write_i32(1)
+            _UniffiFfiConverterString.write(value.label, buf)
+            _UniffiFfiConverterBoolean.write(value.panel, buf)
+            _UniffiFfiConverterBoolean.write(value.outline, buf)
+            _UniffiFfiConverterBoolean.write(value.point, buf)
+        if value.is_BEGIN():
+            buf.write_i32(2)
+            _UniffiFfiConverterString.write(value.intent, buf)
+        if value.is_END():
+            buf.write_i32(3)
+            _UniffiFfiConverterTypeDesktopActivityOutcome.write(value.outcome, buf)
+        if value.is_ACTION_START():
+            buf.write_i32(4)
+            _UniffiFfiConverterUInt64.write(value.id, buf)
+            _UniffiFfiConverterTypeDesktopActivityKind.write(value.kind, buf)
+            _UniffiFfiConverterTypeDesktopActivityLocation.write(value.location, buf)
+            _UniffiFfiConverterOptionalTypeDesktopActivityWindow.write(value.window, buf)
+            _UniffiFfiConverterOptionalTypeDesktopActivityDelivery.write(value.delivery, buf)
+        if value.is_ACTION_END():
+            buf.write_i32(5)
+            _UniffiFfiConverterUInt64.write(value.id, buf)
+            _UniffiFfiConverterTypeDesktopActivityOutcome.write(value.outcome, buf)
+
+
 
 
 
@@ -8548,6 +11272,7 @@ __all__ = [
     "ActionEvidenceKind",
     "ActionEffect",
     "ActionRoute",
+    "AgentActivityImageMime",
     "ActionTarget",
     "ClickPosition",
     "InputDeliveryMode",
@@ -8557,6 +11282,7 @@ __all__ = [
     "CursorMotionTiming",
     "CursorReducedMotion",
     "CursorAction",
+    "DesktopQueryErrorCode",
     "DesktopScope",
     "SessionLifecycleState",
     "SessionClientKindOutput",
@@ -8564,13 +11290,27 @@ __all__ = [
     "VisualRegionKind",
     "VisualCaptureSource",
     "VisualActionCoordinateSpace",
+    "ScrollUnit",
     "VerificationStatus",
     "UnknownReason",
+    "AgentActivityKind",
+    "AgentActivitySource",
+    "AgentActivityOutcome",
     "ScrollDirection",
     "ScrollBy",
+    "SemanticOperation",
     "CaptureScope",
     "EffectiveScope",
+    "VisualPreset",
+    "VisualQuality",
     "VisualParseErrorCode",
+    "WindowManagementOperation",
+    "WindowManagementSpace",
+    "DesktopActivityDelivery",
+    "DesktopActivityOutcome",
+    "DesktopActivityKind",
+    "DesktopActivityLocation",
+    "DesktopActivityInput",
     "Platform",
     "ActionDelivery",
     "ActionError",
@@ -8578,6 +11318,9 @@ __all__ = [
     "ActionEvidence",
     "ActionNextCall",
     "ActionResult",
+    "AgentActivityImage",
+    "AgentActivityPoint",
+    "AgentActivityRect",
     "AppInfo",
     "BoundsExpectation",
     "ClickInput",
@@ -8593,16 +11336,20 @@ __all__ = [
     "CursorThemeOutput",
     "CursorThemeSelection",
     "CursorVisualOutput",
+    "DesktopActivityWindow",
+    "DesktopQueryError",
     "DragInput",
     "ElementFrame",
     "ElementSelector",
     "ElementPredicate",
+    "ElementRange",
     "EndSessionInput",
     "EndSessionOutput",
     "GetAgentCursorStateInput",
     "GetAgentCursorStateOutput",
     "GetCursorPositionInput",
     "GetDesktopStateInput",
+    "GetDisplayStateInput",
     "GetScreenSizeInput",
     "GetSessionInput",
     "GetWindowStateInput",
@@ -8610,11 +11357,13 @@ __all__ = [
     "InvokeMenuInput",
     "ListAppsInput",
     "ListAppsOutput",
+    "ListDisplaysInput",
     "ListSessionsInput",
     "SessionOutput",
     "ListSessionsOutput",
     "ListWindowsInput",
     "WindowBounds",
+    "VirtualDesktopMembership",
     "WindowInfo",
     "ListWindowsOutput",
     "MoveCursorInput",
@@ -8628,9 +11377,13 @@ __all__ = [
     "VisualParseWarning",
     "VisualParseTiming",
     "ParseVisualRegionsOutput",
+    "PointerMoveInput",
+    "PointerScrollInput",
     "PredicateOutcome",
+    "PresentAgentActivityInput",
     "PressKeyInput",
     "ScrollInput",
+    "SemanticActionInput",
     "SessionStateOutput",
     "SetAgentCursorEnabledInput",
     "SetAgentCursorEnabledOutput",
@@ -8638,6 +11391,7 @@ __all__ = [
     "SetAgentCursorMotionOutput",
     "SetAgentCursorThemeInput",
     "SetAgentCursorThemeOutput",
+    "SetAgentVisualsInput",
     "SetWindowFrameInput",
     "SnapshotImage",
     "StartSessionInput",
@@ -8648,6 +11402,10 @@ __all__ = [
     "VerifyStateInput",
     "VerifyStateOutput",
     "VisualParseError",
+    "WindowControlStateInput",
     "WindowElement",
+    "WindowManagementInput",
+    "WindowRestoreInput",
     "WindowStateOutput",
+    "WindowStatusInput",
 ]
