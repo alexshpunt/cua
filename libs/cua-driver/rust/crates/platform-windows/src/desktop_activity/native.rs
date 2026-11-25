@@ -224,12 +224,7 @@ impl Renderer {
                 frame.is_none_or(|(_, r)| action.position_frame == Some(r) && contains(r, x, y))
             });
             if let Some((bounds, mark)) = dot.filter(|_| agent.point).and_then(|(x, y)| {
-                PointMark::layout(
-                    x,
-                    y,
-                    &format!("{} · {}", agent.label, action.kind.label()),
-                    color,
-                )
+                PointMark::layout(x, y, &agent.label, action.kind.label(), color)
             }) {
                 Hud::update(&mut cue.point, bounds, mark, PointMark::paint);
             } else {
@@ -371,13 +366,20 @@ fn monitor(point: POINT, primary_fallback: bool) -> Option<Monitor> {
 struct PointMark {
     origin: (i32, i32),
     label: String,
+    action: &'static str,
     color: [u8; 4],
     scale: u32,
     put_label_right: bool,
 }
 
 impl PointMark {
-    fn layout(x: i32, y: i32, label: &str, color: [u8; 4]) -> Option<(ActivityRect, Self)> {
+    fn layout(
+        x: i32,
+        y: i32,
+        label: &str,
+        action: &'static str,
+        color: [u8; 4],
+    ) -> Option<(ActivityRect, Self)> {
         let Monitor { screen, scale, .. } = monitor(POINT { x, y }, false)?;
         let s = |n| scaled(n, scale);
         let right = screen.x + screen.width as i32;
@@ -392,6 +394,7 @@ impl PointMark {
             Self {
                 origin: (x - left, y - top),
                 label: label.to_owned(),
+                action,
                 color,
                 scale,
                 put_label_right,
@@ -408,16 +411,18 @@ impl PointMark {
         } else {
             (0, x - s(10))
         };
-        let label_top = s(3);
-        fill(pixmap, lead, label_top, trail - lead, s(22), BACKGROUND);
+        let label_x = lead + s(6);
+        let label_width = trail - lead - s(12);
+        fill(pixmap, lead, 0, trail - lead, s(28), BACKGROUND);
+        line(pixmap, &mark.label, label_x, s(1), label_width, s(12), TEXT);
         line(
             pixmap,
-            &mark.label,
-            lead + s(6),
-            label_top + s(3),
-            trail - lead - s(12),
-            s(13),
-            TEXT,
+            mark.action,
+            label_x,
+            s(14),
+            label_width,
+            s(11),
+            MUTED,
         );
         if let Some(ring) = PathBuilder::from_circle(x as f32 + 0.5, y as f32 + 0.5, s(7) as f32) {
             pixmap.fill_path(
