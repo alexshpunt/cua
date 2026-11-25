@@ -13,10 +13,10 @@ use cua_driver_core::pointer::{self, Backend, Failure, Report};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Dwm::DwmFlush;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE,
-    MOUSEEVENTF_HWHEEL, MOUSEEVENTF_MOVE, MOUSEEVENTF_MOVE_NOCOALESCE, MOUSEEVENTF_VIRTUALDESK,
-    MOUSEEVENTF_WHEEL, MOUSEINPUT, VK_CONTROL, VK_LBUTTON, VK_LWIN, VK_MBUTTON, VK_MENU,
-    VK_RBUTTON, VK_RWIN, VK_SHIFT, VK_XBUTTON1, VK_XBUTTON2,
+    GetAsyncKeyState, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL,
+    MOUSEEVENTF_MOVE, MOUSEEVENTF_MOVE_NOCOALESCE, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL,
+    MOUSEINPUT, VK_CONTROL, VK_LBUTTON, VK_LWIN, VK_MBUTTON, VK_MENU, VK_RBUTTON, VK_RWIN,
+    VK_SHIFT, VK_XBUTTON1, VK_XBUTTON2,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     GetAncestor, GetCursorPos, GetForegroundWindow, GetSystemMetrics, GetWindowRect,
@@ -148,6 +148,7 @@ impl NativePointer {
                         ));
                     }
                     self.delivered_point = Some(actual);
+                    crate::desktop_activity::note_pointer_arrival(actual.0, actual.1);
                     self.started = Some(Instant::now());
                     self.arrival_pending = false;
                     return Ok(());
@@ -296,7 +297,7 @@ impl Backend for NativePointer {
         }
         self.started = None;
         let inserted = unsafe {
-            SendInput(
+            crate::input::send_desktop_input(
                 &[INPUT {
                     r#type: INPUT_MOUSE,
                     Anonymous: INPUT_0 {
@@ -372,7 +373,7 @@ impl cua_driver_core::scroll::Backend for NativePointer {
             return Err(failure("cancelled", "Cancelled before wheel insertion"));
         }
         let inserted = unsafe {
-            SendInput(
+            crate::input::send_desktop_input(
                 &[INPUT {
                     r#type: INPUT_MOUSE,
                     Anonymous: INPUT_0 {

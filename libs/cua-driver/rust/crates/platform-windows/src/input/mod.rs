@@ -51,6 +51,18 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
 
+/// The OS confirmed these events entered the shared desktop input queue.
+unsafe fn send_desktop_input(
+    events: &[windows::Win32::UI::Input::KeyboardAndMouse::INPUT],
+    size: i32,
+) -> u32 {
+    let inserted = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::SendInput(events, size) };
+    if inserted > 0 {
+        crate::desktop_activity::note_shared();
+    }
+    inserted
+}
+
 /// Windows mandatory integrity-level RIDs. Higher = more privileged. See
 /// https://learn.microsoft.com/en-us/windows/win32/secauthz/mandatory-integrity-control
 #[allow(dead_code)]

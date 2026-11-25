@@ -28,9 +28,9 @@ use cua_driver_contract::{
     ToolOutput, TypeTextInput, VerifyStateInput, VerifyStateOutput, WindowStateOutput,
 };
 use cua_driver_contract::{
-    GetDisplayStateInput, ListDisplaysInput, PointerMoveInput, PointerScrollInput,
-    PresentAgentActivityInput, SemanticActionInput, SetAgentVisualsInput, WindowControlStateInput,
-    WindowManagementInput, WindowRestoreInput, WindowStatusInput,
+    DesktopActivityInput, GetDisplayStateInput, ListDisplaysInput, PointerMoveInput,
+    PointerScrollInput, PresentAgentActivityInput, SemanticActionInput, SetAgentVisualsInput,
+    WindowControlStateInput, WindowManagementInput, WindowRestoreInput, WindowStatusInput,
 };
 use cua_driver_core::daemon::{
     is_daemon_listening, request_daemon_metadata, send_request, socket_path_for_namespace,
@@ -741,6 +741,7 @@ macro_rules! desktop_tool_methods {
             semantic_action: SemanticActionInput,
             set_agent_visuals: SetAgentVisualsInput,
             present_agent_activity: PresentAgentActivityInput,
+            agent_desktop_activity: DesktopActivityInput,
         }
     };
 }

@@ -890,6 +890,11 @@ impl WinSurface {
         })
     }
 
+    /// Move the destination without reallocating or redrawing the protected surface.
+    pub(crate) fn move_hud(&mut self, x: i32, y: i32) {
+        (self.virt_x, self.virt_y) = (x, y);
+    }
+
     /// Present a protected source-sized activity surface. Shares the cursor's DIB allocation and swizzle path.
     pub(crate) unsafe fn present_hud(&mut self, hwnd: windows::Win32::Foundation::HWND) -> bool {
         use windows::Win32::Foundation::{COLORREF, POINT, SIZE};
@@ -968,8 +973,9 @@ impl Drop for WinSurface {
     fn drop(&mut self) {
         use windows::Win32::Graphics::Gdi::{DeleteDC, DeleteObject, HBITMAP, HDC};
         unsafe {
-            let _ = DeleteObject(HBITMAP(self.hbmp as *mut _));
+            // A bitmap cannot be deleted while it is selected into a live DC.
             let _ = DeleteDC(HDC(self.hdc_mem as *mut _));
+            let _ = DeleteObject(HBITMAP(self.hbmp as *mut _));
         }
     }
 }

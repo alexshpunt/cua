@@ -15,12 +15,11 @@ use windows::Win32::UI::Controls::{
     POINTER_TYPE_INFO, POINTER_TYPE_INFO_0,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE,
-    MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN,
-    MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_MOVE_NOCOALESCE, MOUSEEVENTF_RIGHTDOWN,
-    MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN,
-    MOUSEEVENTF_XUP, MOUSEINPUT, MOUSE_EVENT_FLAGS, VK_LBUTTON, VK_MBUTTON, VK_RBUTTON,
-    VK_XBUTTON1, VK_XBUTTON2,
+    GetAsyncKeyState, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL,
+    MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
+    MOUSEEVENTF_MOVE, MOUSEEVENTF_MOVE_NOCOALESCE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
+    MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL, MOUSEEVENTF_XDOWN, MOUSEEVENTF_XUP, MOUSEINPUT,
+    MOUSE_EVENT_FLAGS, VK_LBUTTON, VK_MBUTTON, VK_RBUTTON, VK_XBUTTON1, VK_XBUTTON2,
 };
 use windows::Win32::UI::Input::Pointer::{
     InjectSyntheticPointerInput, POINTER_FLAGS, POINTER_FLAG_DOWN, POINTER_FLAG_INCONTACT,
@@ -91,7 +90,9 @@ fn button_flags(button: Button, down: bool) -> (MOUSE_EVENT_FLAGS, u32) {
 
 impl Native {
     fn insert(&self, input: INPUT) -> Result<(), String> {
-        let inserted = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
+        let inserted = unsafe {
+            crate::input::send_desktop_input(&[input], std::mem::size_of::<INPUT>() as i32)
+        };
         if inserted == 1 {
             self.input_pending.set(true);
             crate::focus_return::note_unconfirmed_input();
@@ -183,6 +184,7 @@ impl Native {
         };
         unsafe { InjectSyntheticPointerInput(device, &[info]) }
             .map_err(|error| format!("input_failed: pen injection: {error}"))?;
+        crate::desktop_activity::note_shared();
         self.input_pending.set(true);
         crate::focus_return::note_unconfirmed_input();
         if flags.0 & POINTER_FLAG_INCONTACT.0 != 0 {

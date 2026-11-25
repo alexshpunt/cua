@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Cua AI, Inc.
 
-//! Pure `tools/list` schema-shape assertions.
+//! Provider-compatible `tools/list` schemas and desktop activity admission.
 //!
-//! These never invoke a tool — they only inspect the advertised schemas: that
+//! The schema checks inspect the advertised schemas: that
 //! every tool keeps its top-level schema provider-compatible, that every
 //! advertised `enum` is string-only, that `type_text_chars` is hidden, the
 //! `list_windows.on_screen_only` knob, the `set_agent_cursor_motion` Bezier
@@ -57,6 +57,93 @@ fn tools_list_schema_shape() {
     assert_tools_list_schema_shape(
         RawDriver::spawn().expect("spawn source-built driver for schema test"),
     );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn desktop_activity_refuses_without_opt_in() {
+    use cua_driver_core::desktop_activity::TOOL;
+    use serde_json::json;
+
+    let mut driver = RawDriver::spawn_with_env(&[("CUA_DESKTOP_ACTIVITY", "0")])
+        .expect("spawn source-built Windows driver");
+    driver.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}));
+    let _ = driver.recv();
+    driver.send(&json!({
+        "jsonrpc":"2.0","id":2,"method":"tools/call","params":{
+            "name":TOOL,
+            "arguments":{"operation":"configure","label":"Agent","panel":true,"outline":false,"point":false}
+        }
+    }));
+    let response = driver.recv();
+    assert_eq!(response["result"]["isError"], true, "{response}");
+    assert_eq!(
+        response["result"]["structuredContent"]["code"], "desktop_activity_disabled",
+        "{response}"
+    );
+}
+
+#[cfg(target_os = "windows")]
+#[test]
+fn desktop_activity_refuses_untrusted_action_evidence() {
+    use cua_driver_core::desktop_activity::TOOL;
+    use serde_json::json;
+
+    let mut driver = RawDriver::spawn_with_env(&[("CUA_DESKTOP_ACTIVITY", "1")])
+        .expect("spawn source-built Windows driver");
+    driver.send(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}));
+    let _ = driver.recv();
+
+    let click = json!({"operation":"action_start","id":1,"kind":"click","location":"desktop"});
+    // Unknown fields fail at the registry; known fields with internal-only
+    // enum values reach the typed Windows decoder and fail there.
+    let registry_code = "/result/structuredContent/refusal/code";
+    let activity_code = "/result/structuredContent/code";
+    for (index, (key, value, code_path, expected_code)) in [
+        (
+            "typed_text",
+            json!("sentinel"),
+            registry_code,
+            "invalid_arguments",
+        ),
+        (
+            "position",
+            json!({"x":10,"y":15}),
+            registry_code,
+            "invalid_arguments",
+        ),
+        (
+            "delivery",
+            json!("shared"),
+            activity_code,
+            "invalid_desktop_activity",
+        ),
+        (
+            "kind",
+            json!("session_started"),
+            activity_code,
+            "invalid_desktop_activity",
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut arguments = click.clone();
+        arguments[key] = value;
+        driver.send(&json!({
+            "jsonrpc":"2.0","id":index+2,"method":"tools/call",
+            "params":{"name":TOOL,"arguments":arguments}
+        }));
+        let response = driver.recv();
+        assert_eq!(response["result"]["isError"], true, "{key}: {response}");
+        assert_eq!(
+            response
+                .pointer(code_path)
+                .and_then(serde_json::Value::as_str),
+            Some(expected_code),
+            "{key}: {response}"
+        );
+    }
 }
 
 #[cfg(target_os = "linux")]

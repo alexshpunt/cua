@@ -996,6 +996,7 @@ pub fn default_capabilities_for(tool_name: &str) -> Vec<String> {
         "set_agent_cursor_theme" => &["agent_cursor.set_theme"],
         "get_agent_cursor_state" => &["agent_cursor.state"],
         "set_agent_visuals" => &["agent_visuals.configure"],
+        crate::desktop_activity::TOOL => &["agent_visuals.desktop_activity"],
         "present_agent_activity" => &["agent_visuals.present"],
 
         // ── recording / replay ───────────────────────────────────────
@@ -2045,6 +2046,8 @@ impl ToolRegistry {
             }));
         }
 
+        let activity_id = crate::desktop_activity::take_id(&mut args);
+
         // Normalize deprecated public argument spellings before any policy,
         // consent, recording, or implementation layer interprets the call.
         coerce_string_scalars(&tool.def().input_schema, &mut args);
@@ -2520,9 +2523,13 @@ impl ToolRegistry {
         };
         let start_ms = now_ms();
         let cursor_event = crate::cursor_events::begin_tool(resolved_name, &args);
-        let pending_history = self.history.as_ref().and_then(|history| {
-            history.begin_action(resolved_name, &public_args, runtime_session.as_deref())
-        });
+        let pending_history = self
+            .history
+            .as_ref()
+            .filter(|_| resolved_name != crate::desktop_activity::TOOL)
+            .and_then(|history| {
+                history.begin_action(resolved_name, &public_args, runtime_session.as_deref())
+            });
 
         // Reserve and capture the turn before dispatch so recorded evidence
         // shows the application immediately before the action changed it.
@@ -2540,20 +2547,19 @@ impl ToolRegistry {
                     | "end_session"
                     | "set_agent_visuals"
                     | "present_agent_activity"
+                    | crate::desktop_activity::TOOL
             );
         let private_consent_turn = is_existing_profile_prepare(resolved_name, &args);
-        let (desktop_call, lane_refusal) = if requires_desktop_coordination(
-            resolved_name,
-            &args,
-            tool.has_independent_input_lane(&args),
-        ) {
-            match DesktopCall::acquire().await {
-                Ok(call) => (Some(call), None),
-                Err(refusal) => (None, Some(refusal)),
-            }
-        } else {
-            (None, None)
-        };
+        let independent_lane = tool.has_independent_input_lane(&args);
+        let (desktop_call, lane_refusal) =
+            if requires_desktop_coordination(resolved_name, &args, independent_lane) {
+                match DesktopCall::acquire().await {
+                    Ok(call) => (Some(call), None),
+                    Err(refusal) => (None, Some(refusal)),
+                }
+            } else {
+                (None, None)
+            };
         // Other agents' driver processes on this desktop wait for the same action to finish.
         let _shared_input = match desktop_call.as_ref() {
             Some(_) => match crate::input_lock::acquire().await {
@@ -2613,7 +2619,18 @@ impl ToolRegistry {
             crate::security_prompt::PromptInput::for_mode(context.mode()).stamp(&mut args);
         }
         crate::tool_activity::note_tool_activity();
-        let invoke = tool.invoke(args.clone());
+        let activity_identity = activity_id.and_then(|id| {
+            let owner = args
+                .get("_transport_session_id")
+                .and_then(Value::as_str)
+                .or(runtime_session.as_deref())?;
+            Some((owner.to_owned(), id))
+        });
+        let invoke = crate::desktop_activity::scope(
+            activity_identity,
+            independent_lane,
+            tool.invoke(args.clone()),
+        );
         let mut result =
             crate::recording::scope_dispatch_click_capture(pending_turn.as_ref(), async {
                 match (&desktop_call, lane_refusal) {

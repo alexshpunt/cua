@@ -369,13 +369,15 @@ impl Tool for ClickTool {
             // Click the HWND that owned the pixel before the driver overlay
             // moved there. The active SendInput path performs the foreground
             // swap and UIPI checks needed for Chromium and retained-mode apps.
-            let send_result = tokio::task::spawn_blocking(move || -> anyhow::Result<u64> {
-                let mod_refs: Vec<&str> = modifiers.iter().map(String::as_str).collect();
-                crate::input::send_click_synthesized_desktop_mods(
-                    hwnd_u, sx, sy, count, &button, &mod_refs,
-                )?;
-                Ok(hwnd_u)
-            })
+            let send_result = cua_driver_core::desktop_activity::spawn_blocking(
+                move || -> anyhow::Result<u64> {
+                    let mod_refs: Vec<&str> = modifiers.iter().map(String::as_str).collect();
+                    crate::input::send_click_synthesized_desktop_mods(
+                        hwnd_u, sx, sy, count, &button, &mod_refs,
+                    )?;
+                    Ok(hwnd_u)
+                },
+            )
             .await;
             return match send_result {
                 Ok(Ok(hwnd_u)) => {
@@ -445,7 +447,7 @@ impl Tool for ClickTool {
         let hwnd = match hwnd_opt {
             Some(h) => h,
             None => {
-                let windows = tokio::task::spawn_blocking({
+                let windows = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -603,7 +605,7 @@ impl Tool for ClickTool {
                 );
                 let btn_fg = button.clone();
                 let mods_owned = modifiers.clone();
-                let send_result = tokio::task::spawn_blocking({
+                let send_result = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -670,7 +672,7 @@ impl Tool for ClickTool {
             // WPF/WinUI menus and tree nodes whose visual click target is
             // transient or scroll-adjusted.
             if action_req.as_deref() == Some("expand") {
-                let expand = tokio::task::spawn_blocking({
+                let expand = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || -> anyhow::Result<()> {
                         let _admission = &admitted;
@@ -768,7 +770,7 @@ impl Tool for ClickTool {
                 }
                 let btn_fg = btn.clone();
                 let mods_owned = modifiers.clone();
-                let send_result = tokio::task::spawn_blocking({
+                let send_result = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -838,7 +840,7 @@ impl Tool for ClickTool {
                     }));
                 }
                 let mods = modifiers.clone();
-                let posted = tokio::task::spawn_blocking({
+                let posted = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -876,7 +878,7 @@ impl Tool for ClickTool {
             //     concept — PostMessage produces the actual WM_LBUTTONDBLCLK)
             let use_uia_invoke =
                 (btn == "left" || btn == "middle") && count == 1 && modifiers.is_empty();
-            let result = tokio::task::spawn_blocking({ let admitted = admitted.clone(); move || -> anyhow::Result<BackgroundElementClick> {
+            let result = cua_driver_core::desktop_activity::spawn_blocking({ let admitted = admitted.clone(); move || -> anyhow::Result<BackgroundElementClick> {
                 let _admission = &admitted;
                 let mut failed_calls = Vec::new();
                 // Direct Chromium Invoke can report a false success. Its old
@@ -1047,7 +1049,7 @@ impl Tool for ClickTool {
                 "PostMessage click"
             };
             let mods = modifiers.clone();
-            let sent = tokio::task::spawn_blocking({
+            let sent = cua_driver_core::desktop_activity::spawn_blocking({
                 let admitted = admitted.clone();
                 move || {
                     let _admission = &admitted;
@@ -1142,7 +1144,7 @@ impl Tool for ClickTool {
             // foreground swap the caller asked for).
             if delivery == DeliveryMode::Foreground {
                 let mods_owned = modifiers.clone();
-                let send_result = tokio::task::spawn_blocking({
+                let send_result = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -1192,7 +1194,7 @@ impl Tool for ClickTool {
             if delivery == DeliveryMode::Background && crate::input::is_chromium_target_window(hwnd)
             {
                 let mods = modifiers.clone();
-                let posted = tokio::task::spawn_blocking({
+                let posted = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -1221,7 +1223,7 @@ impl Tool for ClickTool {
             }
             let use_uia = (btn == "left" || btn == "middle") && count == 1 && modifiers.is_empty();
             if use_uia {
-                let outcome = tokio::task::spawn_blocking({
+                let outcome = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -1260,7 +1262,7 @@ impl Tool for ClickTool {
             // bitmap pixels -> screen (DWM-frame origin + inset). Use
             // post_click_screen so we don't double-ClientToScreen.
             let mods = modifiers.clone();
-            let result = tokio::task::spawn_blocking({
+            let result = cua_driver_core::desktop_activity::spawn_blocking({
                 let admitted = admitted.clone();
                 move || {
                     let _admission = &admitted;

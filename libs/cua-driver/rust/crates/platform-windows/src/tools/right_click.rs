@@ -103,7 +103,7 @@ impl Tool for RightClickTool {
         let hwnd = match hwnd_opt {
             Some(h) => h,
             None => {
-                let windows = tokio::task::spawn_blocking({
+                let windows = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -188,7 +188,7 @@ impl Tool for RightClickTool {
             }
             if delivery == DeliveryMode::Foreground {
                 let mods = modifiers.clone();
-                let send_result = tokio::task::spawn_blocking({
+                let send_result = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -208,7 +208,7 @@ impl Tool for RightClickTool {
                 };
             }
             let mods = modifiers.clone();
-            let result = tokio::task::spawn_blocking({
+            let result = cua_driver_core::desktop_activity::spawn_blocking({
                 let admitted = admitted.clone();
                 move || -> anyhow::Result<String> {
                     let _admission = &admitted;
@@ -281,7 +281,7 @@ impl Tool for RightClickTool {
             }
             if delivery == DeliveryMode::Foreground {
                 let mods = modifiers.clone();
-                let send_result = tokio::task::spawn_blocking({
+                let send_result = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
                     move || {
                         let _admission = &admitted;
@@ -302,7 +302,7 @@ impl Tool for RightClickTool {
             }
             let (xi, yi) = (px as i32, py as i32);
             let mods = modifiers.clone();
-            let result = tokio::task::spawn_blocking({
+            let result = cua_driver_core::desktop_activity::spawn_blocking({
                 let admitted = admitted.clone();
                 move || {
                     let _admission = &admitted;

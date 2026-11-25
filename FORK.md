@@ -96,6 +96,8 @@ The default `full` preset enables a short-lived preview; `subtle` omits image pr
 
 Activity generations reject stale events and invalidate older previews on clear. A queued receipt means admission only; it does not confirm visibility, input delivery or a verified effect. Source validation, image decoding and native rendering run on the presentation worker, outside the input/capture path.
 
+`CUA_DESKTOP_ACTIVITY=1` enables the separate Windows desktop activity transport. It is off by default. An adapter explicitly begins and ends a session and may independently opt into the desktop panel, window outline, and physical point marker. The panel distinguishes confirmed background and shared input from an unknown route, and browser and separate-desktop activity from local desktop actions. Exact window lifetime and geometry are checked while a cue is visible, and a point is shown only after native dispatch confirms it. The user-local desktop worker retains short-lived action and outcome metadata, not arguments, typed text, or screenshots. Its surfaces use the same capture exclusion and nonactivating behavior as the native activity HUD above.
+
 ## Upstream
 
 These changes are made for one consumer and tested on Windows 11 from WSL. Some of them could go upstream; none has been offered as a pull request yet.

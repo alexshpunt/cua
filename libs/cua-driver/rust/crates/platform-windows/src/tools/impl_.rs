@@ -589,12 +589,17 @@ impl Tool for FocusReturnGuard {
 
     async fn invoke(&self, args: Value) -> ToolResult {
         let window = foreground_input_window(&self.inner.def().name, &args);
+        if background_window_input(&self.inner.def().name, &args) {
+            crate::desktop_activity::note_direct();
+        }
         let lease = match window {
             Some(window_id) if crate::focus_return::enabled() => {
-                tokio::task::spawn_blocking(move || crate::focus_return::begin(window_id))
-                    .await
-                    .ok()
-                    .flatten()
+                cua_driver_core::desktop_activity::spawn_blocking(move || {
+                    crate::focus_return::begin(window_id)
+                })
+                .await
+                .ok()
+                .flatten()
             }
             _ => None,
         };
@@ -635,8 +640,10 @@ impl Tool for FocusReturnGuard {
             );
         }
         if let Some(lease) = lease {
-            if let Ok(Some(line)) =
-                tokio::task::spawn_blocking(move || lease.finish(allow_restore)).await
+            if let Ok(Some(line)) = cua_driver_core::desktop_activity::spawn_blocking(move || {
+                lease.finish(allow_restore)
+            })
+            .await
             {
                 result
                     .content
@@ -1533,6 +1540,7 @@ pub fn build_registry_with_provider(
     let capture_bridge = state.capture_bridge.clone();
     let session_end_hook =
         cua_driver_core::session::register_scoped_session_end_hook(move |session_id| {
+            crate::desktop_activity::end(session_id);
             snapshots.retire_session_screenshots(session_id);
             persistent_wgc.close_session(session_id);
             if let Some(bridge) = &capture_bridge {
@@ -1736,6 +1744,7 @@ pub fn build_registry_with_provider(
     r.register(Box::new(SetAgentCursorMotionV2Tool));
     r.register(Box::new(activity::SetAgentVisualsTool));
     r.register(Box::new(activity::PresentAgentActivityTool));
+    r.register(Box::new(activity::DesktopActivityTool));
     r.register(Box::new(GetAgentCursorStateV2Tool {
         state: state.clone(),
     }));

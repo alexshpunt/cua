@@ -96,6 +96,7 @@ macro_rules! fork_inputs {
         $check!(semantic_action, SemanticActionInput, json!({"pid":42,"window_id":73,"element_token":"element-1","operation":"invoke","session":"sdk-call"}));
         $check!(set_agent_visuals, SetAgentVisualsInput, json!({"preset":"off","opacity":0.5,"session":"sdk-call"}));
         $check!(present_agent_activity, PresentAgentActivityInput, json!({"generation":1,"kind":"clear","session":"sdk-call"}));
+        $check!(agent_desktop_activity, DesktopActivityInput, json!({"operation":"action_start","id":1,"kind":"move_pointer","location":"desktop","delivery":"direct","window":{"window_id":73,"pid":42,"identity":"PiComputerUse.1234567890abcdef1234567890abcdef:42:1"}}));
     }
 }
 
@@ -135,7 +136,7 @@ async fn all_fork_methods_route_typed_inputs_through_driver_and_bound_session() 
         }};
     }
     fork_inputs!(check);
-    assert_eq!(channel.requests.lock().unwrap().len(), 22);
+    assert_eq!(channel.requests.lock().unwrap().len(), 24);
     session.close();
     driver.shutdown().await.unwrap();
 }
@@ -167,7 +168,7 @@ async fn fork_methods_reject_malformed_successes_from_authenticated_transports()
         }};
     }
     fork_inputs!(check);
-    assert_eq!(channel.requests.lock().unwrap().len(), 22);
+    assert_eq!(channel.requests.lock().unwrap().len(), 24);
     session.close();
     driver.shutdown().await.unwrap();
 }

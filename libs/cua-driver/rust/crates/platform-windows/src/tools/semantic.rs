@@ -262,7 +262,7 @@ impl Tool for SemanticActionTool {
         if !admitted.is_uia() {
             return failure(Failure::refusal("semantic_pattern_unsupported"));
         }
-        let result = tokio::task::spawn_blocking(move || {
+        let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
             use windows::Win32::System::Com::{CoInitializeEx, CoUninitialize, COINIT_MULTITHREADED};
             let hr = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
             // RPC_E_CHANGED_MODE means COM is already initialized on this worker.

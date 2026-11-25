@@ -8,6 +8,164 @@
   "transport": "mcp_stdio",
   "tools": [
     {
+      "name": "agent_desktop_activity",
+      "description": "Use agent_desktop_activity to publish scoped human-only Windows desktop activity from the adapter. Requires CUA_DESKTOP_ACTIVITY=1. It does not send input or read the desktop.",
+      "platforms": [
+        "windows"
+      ],
+      "capabilities": [
+        "agent_visuals.desktop_activity"
+      ],
+      "annotations": {
+        "read_only": false,
+        "destructive": false,
+        "idempotent": true,
+        "open_world": false
+      },
+      "schema_mode": "canonical_runtime",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "delivery": {
+            "description": "Known non-shared delivery route. Only native input can establish shared input.",
+            "enum": [
+              "none",
+              "direct",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "description": "Adapter action identifier scoped to this transport.",
+            "maximum": 9007199254740991,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "intent": {
+            "description": "Describe the intended work without typed text, document content or secrets.",
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string"
+          },
+          "kind": {
+            "description": "Action category. Do not include action arguments.",
+            "enum": [
+              "read",
+              "wait",
+              "click",
+              "drag",
+              "scroll",
+              "move_pointer",
+              "type",
+              "key",
+              "open",
+              "manage",
+              "browser",
+              "clipboard",
+              "files",
+              "record",
+              "other"
+            ],
+            "type": "string"
+          },
+          "label": {
+            "description": "Public name of the agent, shown on the desktop.",
+            "maxLength": 48,
+            "minLength": 1,
+            "type": "string"
+          },
+          "location": {
+            "description": "Desktop, browser, or separate desktop.",
+            "enum": [
+              "desktop",
+              "browser",
+              "separate_desktop"
+            ],
+            "type": "string"
+          },
+          "operation": {
+            "description": "Activity lifecycle or presentation update.",
+            "enum": [
+              "configure",
+              "begin",
+              "end",
+              "action_start",
+              "action_end"
+            ],
+            "type": "string"
+          },
+          "outcome": {
+            "description": "End state of the session or action.",
+            "enum": [
+              "completed",
+              "refused",
+              "interrupted",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "outline": {
+            "description": "Outline the exact window while the agent acts.",
+            "type": "boolean"
+          },
+          "panel": {
+            "description": "Show the shared desktop activity panel.",
+            "type": "boolean"
+          },
+          "point": {
+            "description": "Mark the last native-confirmed physical pointer position.",
+            "type": "boolean"
+          },
+          "window": {
+            "additionalProperties": false,
+            "description": "Exact native target lifetime for a desktop action.",
+            "properties": {
+              "identity": {
+                "maxLength": 128,
+                "type": "string"
+              },
+              "pid": {
+                "maximum": 4294967295,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "window_id": {
+                "maximum": 9007199254740991,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "window_id",
+              "pid",
+              "identity"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "type": "object"
+      },
+      "success_output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "enum": [
+              "accepted",
+              "ignored"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "click",
       "description": "Click coordinates or a snapshot-bound element with an explicit target and delivery mode.",
       "platforms": [

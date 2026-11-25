@@ -586,6 +586,175 @@ const FfiConverterTypeActionResult = (() => {
     return new FFIConverter();
 })();
 
+export enum AgentActivityImageMime {
+    Png,
+    Jpeg
+}
+
+const FfiConverterTypeAgentActivityImageMime = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = AgentActivityImageMime;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return AgentActivityImageMime.Png;
+                case 2: return AgentActivityImageMime.Jpeg;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case AgentActivityImageMime.Png: return ordinalConverter.write(1, into);
+                case AgentActivityImageMime.Jpeg: return ordinalConverter.write(2, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+/**
+ * No Debug implementation: image bytes must not enter diagnostics.
+ */
+export type AgentActivityImage = {
+    data: string,
+    mimeType: AgentActivityImageMime
+}
+
+/**
+ * Generated factory for {@link AgentActivityImage} record objects.
+ */
+export const AgentActivityImage = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<AgentActivityImage, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<AgentActivityImage>,
+    });
+})();
+
+const FfiConverterTypeAgentActivityImage = (() => {
+    type TypeName = AgentActivityImage;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                data: FfiConverterString.read(from),
+                mimeType: FfiConverterTypeAgentActivityImageMime.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterString.write(value.data, into);
+            FfiConverterTypeAgentActivityImageMime.write(value.mimeType, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterString.allocationSize(value.data) +
+             FfiConverterTypeAgentActivityImageMime.allocationSize(value.mimeType);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+export type AgentActivityPoint = {
+    x: number,
+    y: number
+}
+
+/**
+ * Generated factory for {@link AgentActivityPoint} record objects.
+ */
+export const AgentActivityPoint = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<AgentActivityPoint, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<AgentActivityPoint>,
+    });
+})();
+
+const FfiConverterTypeAgentActivityPoint = (() => {
+    type TypeName = AgentActivityPoint;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                x: FfiConverterInt32.read(from),
+                y: FfiConverterInt32.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterInt32.write(value.x, into);
+            FfiConverterInt32.write(value.y, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterInt32.allocationSize(value.x) +
+             FfiConverterInt32.allocationSize(value.y);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+export type AgentActivityRect = {
+    x: number,
+    y: number,
+    width: number,
+    height: number
+}
+
+/**
+ * Generated factory for {@link AgentActivityRect} record objects.
+ */
+export const AgentActivityRect = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<AgentActivityRect, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<AgentActivityRect>,
+    });
+})();
+
+const FfiConverterTypeAgentActivityRect = (() => {
+    type TypeName = AgentActivityRect;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                x: FfiConverterInt32.read(from),
+                y: FfiConverterInt32.read(from),
+                width: FfiConverterUInt32.read(from),
+                height: FfiConverterUInt32.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterInt32.write(value.x, into);
+            FfiConverterInt32.write(value.y, into);
+            FfiConverterUInt32.write(value.width, into);
+            FfiConverterUInt32.write(value.height, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterInt32.allocationSize(value.x) +
+             FfiConverterInt32.allocationSize(value.y) +
+             FfiConverterUInt32.allocationSize(value.width) +
+             FfiConverterUInt32.allocationSize(value.height);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
 export type AppInfo = {
     pid: number,
     name: string,
@@ -2174,6 +2343,146 @@ const FfiConverterTypeCursorVisualOutput = (() => {
     return new FFIConverter();
 })();
 
+export type DesktopActivityWindow = {
+    windowId: bigint,
+    pid: number,
+    identity: string
+}
+
+/**
+ * Generated factory for {@link DesktopActivityWindow} record objects.
+ */
+export const DesktopActivityWindow = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<DesktopActivityWindow, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<DesktopActivityWindow>,
+    });
+})();
+
+const FfiConverterTypeDesktopActivityWindow = (() => {
+    type TypeName = DesktopActivityWindow;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                windowId: FfiConverterUInt64.read(from),
+                pid: FfiConverterUInt32.read(from),
+                identity: FfiConverterString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterUInt64.write(value.windowId, into);
+            FfiConverterUInt32.write(value.pid, into);
+            FfiConverterString.write(value.identity, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterUInt64.allocationSize(value.windowId) +
+             FfiConverterUInt32.allocationSize(value.pid) +
+             FfiConverterString.allocationSize(value.identity);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+/**
+ * Failure stages do not stand in for the current desktop or a successful query.
+ */
+export enum DesktopQueryErrorCode {
+    ComInitializationFailed,
+    ManagerUnavailable,
+    WindowUnavailable,
+    DesktopIdQueryFailed,
+    CurrentDesktopQueryFailed,
+    InvalidDesktopId,
+    QueryWorkerFailed
+}
+
+const FfiConverterTypeDesktopQueryErrorCode = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = DesktopQueryErrorCode;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return DesktopQueryErrorCode.ComInitializationFailed;
+                case 2: return DesktopQueryErrorCode.ManagerUnavailable;
+                case 3: return DesktopQueryErrorCode.WindowUnavailable;
+                case 4: return DesktopQueryErrorCode.DesktopIdQueryFailed;
+                case 5: return DesktopQueryErrorCode.CurrentDesktopQueryFailed;
+                case 6: return DesktopQueryErrorCode.InvalidDesktopId;
+                case 7: return DesktopQueryErrorCode.QueryWorkerFailed;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case DesktopQueryErrorCode.ComInitializationFailed: return ordinalConverter.write(1, into);
+                case DesktopQueryErrorCode.ManagerUnavailable: return ordinalConverter.write(2, into);
+                case DesktopQueryErrorCode.WindowUnavailable: return ordinalConverter.write(3, into);
+                case DesktopQueryErrorCode.DesktopIdQueryFailed: return ordinalConverter.write(4, into);
+                case DesktopQueryErrorCode.CurrentDesktopQueryFailed: return ordinalConverter.write(5, into);
+                case DesktopQueryErrorCode.InvalidDesktopId: return ordinalConverter.write(6, into);
+                case DesktopQueryErrorCode.QueryWorkerFailed: return ordinalConverter.write(7, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+/**
+ * Native query failure. HRESULT is kept as its signed 32-bit value when Windows supplied one.
+ */
+export type DesktopQueryError = {
+    code: DesktopQueryErrorCode,
+    hresult?: number
+}
+
+/**
+ * Generated factory for {@link DesktopQueryError} record objects.
+ */
+export const DesktopQueryError = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<DesktopQueryError, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<DesktopQueryError>,
+    });
+})();
+
+const FfiConverterTypeDesktopQueryError = (() => {
+    type TypeName = DesktopQueryError;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                code: FfiConverterTypeDesktopQueryErrorCode.read(from),
+                hresult: FfiConverterOptionalInt32.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterTypeDesktopQueryErrorCode.write(value.code, into);
+            FfiConverterOptionalInt32.write(value.hresult, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterTypeDesktopQueryErrorCode.allocationSize(value.code) +
+             FfiConverterOptionalInt32.allocationSize(value.hresult);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
 export enum DesktopScope {
     Desktop
 }
@@ -2440,6 +2749,56 @@ const FfiConverterTypeElementPredicate = (() => {
              FfiConverterOptionalString.allocationSize(value.valueEquals) +
              FfiConverterOptionalBoolean.allocationSize(value.enabled) +
              FfiConverterOptionalBoolean.allocationSize(value.selected);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+/**
+ * Windows UIA RangeValuePattern of a slider, spinner or progress bar.
+ */
+export type ElementRange = {
+    value: number,
+    min: number,
+    max: number
+}
+
+/**
+ * Generated factory for {@link ElementRange} record objects.
+ */
+export const ElementRange = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<ElementRange, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<ElementRange>,
+    });
+})();
+
+const FfiConverterTypeElementRange = (() => {
+    type TypeName = ElementRange;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                value: FfiConverterFloat64.read(from),
+                min: FfiConverterFloat64.read(from),
+                max: FfiConverterFloat64.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterFloat64.write(value.value, into);
+            FfiConverterFloat64.write(value.min, into);
+            FfiConverterFloat64.write(value.max, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterFloat64.allocationSize(value.value) +
+             FfiConverterFloat64.allocationSize(value.min) +
+             FfiConverterFloat64.allocationSize(value.max);
 
         }
     };
@@ -2732,6 +3091,73 @@ const FfiConverterTypeGetDesktopStateInput = (() => {
         allocationSize(value: TypeName): number {
             return FfiConverterOptionalString.allocationSize(value.session) +
              FfiConverterOptionalString.allocationSize(value.screenshotOutFile) +
+             FfiConverterOptionalUInt32.allocationSize(value.maxImageDimension);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+/**
+ * Read exactly the enumerated display in this topology; never fall back to primary.
+ */
+export type GetDisplayStateInput = {
+    /**
+     * Exact native display_id returned by list_displays, not an enumeration index or primary alias.
+     */
+    displayId: string,
+    /**
+     * Exact topology_id from the same discovery; a changed topology refuses without pixels or fallback.
+     */
+    topologyId: string,
+    /**
+     * For multi-call work, prefer a short public session label and repeat it on every call that
+     * accepts it. Omit it to use the authenticated transport's implicit lifecycle session.
+     */
+    session?: string,
+    /**
+     * Zero or omitted keeps native physical resolution.
+     */
+    maxImageDimension?: number
+}
+
+/**
+ * Generated factory for {@link GetDisplayStateInput} record objects.
+ */
+export const GetDisplayStateInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<GetDisplayStateInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<GetDisplayStateInput>,
+    });
+})();
+
+const FfiConverterTypeGetDisplayStateInput = (() => {
+    type TypeName = GetDisplayStateInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                displayId: FfiConverterString.read(from),
+                topologyId: FfiConverterString.read(from),
+                session: FfiConverterOptionalString.read(from),
+                maxImageDimension: FfiConverterOptionalUInt32.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterString.write(value.displayId, into);
+            FfiConverterString.write(value.topologyId, into);
+            FfiConverterOptionalString.write(value.session, into);
+            FfiConverterOptionalUInt32.write(value.maxImageDimension, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterString.allocationSize(value.displayId) +
+             FfiConverterString.allocationSize(value.topologyId) +
+             FfiConverterOptionalString.allocationSize(value.session) +
              FfiConverterOptionalUInt32.allocationSize(value.maxImageDimension);
 
         }
@@ -3170,6 +3596,52 @@ const FfiConverterTypeListAppsOutput = (() => {
     return new FFIConverter();
 })();
 
+/**
+ * Enumerate connected displays without reading pixels.
+ */
+export type ListDisplaysInput = {
+    /**
+     * For multi-call work, prefer a short public session label and repeat it on every call that
+     * accepts it. Omit it to use the authenticated transport's implicit lifecycle session.
+     */
+    session?: string
+}
+
+/**
+ * Generated factory for {@link ListDisplaysInput} record objects.
+ */
+export const ListDisplaysInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<ListDisplaysInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<ListDisplaysInput>,
+    });
+})();
+
+const FfiConverterTypeListDisplaysInput = (() => {
+    type TypeName = ListDisplaysInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                session: FfiConverterOptionalString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterOptionalString.write(value.session, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterOptionalString.allocationSize(value.session);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
 export type ListSessionsInput = {
     /**
      * Maximum number of content-free summaries to return (default 50, max
@@ -3536,6 +4008,68 @@ const FfiConverterTypeWindowBounds = (() => {
     return new FFIConverter();
 })();
 
+/**
+ * Sample of two independent documented IVirtualDesktopManager queries.
+ * Missing portable metadata differs from this record's explicit failed native queries.
+ */
+export type VirtualDesktopMembership = {
+    desktopId?: string,
+    onCurrentDesktop?: boolean,
+    desktopIdError?: DesktopQueryError,
+    onCurrentDesktopError?: DesktopQueryError,
+    /**
+     * Unix milliseconds when these membership queries completed, not when pixels were captured.
+     */
+    sampledAtUnixMs: bigint
+}
+
+/**
+ * Generated factory for {@link VirtualDesktopMembership} record objects.
+ */
+export const VirtualDesktopMembership = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<VirtualDesktopMembership, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<VirtualDesktopMembership>,
+    });
+})();
+
+const FfiConverterTypeVirtualDesktopMembership = (() => {
+    type TypeName = VirtualDesktopMembership;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                desktopId: FfiConverterOptionalString.read(from),
+                onCurrentDesktop: FfiConverterOptionalBoolean.read(from),
+                desktopIdError: FfiConverterOptionalTypeDesktopQueryError.read(from),
+                onCurrentDesktopError: FfiConverterOptionalTypeDesktopQueryError.read(from),
+                sampledAtUnixMs: FfiConverterUInt64.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterOptionalString.write(value.desktopId, into);
+            FfiConverterOptionalBoolean.write(value.onCurrentDesktop, into);
+            FfiConverterOptionalTypeDesktopQueryError.write(value.desktopIdError, into);
+            FfiConverterOptionalTypeDesktopQueryError.write(value.onCurrentDesktopError, into);
+            FfiConverterUInt64.write(value.sampledAtUnixMs, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterOptionalString.allocationSize(value.desktopId) +
+             FfiConverterOptionalBoolean.allocationSize(value.onCurrentDesktop) +
+             FfiConverterOptionalTypeDesktopQueryError.allocationSize(value.desktopIdError) +
+             FfiConverterOptionalTypeDesktopQueryError.allocationSize(value.onCurrentDesktopError) +
+             FfiConverterUInt64.allocationSize(value.sampledAtUnixMs);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
 export type WindowInfo = {
     windowId: bigint,
     pid?: number,
@@ -3551,7 +4085,11 @@ export type WindowInfo = {
     minimized?: boolean,
     currentSpaceId?: bigint,
     onCurrentSpace?: boolean,
-    spaceIds?: Array<bigint>
+    spaceIds?: Array<bigint>,
+    /**
+     * Windows shell membership sampled independently from geometry; omitted by other platforms.
+     */
+    virtualDesktop?: VirtualDesktopMembership
 }
 
 /**
@@ -3586,7 +4124,8 @@ const FfiConverterTypeWindowInfo = (() => {
                 minimized: FfiConverterOptionalBoolean.read(from),
                 currentSpaceId: FfiConverterOptionalUInt64.read(from),
                 onCurrentSpace: FfiConverterOptionalBoolean.read(from),
-                spaceIds: FfiConverterOptionalSequenceUInt64.read(from)
+                spaceIds: FfiConverterOptionalSequenceUInt64.read(from),
+                virtualDesktop: FfiConverterOptionalTypeVirtualDesktopMembership.read(from)
             };
         }
         write(value: TypeName, into: RustBuffer): void {
@@ -3602,6 +4141,7 @@ const FfiConverterTypeWindowInfo = (() => {
             FfiConverterOptionalUInt64.write(value.currentSpaceId, into);
             FfiConverterOptionalBoolean.write(value.onCurrentSpace, into);
             FfiConverterOptionalSequenceUInt64.write(value.spaceIds, into);
+            FfiConverterOptionalTypeVirtualDesktopMembership.write(value.virtualDesktop, into);
         }
         allocationSize(value: TypeName): number {
             return FfiConverterUInt64.allocationSize(value.windowId) +
@@ -3615,7 +4155,8 @@ const FfiConverterTypeWindowInfo = (() => {
              FfiConverterOptionalBoolean.allocationSize(value.minimized) +
              FfiConverterOptionalUInt64.allocationSize(value.currentSpaceId) +
              FfiConverterOptionalBoolean.allocationSize(value.onCurrentSpace) +
-             FfiConverterOptionalSequenceUInt64.allocationSize(value.spaceIds);
+             FfiConverterOptionalSequenceUInt64.allocationSize(value.spaceIds) +
+             FfiConverterOptionalTypeVirtualDesktopMembership.allocationSize(value.virtualDesktop);
 
         }
     };
@@ -4682,6 +5223,246 @@ const FfiConverterTypeParseVisualRegionsOutput = (() => {
     return new FFIConverter();
 })();
 
+/**
+ * One capture-bound point or snapshot token belonging to an exact Windows window.
+ */
+export type PointerMoveInput = {
+    /**
+     * Process that owns the exact target window.
+     */
+    pid: number,
+    /**
+     * Exact top-level native window identifier.
+     */
+    windowId: bigint,
+    /**
+     * Current capture authority; required with x/y and forbidden with an element token.
+     */
+    captureId?: string,
+    /**
+     * Horizontal point in the admitted overview image, not desktop or detail pixels.
+     */
+    x?: number,
+    /**
+     * Vertical point in the same admitted overview image.
+     */
+    y?: number,
+    /**
+     * Current snapshot element token; cannot be combined with capture coordinates.
+     */
+    elementToken?: string,
+    /**
+     * Zero moves only; positive values request bounded dwell at the target.
+     */
+    dwellMs: bigint,
+    /**
+     * Background refuses. Explicit foreground leaves the target and pointer in place.
+     */
+    deliveryMode: InputDeliveryMode,
+    /**
+     * For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
+     * Omit for the authenticated transport's implicit session.
+     */
+    session?: string
+}
+
+/**
+ * Generated factory for {@link PointerMoveInput} record objects.
+ */
+export const PointerMoveInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<PointerMoveInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<PointerMoveInput>,
+    });
+})();
+
+const FfiConverterTypePointerMoveInput = (() => {
+    type TypeName = PointerMoveInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                pid: FfiConverterUInt32.read(from),
+                windowId: FfiConverterUInt64.read(from),
+                captureId: FfiConverterOptionalString.read(from),
+                x: FfiConverterOptionalFloat64.read(from),
+                y: FfiConverterOptionalFloat64.read(from),
+                elementToken: FfiConverterOptionalString.read(from),
+                dwellMs: FfiConverterUInt64.read(from),
+                deliveryMode: FfiConverterTypeInputDeliveryMode.read(from),
+                session: FfiConverterOptionalString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterUInt32.write(value.pid, into);
+            FfiConverterUInt64.write(value.windowId, into);
+            FfiConverterOptionalString.write(value.captureId, into);
+            FfiConverterOptionalFloat64.write(value.x, into);
+            FfiConverterOptionalFloat64.write(value.y, into);
+            FfiConverterOptionalString.write(value.elementToken, into);
+            FfiConverterUInt64.write(value.dwellMs, into);
+            FfiConverterTypeInputDeliveryMode.write(value.deliveryMode, into);
+            FfiConverterOptionalString.write(value.session, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterUInt32.allocationSize(value.pid) +
+             FfiConverterUInt64.allocationSize(value.windowId) +
+             FfiConverterOptionalString.allocationSize(value.captureId) +
+             FfiConverterOptionalFloat64.allocationSize(value.x) +
+             FfiConverterOptionalFloat64.allocationSize(value.y) +
+             FfiConverterOptionalString.allocationSize(value.elementToken) +
+             FfiConverterUInt64.allocationSize(value.dwellMs) +
+             FfiConverterTypeInputDeliveryMode.allocationSize(value.deliveryMode) +
+             FfiConverterOptionalString.allocationSize(value.session);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+/**
+ * One detent is 120 native wheel-delta units, not a line or content pixel.
+ */
+export enum ScrollUnit {
+    WheelDetents
+}
+
+const FfiConverterTypeScrollUnit = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = ScrollUnit;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return ScrollUnit.WheelDetents;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case ScrollUnit.WheelDetents: return ordinalConverter.write(1, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+/**
+ * A current overview point belonging to one exact Windows window.
+ */
+export type PointerScrollInput = {
+    /**
+     * Process that owns the exact target window.
+     */
+    pid: number,
+    /**
+     * Exact top-level native window identifier.
+     */
+    windowId: bigint,
+    /**
+     * Use a current overview capture ID for this exact window, never a detail or display ID.
+     */
+    captureId: string,
+    /**
+     * Horizontal point in the admitted overview image, not desktop pixels.
+     */
+    x: number,
+    /**
+     * Vertical point in the same admitted overview image.
+     */
+    y: number,
+    /**
+     * Signed horizontal detents; positive scrolls content right. Defaults to zero.
+     */
+    deltaX: number,
+    /**
+     * Signed vertical detents; positive scrolls content down. Defaults to zero.
+     */
+    deltaY: number,
+    /**
+     * State wheel_detents explicitly; the application controls actual displacement.
+     */
+    unit: ScrollUnit,
+    /**
+     * Background posts wheel messages to the window at the point; foreground moves the pointer and leaves the target active.
+     */
+    deliveryMode: InputDeliveryMode,
+    /**
+     * For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
+     * Omit for the authenticated transport's implicit session.
+     */
+    session?: string
+}
+
+/**
+ * Generated factory for {@link PointerScrollInput} record objects.
+ */
+export const PointerScrollInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<PointerScrollInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<PointerScrollInput>,
+    });
+})();
+
+const FfiConverterTypePointerScrollInput = (() => {
+    type TypeName = PointerScrollInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                pid: FfiConverterUInt32.read(from),
+                windowId: FfiConverterUInt64.read(from),
+                captureId: FfiConverterString.read(from),
+                x: FfiConverterFloat64.read(from),
+                y: FfiConverterFloat64.read(from),
+                deltaX: FfiConverterInt32.read(from),
+                deltaY: FfiConverterInt32.read(from),
+                unit: FfiConverterTypeScrollUnit.read(from),
+                deliveryMode: FfiConverterTypeInputDeliveryMode.read(from),
+                session: FfiConverterOptionalString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterUInt32.write(value.pid, into);
+            FfiConverterUInt64.write(value.windowId, into);
+            FfiConverterString.write(value.captureId, into);
+            FfiConverterFloat64.write(value.x, into);
+            FfiConverterFloat64.write(value.y, into);
+            FfiConverterInt32.write(value.deltaX, into);
+            FfiConverterInt32.write(value.deltaY, into);
+            FfiConverterTypeScrollUnit.write(value.unit, into);
+            FfiConverterTypeInputDeliveryMode.write(value.deliveryMode, into);
+            FfiConverterOptionalString.write(value.session, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterUInt32.allocationSize(value.pid) +
+             FfiConverterUInt64.allocationSize(value.windowId) +
+             FfiConverterString.allocationSize(value.captureId) +
+             FfiConverterFloat64.allocationSize(value.x) +
+             FfiConverterFloat64.allocationSize(value.y) +
+             FfiConverterInt32.allocationSize(value.deltaX) +
+             FfiConverterInt32.allocationSize(value.deltaY) +
+             FfiConverterTypeScrollUnit.allocationSize(value.unit) +
+             FfiConverterTypeInputDeliveryMode.allocationSize(value.deliveryMode) +
+             FfiConverterOptionalString.allocationSize(value.session);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
 export enum VerificationStatus {
     Satisfied,
     Unsatisfied,
@@ -4806,6 +5587,314 @@ const FfiConverterTypePredicateOutcome = (() => {
              FfiConverterTypeVerificationStatus.allocationSize(value.status) +
              FfiConverterOptionalTypeUnknownReason.allocationSize(value.unknownReason) +
              FfiConverterOptionalString.allocationSize(value.observedJson);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+export enum AgentActivityKind {
+    Overview,
+    Detail,
+    Inspect,
+    Verify,
+    Action,
+    Clear
+}
+
+const FfiConverterTypeAgentActivityKind = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = AgentActivityKind;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return AgentActivityKind.Overview;
+                case 2: return AgentActivityKind.Detail;
+                case 3: return AgentActivityKind.Inspect;
+                case 4: return AgentActivityKind.Verify;
+                case 5: return AgentActivityKind.Action;
+                case 6: return AgentActivityKind.Clear;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case AgentActivityKind.Overview: return ordinalConverter.write(1, into);
+                case AgentActivityKind.Detail: return ordinalConverter.write(2, into);
+                case AgentActivityKind.Inspect: return ordinalConverter.write(3, into);
+                case AgentActivityKind.Verify: return ordinalConverter.write(4, into);
+                case AgentActivityKind.Action: return ordinalConverter.write(5, into);
+                case AgentActivityKind.Clear: return ordinalConverter.write(6, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+
+// Enum: AgentActivitySource
+export enum AgentActivitySource_Tags {
+    Window = "Window",
+    Display = "Display"
+}
+/**
+ * The variants prevent mixing a display source with window ownership evidence.
+ */
+export const AgentActivitySource = (() => {
+
+    type Window__interface = {
+        tag: AgentActivitySource_Tags.Window;
+        inner:
+Readonly<{windowId: bigint; pid: number; identity: string; bounds: AgentActivityRect}>
+    };
+    class Window_ extends UniffiEnum implements Window__interface {
+        /**
+         * @private
+         * This field is private and should not be used, use `tag` instead.
+         */
+        readonly [uniffiTypeNameSymbol] = "AgentActivitySource";
+        readonly tag = AgentActivitySource_Tags.Window;
+        readonly inner:
+Readonly<{windowId: bigint; pid: number; identity: string; bounds: AgentActivityRect}>;
+        constructor(
+inner: {windowId: bigint; pid: number; identity: string; bounds: AgentActivityRect }) {
+            super("AgentActivitySource", "Window");
+
+            this.inner = Object.freeze(inner);
+        }
+        static new(
+inner: {windowId: bigint; pid: number; identity: string; bounds: AgentActivityRect }): Window_ {
+            return new Window_(inner);
+        }
+
+        static instanceOf(obj: any): obj is Window_ {
+            return obj.tag === AgentActivitySource_Tags.Window;
+        }
+
+    }
+
+    type Display__interface = {
+        tag: AgentActivitySource_Tags.Display;
+        inner:
+Readonly<{display: string; bounds: AgentActivityRect}>
+    };
+    class Display_ extends UniffiEnum implements Display__interface {
+        /**
+         * @private
+         * This field is private and should not be used, use `tag` instead.
+         */
+        readonly [uniffiTypeNameSymbol] = "AgentActivitySource";
+        readonly tag = AgentActivitySource_Tags.Display;
+        readonly inner:
+Readonly<{display: string; bounds: AgentActivityRect}>;
+        constructor(
+inner: {display: string; bounds: AgentActivityRect }) {
+            super("AgentActivitySource", "Display");
+
+            this.inner = Object.freeze(inner);
+        }
+        static new(
+inner: {display: string; bounds: AgentActivityRect }): Display_ {
+            return new Display_(inner);
+        }
+
+        static instanceOf(obj: any): obj is Display_ {
+            return obj.tag === AgentActivitySource_Tags.Display;
+        }
+
+    }
+
+    function instanceOf(obj: any): obj is AgentActivitySource {
+        return obj[uniffiTypeNameSymbol] === "AgentActivitySource";
+    }
+
+    return Object.freeze({
+        instanceOf,
+  Window: Window_,
+  Display: Display_
+    });
+
+})();
+/**
+ * The variants prevent mixing a display source with window ownership evidence.
+ */
+export type AgentActivitySource = InstanceType<
+    typeof AgentActivitySource['Window' | 'Display']
+>;
+
+// FfiConverter for enum AgentActivitySource
+const FfiConverterTypeAgentActivitySource = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = AgentActivitySource;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return new AgentActivitySource.Window({windowId: FfiConverterUInt64.read(from), pid: FfiConverterUInt32.read(from), identity: FfiConverterString.read(from), bounds: FfiConverterTypeAgentActivityRect.read(from) });
+                case 2: return new AgentActivitySource.Display({display: FfiConverterString.read(from), bounds: FfiConverterTypeAgentActivityRect.read(from) });
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value.tag) {
+                case AgentActivitySource_Tags.Window: {
+                    ordinalConverter.write(1, into);
+                    const inner = value.inner;
+                    FfiConverterUInt64.write(inner.windowId, into);
+                    FfiConverterUInt32.write(inner.pid, into);
+                    FfiConverterString.write(inner.identity, into);
+                    FfiConverterTypeAgentActivityRect.write(inner.bounds, into);
+                    return;
+                }
+                case AgentActivitySource_Tags.Display: {
+                    ordinalConverter.write(2, into);
+                    const inner = value.inner;
+                    FfiConverterString.write(inner.display, into);
+                    FfiConverterTypeAgentActivityRect.write(inner.bounds, into);
+                    return;
+                }
+                default:
+                    // Throwing from here means that AgentActivitySource_Tags hasn't matched an ordinal.
+                    throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        allocationSize(value: TypeName): number {
+            switch (value.tag) {
+                case AgentActivitySource_Tags.Window: {
+                    const inner = value.inner;
+                    let size = ordinalConverter.allocationSize(1);
+                    size += FfiConverterUInt64.allocationSize(inner.windowId);
+                    size += FfiConverterUInt32.allocationSize(inner.pid);
+                    size += FfiConverterString.allocationSize(inner.identity);
+                    size += FfiConverterTypeAgentActivityRect.allocationSize(inner.bounds);
+                    return size;
+                }
+                case AgentActivitySource_Tags.Display: {
+                    const inner = value.inner;
+                    let size = ordinalConverter.allocationSize(2);
+                    size += FfiConverterString.allocationSize(inner.display);
+                    size += FfiConverterTypeAgentActivityRect.allocationSize(inner.bounds);
+                    return size;
+                }
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+    }
+    return new FFIConverter();
+})();
+
+export enum AgentActivityOutcome {
+    Delivered,
+    Refused,
+    Unknown,
+    Verified
+}
+
+const FfiConverterTypeAgentActivityOutcome = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = AgentActivityOutcome;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return AgentActivityOutcome.Delivered;
+                case 2: return AgentActivityOutcome.Refused;
+                case 3: return AgentActivityOutcome.Unknown;
+                case 4: return AgentActivityOutcome.Verified;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case AgentActivityOutcome.Delivered: return ordinalConverter.write(1, into);
+                case AgentActivityOutcome.Refused: return ordinalConverter.write(2, into);
+                case AgentActivityOutcome.Unknown: return ordinalConverter.write(3, into);
+                case AgentActivityOutcome.Verified: return ordinalConverter.write(4, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+/**
+ * One bounded publication of already-returned pixels; this request captures nothing.
+ */
+export type PresentAgentActivityInput = {
+    session?: string,
+    generation: bigint,
+    kind: AgentActivityKind,
+    source?: AgentActivitySource,
+    region?: AgentActivityRect,
+    point?: AgentActivityPoint,
+    image?: AgentActivityImage,
+    action?: string,
+    outcome?: AgentActivityOutcome,
+    /**
+     * Text an action types, shown to the human beside the action. Only actions carry it.
+     */
+    typedText?: string
+}
+
+/**
+ * Generated factory for {@link PresentAgentActivityInput} record objects.
+ */
+export const PresentAgentActivityInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<PresentAgentActivityInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<PresentAgentActivityInput>,
+    });
+})();
+
+const FfiConverterTypePresentAgentActivityInput = (() => {
+    type TypeName = PresentAgentActivityInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                session: FfiConverterOptionalString.read(from),
+                generation: FfiConverterUInt64.read(from),
+                kind: FfiConverterTypeAgentActivityKind.read(from),
+                source: FfiConverterOptionalTypeAgentActivitySource.read(from),
+                region: FfiConverterOptionalTypeAgentActivityRect.read(from),
+                point: FfiConverterOptionalTypeAgentActivityPoint.read(from),
+                image: FfiConverterOptionalTypeAgentActivityImage.read(from),
+                action: FfiConverterOptionalString.read(from),
+                outcome: FfiConverterOptionalTypeAgentActivityOutcome.read(from),
+                typedText: FfiConverterOptionalString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterOptionalString.write(value.session, into);
+            FfiConverterUInt64.write(value.generation, into);
+            FfiConverterTypeAgentActivityKind.write(value.kind, into);
+            FfiConverterOptionalTypeAgentActivitySource.write(value.source, into);
+            FfiConverterOptionalTypeAgentActivityRect.write(value.region, into);
+            FfiConverterOptionalTypeAgentActivityPoint.write(value.point, into);
+            FfiConverterOptionalTypeAgentActivityImage.write(value.image, into);
+            FfiConverterOptionalString.write(value.action, into);
+            FfiConverterOptionalTypeAgentActivityOutcome.write(value.outcome, into);
+            FfiConverterOptionalString.write(value.typedText, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterOptionalString.allocationSize(value.session) +
+             FfiConverterUInt64.allocationSize(value.generation) +
+             FfiConverterTypeAgentActivityKind.allocationSize(value.kind) +
+             FfiConverterOptionalTypeAgentActivitySource.allocationSize(value.source) +
+             FfiConverterOptionalTypeAgentActivityRect.allocationSize(value.region) +
+             FfiConverterOptionalTypeAgentActivityPoint.allocationSize(value.point) +
+             FfiConverterOptionalTypeAgentActivityImage.allocationSize(value.image) +
+             FfiConverterOptionalString.allocationSize(value.action) +
+             FfiConverterOptionalTypeAgentActivityOutcome.allocationSize(value.outcome) +
+             FfiConverterOptionalString.allocationSize(value.typedText);
 
         }
     };
@@ -5014,6 +6103,122 @@ const FfiConverterTypeScrollInput = (() => {
              FfiConverterOptionalString.allocationSize(value.session) +
              FfiConverterOptionalTypeScrollBy.allocationSize(value.by) +
              FfiConverterOptionalUInt64.allocationSize(value.amount);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+/**
+ * An exact semantic intent, not an action ladder.
+ */
+export enum SemanticOperation {
+    Invoke,
+    Select,
+    SetValue
+}
+
+const FfiConverterTypeSemanticOperation = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = SemanticOperation;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return SemanticOperation.Invoke;
+                case 2: return SemanticOperation.Select;
+                case 3: return SemanticOperation.SetValue;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case SemanticOperation.Invoke: return ordinalConverter.write(1, into);
+                case SemanticOperation.Select: return ordinalConverter.write(2, into);
+                case SemanticOperation.SetValue: return ordinalConverter.write(3, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+/**
+ * Snapshot-bound Windows UIA operation. Physical and foreground delivery are not accepted.
+ */
+export type SemanticActionInput = {
+    /**
+     * Process that owns the exact top-level target window.
+     */
+    pid: number,
+    /**
+     * Exact native top-level window identifier from discovery.
+     */
+    windowId: bigint,
+    /**
+     * Current snapshot token belonging to that exact window.
+     */
+    elementToken: string,
+    /**
+     * One UIA intent; no physical fallback or foreground delivery.
+     */
+    operation: SemanticOperation,
+    /**
+     * Replacement text or numeric range value; required only for set_value.
+     */
+    value?: string,
+    /**
+     * For multi-call work, prefer a short public session label and repeat it on every call that
+     * accepts it. Omit it to use the authenticated transport's implicit lifecycle session.
+     */
+    session?: string
+}
+
+/**
+ * Generated factory for {@link SemanticActionInput} record objects.
+ */
+export const SemanticActionInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<SemanticActionInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<SemanticActionInput>,
+    });
+})();
+
+const FfiConverterTypeSemanticActionInput = (() => {
+    type TypeName = SemanticActionInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                pid: FfiConverterUInt32.read(from),
+                windowId: FfiConverterUInt64.read(from),
+                elementToken: FfiConverterString.read(from),
+                operation: FfiConverterTypeSemanticOperation.read(from),
+                value: FfiConverterOptionalString.read(from),
+                session: FfiConverterOptionalString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterUInt32.write(value.pid, into);
+            FfiConverterUInt64.write(value.windowId, into);
+            FfiConverterString.write(value.elementToken, into);
+            FfiConverterTypeSemanticOperation.write(value.operation, into);
+            FfiConverterOptionalString.write(value.value, into);
+            FfiConverterOptionalString.write(value.session, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterUInt32.allocationSize(value.pid) +
+             FfiConverterUInt64.allocationSize(value.windowId) +
+             FfiConverterString.allocationSize(value.elementToken) +
+             FfiConverterTypeSemanticOperation.allocationSize(value.operation) +
+             FfiConverterOptionalString.allocationSize(value.value) +
+             FfiConverterOptionalString.allocationSize(value.session);
 
         }
     };
@@ -5520,6 +6725,148 @@ const FfiConverterTypeSetAgentCursorThemeOutput = (() => {
         allocationSize(value: TypeName): number {
             return FfiConverterString.allocationSize(value.session) +
              FfiConverterTypeCursorThemeOutput.allocationSize(value.theme);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+export enum VisualPreset {
+    Off,
+    Subtle,
+    Full
+}
+
+const FfiConverterTypeVisualPreset = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = VisualPreset;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return VisualPreset.Off;
+                case 2: return VisualPreset.Subtle;
+                case 3: return VisualPreset.Full;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case VisualPreset.Off: return ordinalConverter.write(1, into);
+                case VisualPreset.Subtle: return ordinalConverter.write(2, into);
+                case VisualPreset.Full: return ordinalConverter.write(3, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+export enum VisualQuality {
+    Performance,
+    Balanced,
+    High
+}
+
+const FfiConverterTypeVisualQuality = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = VisualQuality;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return VisualQuality.Performance;
+                case 2: return VisualQuality.Balanced;
+                case 3: return VisualQuality.High;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case VisualQuality.Performance: return ordinalConverter.write(1, into);
+                case VisualQuality.Balanced: return ordinalConverter.write(2, into);
+                case VisualQuality.High: return ordinalConverter.write(3, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+/**
+ * An omitted setting keeps its current value, rather than resetting the session.
+ */
+export type SetAgentVisualsInput = {
+    session?: string,
+    preset?: VisualPreset,
+    observations?: boolean,
+    previews?: boolean,
+    pointer?: boolean,
+    scrollDrag?: boolean,
+    keyboard?: boolean,
+    opacity?: number,
+    quality?: VisualQuality,
+    reducedMotion?: boolean
+}
+
+/**
+ * Generated factory for {@link SetAgentVisualsInput} record objects.
+ */
+export const SetAgentVisualsInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<SetAgentVisualsInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<SetAgentVisualsInput>,
+    });
+})();
+
+const FfiConverterTypeSetAgentVisualsInput = (() => {
+    type TypeName = SetAgentVisualsInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                session: FfiConverterOptionalString.read(from),
+                preset: FfiConverterOptionalTypeVisualPreset.read(from),
+                observations: FfiConverterOptionalBoolean.read(from),
+                previews: FfiConverterOptionalBoolean.read(from),
+                pointer: FfiConverterOptionalBoolean.read(from),
+                scrollDrag: FfiConverterOptionalBoolean.read(from),
+                keyboard: FfiConverterOptionalBoolean.read(from),
+                opacity: FfiConverterOptionalFloat64.read(from),
+                quality: FfiConverterOptionalTypeVisualQuality.read(from),
+                reducedMotion: FfiConverterOptionalBoolean.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterOptionalString.write(value.session, into);
+            FfiConverterOptionalTypeVisualPreset.write(value.preset, into);
+            FfiConverterOptionalBoolean.write(value.observations, into);
+            FfiConverterOptionalBoolean.write(value.previews, into);
+            FfiConverterOptionalBoolean.write(value.pointer, into);
+            FfiConverterOptionalBoolean.write(value.scrollDrag, into);
+            FfiConverterOptionalBoolean.write(value.keyboard, into);
+            FfiConverterOptionalFloat64.write(value.opacity, into);
+            FfiConverterOptionalTypeVisualQuality.write(value.quality, into);
+            FfiConverterOptionalBoolean.write(value.reducedMotion, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterOptionalString.allocationSize(value.session) +
+             FfiConverterOptionalTypeVisualPreset.allocationSize(value.preset) +
+             FfiConverterOptionalBoolean.allocationSize(value.observations) +
+             FfiConverterOptionalBoolean.allocationSize(value.previews) +
+             FfiConverterOptionalBoolean.allocationSize(value.pointer) +
+             FfiConverterOptionalBoolean.allocationSize(value.scrollDrag) +
+             FfiConverterOptionalBoolean.allocationSize(value.keyboard) +
+             FfiConverterOptionalFloat64.allocationSize(value.opacity) +
+             FfiConverterOptionalTypeVisualQuality.allocationSize(value.quality) +
+             FfiConverterOptionalBoolean.allocationSize(value.reducedMotion);
 
         }
     };
@@ -6195,6 +7542,66 @@ const FfiConverterTypeVisualParseError = (() => {
     return new FFIConverter();
 })();
 
+/**
+ * Read exact-window metadata and issue one management admission without capture or activation.
+ */
+export type WindowControlStateInput = {
+    /**
+     * Process that owns the exact sampled window.
+     */
+    pid: number,
+    /**
+     * Exact top-level native window identifier; do not substitute another window of the process.
+     */
+    windowId: bigint,
+    /**
+     * For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
+     * Omit for the authenticated transport's implicit session.
+     */
+    session?: string
+}
+
+/**
+ * Generated factory for {@link WindowControlStateInput} record objects.
+ */
+export const WindowControlStateInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<WindowControlStateInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<WindowControlStateInput>,
+    });
+})();
+
+const FfiConverterTypeWindowControlStateInput = (() => {
+    type TypeName = WindowControlStateInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                pid: FfiConverterUInt32.read(from),
+                windowId: FfiConverterUInt64.read(from),
+                session: FfiConverterOptionalString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterUInt32.write(value.pid, into);
+            FfiConverterUInt64.write(value.windowId, into);
+            FfiConverterOptionalString.write(value.session, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterUInt32.allocationSize(value.pid) +
+             FfiConverterUInt64.allocationSize(value.windowId) +
+             FfiConverterOptionalString.allocationSize(value.session);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
 export type WindowElement = {
     elementIndex: bigint,
     role: string,
@@ -6210,7 +7617,37 @@ export type WindowElement = {
     parentIndex?: bigint,
     frame?: ElementFrame,
     min?: number,
-    max?: number
+    max?: number,
+    /**
+     * Windows UIA: the row exposes an action pattern and is enabled. Rows
+     * without one (static text, disabled controls, named containers) are
+     * listed read-only.
+     */
+    actionable?: boolean,
+    /**
+     * Windows UIA: raw Name, separate from the `label` fallback chain.
+     */
+    name?: string,
+    automationId?: string,
+    className?: string,
+    helpText?: string,
+    /**
+     * Windows UIA TogglePattern state: `on`, `off` or `mixed`.
+     */
+    checked?: string,
+    expanded?: boolean,
+    offscreen?: boolean,
+    focused?: boolean,
+    readOnly?: boolean,
+    /**
+     * Present only when true.
+     */
+    password?: boolean,
+    /**
+     * Present only when true.
+     */
+    required?: boolean,
+    range?: ElementRange
 }
 
 /**
@@ -6248,7 +7685,20 @@ const FfiConverterTypeWindowElement = (() => {
                 parentIndex: FfiConverterOptionalUInt64.read(from),
                 frame: FfiConverterOptionalTypeElementFrame.read(from),
                 min: FfiConverterOptionalFloat64.read(from),
-                max: FfiConverterOptionalFloat64.read(from)
+                max: FfiConverterOptionalFloat64.read(from),
+                actionable: FfiConverterOptionalBoolean.read(from),
+                name: FfiConverterOptionalString.read(from),
+                automationId: FfiConverterOptionalString.read(from),
+                className: FfiConverterOptionalString.read(from),
+                helpText: FfiConverterOptionalString.read(from),
+                checked: FfiConverterOptionalString.read(from),
+                expanded: FfiConverterOptionalBoolean.read(from),
+                offscreen: FfiConverterOptionalBoolean.read(from),
+                focused: FfiConverterOptionalBoolean.read(from),
+                readOnly: FfiConverterOptionalBoolean.read(from),
+                password: FfiConverterOptionalBoolean.read(from),
+                required: FfiConverterOptionalBoolean.read(from),
+                range: FfiConverterOptionalTypeElementRange.read(from)
             };
         }
         write(value: TypeName, into: RustBuffer): void {
@@ -6267,6 +7717,19 @@ const FfiConverterTypeWindowElement = (() => {
             FfiConverterOptionalTypeElementFrame.write(value.frame, into);
             FfiConverterOptionalFloat64.write(value.min, into);
             FfiConverterOptionalFloat64.write(value.max, into);
+            FfiConverterOptionalBoolean.write(value.actionable, into);
+            FfiConverterOptionalString.write(value.name, into);
+            FfiConverterOptionalString.write(value.automationId, into);
+            FfiConverterOptionalString.write(value.className, into);
+            FfiConverterOptionalString.write(value.helpText, into);
+            FfiConverterOptionalString.write(value.checked, into);
+            FfiConverterOptionalBoolean.write(value.expanded, into);
+            FfiConverterOptionalBoolean.write(value.offscreen, into);
+            FfiConverterOptionalBoolean.write(value.focused, into);
+            FfiConverterOptionalBoolean.write(value.readOnly, into);
+            FfiConverterOptionalBoolean.write(value.password, into);
+            FfiConverterOptionalBoolean.write(value.required, into);
+            FfiConverterOptionalTypeElementRange.write(value.range, into);
         }
         allocationSize(value: TypeName): number {
             return FfiConverterUInt64.allocationSize(value.elementIndex) +
@@ -6283,7 +7746,266 @@ const FfiConverterTypeWindowElement = (() => {
              FfiConverterOptionalUInt64.allocationSize(value.parentIndex) +
              FfiConverterOptionalTypeElementFrame.allocationSize(value.frame) +
              FfiConverterOptionalFloat64.allocationSize(value.min) +
-             FfiConverterOptionalFloat64.allocationSize(value.max);
+             FfiConverterOptionalFloat64.allocationSize(value.max) +
+             FfiConverterOptionalBoolean.allocationSize(value.actionable) +
+             FfiConverterOptionalString.allocationSize(value.name) +
+             FfiConverterOptionalString.allocationSize(value.automationId) +
+             FfiConverterOptionalString.allocationSize(value.className) +
+             FfiConverterOptionalString.allocationSize(value.helpText) +
+             FfiConverterOptionalString.allocationSize(value.checked) +
+             FfiConverterOptionalBoolean.allocationSize(value.expanded) +
+             FfiConverterOptionalBoolean.allocationSize(value.offscreen) +
+             FfiConverterOptionalBoolean.allocationSize(value.focused) +
+             FfiConverterOptionalBoolean.allocationSize(value.readOnly) +
+             FfiConverterOptionalBoolean.allocationSize(value.password) +
+             FfiConverterOptionalBoolean.allocationSize(value.required) +
+             FfiConverterOptionalTypeElementRange.allocationSize(value.range);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+/**
+ * One native window mutation. Restore remains a separate existing operation.
+ */
+export enum WindowManagementOperation {
+    Move,
+    Resize,
+    Minimize,
+    Maximize,
+    Focus
+}
+
+const FfiConverterTypeWindowManagementOperation = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = WindowManagementOperation;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return WindowManagementOperation.Move;
+                case 2: return WindowManagementOperation.Resize;
+                case 3: return WindowManagementOperation.Minimize;
+                case 4: return WindowManagementOperation.Maximize;
+                case 5: return WindowManagementOperation.Focus;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case WindowManagementOperation.Move: return ordinalConverter.write(1, into);
+                case WindowManagementOperation.Resize: return ordinalConverter.write(2, into);
+                case WindowManagementOperation.Minimize: return ordinalConverter.write(3, into);
+                case WindowManagementOperation.Maximize: return ordinalConverter.write(4, into);
+                case WindowManagementOperation.Focus: return ordinalConverter.write(5, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+/**
+ * Explicit native desktop pixels, unrelated to overview or CSS coordinates.
+ */
+export enum WindowManagementSpace {
+    WindowsDesktopPixels
+}
+
+const FfiConverterTypeWindowManagementSpace = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = WindowManagementSpace;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return WindowManagementSpace.WindowsDesktopPixels;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case WindowManagementSpace.WindowsDesktopPixels: return ordinalConverter.write(1, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+/**
+ * A source-bound one-use operation, with no input-event, delivery-mode or sequence fields.
+ */
+export type WindowManagementInput = {
+    /**
+     * Process that owns the admitted exact window.
+     */
+    pid: number,
+    /**
+     * Exact native window from the sampled control state.
+     */
+    windowId: bigint,
+    /**
+     * Submit the fresh one-use get_window_control_state reference, not a screenshot or element token.
+     */
+    stateId: string,
+    /**
+     * Choose one native operation. Focus never restores a minimized window; maximize may activate it.
+     */
+    operation: WindowManagementOperation,
+    /**
+     * For move, supply the left desktop-pixel position between -100000 and 100000. Omit for other operations.
+     */
+    x?: number,
+    /**
+     * For move, supply the top desktop-pixel position between -100000 and 100000. Omit for other operations.
+     */
+    y?: number,
+    /**
+     * For resize, supply the width between 1 and 32767 desktop pixels. Omit for other operations.
+     */
+    width?: number,
+    /**
+     * For resize, supply the height between 1 and 32767 desktop pixels. Omit for other operations.
+     */
+    height?: number,
+    /**
+     * For move or resize, supply windows_desktop_pixels and use the state's declared bounds source. Omit otherwise; overview and CSS coordinates are not accepted.
+     */
+    unit?: WindowManagementSpace,
+    /**
+     * For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
+     * Omit for the authenticated transport's implicit session.
+     */
+    session?: string
+}
+
+/**
+ * Generated factory for {@link WindowManagementInput} record objects.
+ */
+export const WindowManagementInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<WindowManagementInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<WindowManagementInput>,
+    });
+})();
+
+const FfiConverterTypeWindowManagementInput = (() => {
+    type TypeName = WindowManagementInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                pid: FfiConverterUInt32.read(from),
+                windowId: FfiConverterUInt64.read(from),
+                stateId: FfiConverterString.read(from),
+                operation: FfiConverterTypeWindowManagementOperation.read(from),
+                x: FfiConverterOptionalInt32.read(from),
+                y: FfiConverterOptionalInt32.read(from),
+                width: FfiConverterOptionalUInt32.read(from),
+                height: FfiConverterOptionalUInt32.read(from),
+                unit: FfiConverterOptionalTypeWindowManagementSpace.read(from),
+                session: FfiConverterOptionalString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterUInt32.write(value.pid, into);
+            FfiConverterUInt64.write(value.windowId, into);
+            FfiConverterString.write(value.stateId, into);
+            FfiConverterTypeWindowManagementOperation.write(value.operation, into);
+            FfiConverterOptionalInt32.write(value.x, into);
+            FfiConverterOptionalInt32.write(value.y, into);
+            FfiConverterOptionalUInt32.write(value.width, into);
+            FfiConverterOptionalUInt32.write(value.height, into);
+            FfiConverterOptionalTypeWindowManagementSpace.write(value.unit, into);
+            FfiConverterOptionalString.write(value.session, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterUInt32.allocationSize(value.pid) +
+             FfiConverterUInt64.allocationSize(value.windowId) +
+             FfiConverterString.allocationSize(value.stateId) +
+             FfiConverterTypeWindowManagementOperation.allocationSize(value.operation) +
+             FfiConverterOptionalInt32.allocationSize(value.x) +
+             FfiConverterOptionalInt32.allocationSize(value.y) +
+             FfiConverterOptionalUInt32.allocationSize(value.width) +
+             FfiConverterOptionalUInt32.allocationSize(value.height) +
+             FfiConverterOptionalTypeWindowManagementSpace.allocationSize(value.unit) +
+             FfiConverterOptionalString.allocationSize(value.session);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+/**
+ * One fresh, narrowly scoped state reference; no screenshot coordinates are accepted.
+ */
+export type WindowRestoreInput = {
+    /**
+     * Process that owns the exact target window.
+     */
+    pid: number,
+    /**
+     * Exact top-level native window identifier.
+     */
+    windowId: bigint,
+    /**
+     * Fresh one-use native window-state admission, not a capture or element token.
+     */
+    stateId: string,
+    /**
+     * For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
+     * Omit for the authenticated transport's implicit session.
+     */
+    session?: string
+}
+
+/**
+ * Generated factory for {@link WindowRestoreInput} record objects.
+ */
+export const WindowRestoreInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<WindowRestoreInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<WindowRestoreInput>,
+    });
+})();
+
+const FfiConverterTypeWindowRestoreInput = (() => {
+    type TypeName = WindowRestoreInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                pid: FfiConverterUInt32.read(from),
+                windowId: FfiConverterUInt64.read(from),
+                stateId: FfiConverterString.read(from),
+                session: FfiConverterOptionalString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterUInt32.write(value.pid, into);
+            FfiConverterUInt64.write(value.windowId, into);
+            FfiConverterString.write(value.stateId, into);
+            FfiConverterOptionalString.write(value.session, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterUInt32.allocationSize(value.pid) +
+             FfiConverterUInt64.allocationSize(value.windowId) +
+             FfiConverterString.allocationSize(value.stateId) +
+             FfiConverterOptionalString.allocationSize(value.session);
 
         }
     };
@@ -6337,6 +8059,10 @@ export type WindowStateOutput = {
     screenshotFilePath?: string,
     screenshotFrameValid?: boolean,
     windowBounds?: WindowBounds,
+    /**
+     * Windows membership query metadata; this timestamp is not capture readiness or input authority.
+     */
+    virtualDesktop?: VirtualDesktopMembership,
     /**
      * Image content belongs to the MCP envelope, never structuredContent.
      */
@@ -6392,6 +8118,7 @@ const FfiConverterTypeWindowStateOutput = (() => {
                 screenshotFilePath: FfiConverterOptionalString.read(from),
                 screenshotFrameValid: FfiConverterOptionalBoolean.read(from),
                 windowBounds: FfiConverterOptionalTypeWindowBounds.read(from),
+                virtualDesktop: FfiConverterOptionalTypeVirtualDesktopMembership.read(from),
                 images: FfiConverterSequenceTypeSnapshotImage.read(from)
             };
         }
@@ -6424,6 +8151,7 @@ const FfiConverterTypeWindowStateOutput = (() => {
             FfiConverterOptionalString.write(value.screenshotFilePath, into);
             FfiConverterOptionalBoolean.write(value.screenshotFrameValid, into);
             FfiConverterOptionalTypeWindowBounds.write(value.windowBounds, into);
+            FfiConverterOptionalTypeVirtualDesktopMembership.write(value.virtualDesktop, into);
             FfiConverterSequenceTypeSnapshotImage.write(value.images, into);
         }
         allocationSize(value: TypeName): number {
@@ -6455,10 +8183,538 @@ const FfiConverterTypeWindowStateOutput = (() => {
              FfiConverterOptionalString.allocationSize(value.screenshotFilePath) +
              FfiConverterOptionalBoolean.allocationSize(value.screenshotFrameValid) +
              FfiConverterOptionalTypeWindowBounds.allocationSize(value.windowBounds) +
+             FfiConverterOptionalTypeVirtualDesktopMembership.allocationSize(value.virtualDesktop) +
              FfiConverterSequenceTypeSnapshotImage.allocationSize(value.images);
 
         }
     };
+    return new FFIConverter();
+})();
+
+/**
+ * Read native state without pixels, a UI tree, activation or input.
+ */
+export type WindowStatusInput = {
+    /**
+     * Process that owns the exact target window.
+     */
+    pid: number,
+    /**
+     * Exact top-level native window identifier.
+     */
+    windowId: bigint,
+    /**
+     * For multi-call work, prefer a short public session label and repeat it on every call that accepts it.
+     * Omit for the authenticated transport's implicit session.
+     */
+    session?: string
+}
+
+/**
+ * Generated factory for {@link WindowStatusInput} record objects.
+ */
+export const WindowStatusInput = (() => {
+    const defaults = () => ({
+    });
+    const create = (() => {
+        return uniffiCreateRecord<WindowStatusInput, ReturnType<typeof defaults>>(defaults);
+    })();
+    return Object.freeze({
+        create,
+        new: create,
+        defaults: () => Object.freeze(defaults()) as Partial<WindowStatusInput>,
+    });
+})();
+
+const FfiConverterTypeWindowStatusInput = (() => {
+    type TypeName = WindowStatusInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            return {
+                pid: FfiConverterUInt32.read(from),
+                windowId: FfiConverterUInt64.read(from),
+                session: FfiConverterOptionalString.read(from)
+            };
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            FfiConverterUInt32.write(value.pid, into);
+            FfiConverterUInt64.write(value.windowId, into);
+            FfiConverterOptionalString.write(value.session, into);
+        }
+        allocationSize(value: TypeName): number {
+            return FfiConverterUInt32.allocationSize(value.pid) +
+             FfiConverterUInt64.allocationSize(value.windowId) +
+             FfiConverterOptionalString.allocationSize(value.session);
+
+        }
+    };
+    return new FFIConverter();
+})();
+
+/**
+ * Shared delivery is measured natively and cannot be published by the adapter.
+ */
+export enum DesktopActivityDelivery {
+    None,
+    Direct,
+    Unknown
+}
+
+const FfiConverterTypeDesktopActivityDelivery = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = DesktopActivityDelivery;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return DesktopActivityDelivery.None;
+                case 2: return DesktopActivityDelivery.Direct;
+                case 3: return DesktopActivityDelivery.Unknown;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case DesktopActivityDelivery.None: return ordinalConverter.write(1, into);
+                case DesktopActivityDelivery.Direct: return ordinalConverter.write(2, into);
+                case DesktopActivityDelivery.Unknown: return ordinalConverter.write(3, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+export enum DesktopActivityOutcome {
+    Completed,
+    Refused,
+    Interrupted,
+    Unknown
+}
+
+const FfiConverterTypeDesktopActivityOutcome = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = DesktopActivityOutcome;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return DesktopActivityOutcome.Completed;
+                case 2: return DesktopActivityOutcome.Refused;
+                case 3: return DesktopActivityOutcome.Interrupted;
+                case 4: return DesktopActivityOutcome.Unknown;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case DesktopActivityOutcome.Completed: return ordinalConverter.write(1, into);
+                case DesktopActivityOutcome.Refused: return ordinalConverter.write(2, into);
+                case DesktopActivityOutcome.Interrupted: return ordinalConverter.write(3, into);
+                case DesktopActivityOutcome.Unknown: return ordinalConverter.write(4, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+export enum DesktopActivityKind {
+    Read,
+    Wait,
+    Click,
+    Drag,
+    Scroll,
+    MovePointer,
+    Type,
+    Key,
+    Open,
+    Manage,
+    Browser,
+    Clipboard,
+    Files,
+    Record,
+    Other
+}
+
+const FfiConverterTypeDesktopActivityKind = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = DesktopActivityKind;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return DesktopActivityKind.Read;
+                case 2: return DesktopActivityKind.Wait;
+                case 3: return DesktopActivityKind.Click;
+                case 4: return DesktopActivityKind.Drag;
+                case 5: return DesktopActivityKind.Scroll;
+                case 6: return DesktopActivityKind.MovePointer;
+                case 7: return DesktopActivityKind.Type;
+                case 8: return DesktopActivityKind.Key;
+                case 9: return DesktopActivityKind.Open;
+                case 10: return DesktopActivityKind.Manage;
+                case 11: return DesktopActivityKind.Browser;
+                case 12: return DesktopActivityKind.Clipboard;
+                case 13: return DesktopActivityKind.Files;
+                case 14: return DesktopActivityKind.Record;
+                case 15: return DesktopActivityKind.Other;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case DesktopActivityKind.Read: return ordinalConverter.write(1, into);
+                case DesktopActivityKind.Wait: return ordinalConverter.write(2, into);
+                case DesktopActivityKind.Click: return ordinalConverter.write(3, into);
+                case DesktopActivityKind.Drag: return ordinalConverter.write(4, into);
+                case DesktopActivityKind.Scroll: return ordinalConverter.write(5, into);
+                case DesktopActivityKind.MovePointer: return ordinalConverter.write(6, into);
+                case DesktopActivityKind.Type: return ordinalConverter.write(7, into);
+                case DesktopActivityKind.Key: return ordinalConverter.write(8, into);
+                case DesktopActivityKind.Open: return ordinalConverter.write(9, into);
+                case DesktopActivityKind.Manage: return ordinalConverter.write(10, into);
+                case DesktopActivityKind.Browser: return ordinalConverter.write(11, into);
+                case DesktopActivityKind.Clipboard: return ordinalConverter.write(12, into);
+                case DesktopActivityKind.Files: return ordinalConverter.write(13, into);
+                case DesktopActivityKind.Record: return ordinalConverter.write(14, into);
+                case DesktopActivityKind.Other: return ordinalConverter.write(15, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+export enum DesktopActivityLocation {
+    Desktop,
+    Browser,
+    SeparateDesktop
+}
+
+const FfiConverterTypeDesktopActivityLocation = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = DesktopActivityLocation;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return DesktopActivityLocation.Desktop;
+                case 2: return DesktopActivityLocation.Browser;
+                case 3: return DesktopActivityLocation.SeparateDesktop;
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value) {
+                case DesktopActivityLocation.Desktop: return ordinalConverter.write(1, into);
+                case DesktopActivityLocation.Browser: return ordinalConverter.write(2, into);
+                case DesktopActivityLocation.SeparateDesktop: return ordinalConverter.write(3, into);
+            }
+        }
+        allocationSize(value: TypeName): number {
+            return ordinalConverter.allocationSize(0);
+        }
+    }
+    return new FFIConverter();
+})();
+
+
+// Enum: DesktopActivityInput
+export enum DesktopActivityInput_Tags {
+    Configure = "Configure",
+    Begin = "Begin",
+    End = "End",
+    ActionStart = "ActionStart",
+    ActionEnd = "ActionEnd"
+}
+/**
+ * Metadata for the calling transport's desktop activity. No input is sent by this tool.
+ */
+export const DesktopActivityInput = (() => {
+
+    type Configure__interface = {
+        tag: DesktopActivityInput_Tags.Configure;
+        inner:
+Readonly<{label: string; panel: boolean; outline: boolean; point: boolean}>
+    };
+    class Configure_ extends UniffiEnum implements Configure__interface {
+        /**
+         * @private
+         * This field is private and should not be used, use `tag` instead.
+         */
+        readonly [uniffiTypeNameSymbol] = "DesktopActivityInput";
+        readonly tag = DesktopActivityInput_Tags.Configure;
+        readonly inner:
+Readonly<{label: string; panel: boolean; outline: boolean; point: boolean}>;
+        constructor(
+inner: {label: string; panel: boolean; outline: boolean; point: boolean }) {
+            super("DesktopActivityInput", "Configure");
+
+            this.inner = Object.freeze(inner);
+        }
+        static new(
+inner: {label: string; panel: boolean; outline: boolean; point: boolean }): Configure_ {
+            return new Configure_(inner);
+        }
+
+        static instanceOf(obj: any): obj is Configure_ {
+            return obj.tag === DesktopActivityInput_Tags.Configure;
+        }
+
+    }
+
+    type Begin__interface = {
+        tag: DesktopActivityInput_Tags.Begin;
+        inner:
+Readonly<{intent: string}>
+    };
+    class Begin_ extends UniffiEnum implements Begin__interface {
+        /**
+         * @private
+         * This field is private and should not be used, use `tag` instead.
+         */
+        readonly [uniffiTypeNameSymbol] = "DesktopActivityInput";
+        readonly tag = DesktopActivityInput_Tags.Begin;
+        readonly inner:
+Readonly<{intent: string}>;
+        constructor(
+inner: {intent: string }) {
+            super("DesktopActivityInput", "Begin");
+
+            this.inner = Object.freeze(inner);
+        }
+        static new(
+inner: {intent: string }): Begin_ {
+            return new Begin_(inner);
+        }
+
+        static instanceOf(obj: any): obj is Begin_ {
+            return obj.tag === DesktopActivityInput_Tags.Begin;
+        }
+
+    }
+
+    type End__interface = {
+        tag: DesktopActivityInput_Tags.End;
+        inner:
+Readonly<{outcome: DesktopActivityOutcome}>
+    };
+    class End_ extends UniffiEnum implements End__interface {
+        /**
+         * @private
+         * This field is private and should not be used, use `tag` instead.
+         */
+        readonly [uniffiTypeNameSymbol] = "DesktopActivityInput";
+        readonly tag = DesktopActivityInput_Tags.End;
+        readonly inner:
+Readonly<{outcome: DesktopActivityOutcome}>;
+        constructor(
+inner: {outcome: DesktopActivityOutcome }) {
+            super("DesktopActivityInput", "End");
+
+            this.inner = Object.freeze(inner);
+        }
+        static new(
+inner: {outcome: DesktopActivityOutcome }): End_ {
+            return new End_(inner);
+        }
+
+        static instanceOf(obj: any): obj is End_ {
+            return obj.tag === DesktopActivityInput_Tags.End;
+        }
+
+    }
+
+    type ActionStart__interface = {
+        tag: DesktopActivityInput_Tags.ActionStart;
+        inner:
+Readonly<{id: bigint; kind: DesktopActivityKind; location: DesktopActivityLocation; window?: DesktopActivityWindow; delivery?: DesktopActivityDelivery}>
+    };
+    class ActionStart_ extends UniffiEnum implements ActionStart__interface {
+        /**
+         * @private
+         * This field is private and should not be used, use `tag` instead.
+         */
+        readonly [uniffiTypeNameSymbol] = "DesktopActivityInput";
+        readonly tag = DesktopActivityInput_Tags.ActionStart;
+        readonly inner:
+Readonly<{id: bigint; kind: DesktopActivityKind; location: DesktopActivityLocation; window?: DesktopActivityWindow; delivery?: DesktopActivityDelivery}>;
+        constructor(
+inner: {id: bigint; kind: DesktopActivityKind; location: DesktopActivityLocation; window?: DesktopActivityWindow; delivery?: DesktopActivityDelivery }) {
+            super("DesktopActivityInput", "ActionStart");
+
+            this.inner = Object.freeze(inner);
+        }
+        static new(
+inner: {id: bigint; kind: DesktopActivityKind; location: DesktopActivityLocation; window?: DesktopActivityWindow; delivery?: DesktopActivityDelivery }): ActionStart_ {
+            return new ActionStart_(inner);
+        }
+
+        static instanceOf(obj: any): obj is ActionStart_ {
+            return obj.tag === DesktopActivityInput_Tags.ActionStart;
+        }
+
+    }
+
+    type ActionEnd__interface = {
+        tag: DesktopActivityInput_Tags.ActionEnd;
+        inner:
+Readonly<{id: bigint; outcome: DesktopActivityOutcome}>
+    };
+    class ActionEnd_ extends UniffiEnum implements ActionEnd__interface {
+        /**
+         * @private
+         * This field is private and should not be used, use `tag` instead.
+         */
+        readonly [uniffiTypeNameSymbol] = "DesktopActivityInput";
+        readonly tag = DesktopActivityInput_Tags.ActionEnd;
+        readonly inner:
+Readonly<{id: bigint; outcome: DesktopActivityOutcome}>;
+        constructor(
+inner: {id: bigint; outcome: DesktopActivityOutcome }) {
+            super("DesktopActivityInput", "ActionEnd");
+
+            this.inner = Object.freeze(inner);
+        }
+        static new(
+inner: {id: bigint; outcome: DesktopActivityOutcome }): ActionEnd_ {
+            return new ActionEnd_(inner);
+        }
+
+        static instanceOf(obj: any): obj is ActionEnd_ {
+            return obj.tag === DesktopActivityInput_Tags.ActionEnd;
+        }
+
+    }
+
+    function instanceOf(obj: any): obj is DesktopActivityInput {
+        return obj[uniffiTypeNameSymbol] === "DesktopActivityInput";
+    }
+
+    return Object.freeze({
+        instanceOf,
+  Configure: Configure_,
+  Begin: Begin_,
+  End: End_,
+  ActionStart: ActionStart_,
+  ActionEnd: ActionEnd_
+    });
+
+})();
+/**
+ * Metadata for the calling transport's desktop activity. No input is sent by this tool.
+ */
+export type DesktopActivityInput = InstanceType<
+    typeof DesktopActivityInput['Configure' | 'Begin' | 'End' | 'ActionStart' | 'ActionEnd']
+>;
+
+// FfiConverter for enum DesktopActivityInput
+const FfiConverterTypeDesktopActivityInput = (() => {
+    const ordinalConverter = FfiConverterInt32;
+    type TypeName = DesktopActivityInput;
+    class FFIConverter extends AbstractFfiConverterByteArray<TypeName> {
+        read(from: RustBuffer): TypeName {
+            switch (ordinalConverter.read(from)) {
+                case 1: return new DesktopActivityInput.Configure({label: FfiConverterString.read(from), panel: FfiConverterBool.read(from), outline: FfiConverterBool.read(from), point: FfiConverterBool.read(from) });
+                case 2: return new DesktopActivityInput.Begin({intent: FfiConverterString.read(from) });
+                case 3: return new DesktopActivityInput.End({outcome: FfiConverterTypeDesktopActivityOutcome.read(from) });
+                case 4: return new DesktopActivityInput.ActionStart({id: FfiConverterUInt64.read(from), kind: FfiConverterTypeDesktopActivityKind.read(from), location: FfiConverterTypeDesktopActivityLocation.read(from), window: FfiConverterOptionalTypeDesktopActivityWindow.read(from), delivery: FfiConverterOptionalTypeDesktopActivityDelivery.read(from) });
+                case 5: return new DesktopActivityInput.ActionEnd({id: FfiConverterUInt64.read(from), outcome: FfiConverterTypeDesktopActivityOutcome.read(from) });
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        write(value: TypeName, into: RustBuffer): void {
+            switch (value.tag) {
+                case DesktopActivityInput_Tags.Configure: {
+                    ordinalConverter.write(1, into);
+                    const inner = value.inner;
+                    FfiConverterString.write(inner.label, into);
+                    FfiConverterBool.write(inner.panel, into);
+                    FfiConverterBool.write(inner.outline, into);
+                    FfiConverterBool.write(inner.point, into);
+                    return;
+                }
+                case DesktopActivityInput_Tags.Begin: {
+                    ordinalConverter.write(2, into);
+                    const inner = value.inner;
+                    FfiConverterString.write(inner.intent, into);
+                    return;
+                }
+                case DesktopActivityInput_Tags.End: {
+                    ordinalConverter.write(3, into);
+                    const inner = value.inner;
+                    FfiConverterTypeDesktopActivityOutcome.write(inner.outcome, into);
+                    return;
+                }
+                case DesktopActivityInput_Tags.ActionStart: {
+                    ordinalConverter.write(4, into);
+                    const inner = value.inner;
+                    FfiConverterUInt64.write(inner.id, into);
+                    FfiConverterTypeDesktopActivityKind.write(inner.kind, into);
+                    FfiConverterTypeDesktopActivityLocation.write(inner.location, into);
+                    FfiConverterOptionalTypeDesktopActivityWindow.write(inner.window, into);
+                    FfiConverterOptionalTypeDesktopActivityDelivery.write(inner.delivery, into);
+                    return;
+                }
+                case DesktopActivityInput_Tags.ActionEnd: {
+                    ordinalConverter.write(5, into);
+                    const inner = value.inner;
+                    FfiConverterUInt64.write(inner.id, into);
+                    FfiConverterTypeDesktopActivityOutcome.write(inner.outcome, into);
+                    return;
+                }
+                default:
+                    // Throwing from here means that DesktopActivityInput_Tags hasn't matched an ordinal.
+                    throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+        allocationSize(value: TypeName): number {
+            switch (value.tag) {
+                case DesktopActivityInput_Tags.Configure: {
+                    const inner = value.inner;
+                    let size = ordinalConverter.allocationSize(1);
+                    size += FfiConverterString.allocationSize(inner.label);
+                    size += FfiConverterBool.allocationSize(inner.panel);
+                    size += FfiConverterBool.allocationSize(inner.outline);
+                    size += FfiConverterBool.allocationSize(inner.point);
+                    return size;
+                }
+                case DesktopActivityInput_Tags.Begin: {
+                    const inner = value.inner;
+                    let size = ordinalConverter.allocationSize(2);
+                    size += FfiConverterString.allocationSize(inner.intent);
+                    return size;
+                }
+                case DesktopActivityInput_Tags.End: {
+                    const inner = value.inner;
+                    let size = ordinalConverter.allocationSize(3);
+                    size += FfiConverterTypeDesktopActivityOutcome.allocationSize(inner.outcome);
+                    return size;
+                }
+                case DesktopActivityInput_Tags.ActionStart: {
+                    const inner = value.inner;
+                    let size = ordinalConverter.allocationSize(4);
+                    size += FfiConverterUInt64.allocationSize(inner.id);
+                    size += FfiConverterTypeDesktopActivityKind.allocationSize(inner.kind);
+                    size += FfiConverterTypeDesktopActivityLocation.allocationSize(inner.location);
+                    size += FfiConverterOptionalTypeDesktopActivityWindow.allocationSize(inner.window);
+                    size += FfiConverterOptionalTypeDesktopActivityDelivery.allocationSize(inner.delivery);
+                    return size;
+                }
+                case DesktopActivityInput_Tags.ActionEnd: {
+                    const inner = value.inner;
+                    let size = ordinalConverter.allocationSize(5);
+                    size += FfiConverterUInt64.allocationSize(inner.id);
+                    size += FfiConverterTypeDesktopActivityOutcome.allocationSize(inner.outcome);
+                    return size;
+                }
+                default: throw new UniffiInternalError.UnexpectedEnumCase();
+            }
+        }
+    }
     return new FFIConverter();
 })();
 
@@ -6542,6 +8798,9 @@ const FfiConverterOptionalTypeCursorMotionEffectsOutput = new FfiConverterOption
 // FfiConverter for CursorMotionEffects | undefined
 const FfiConverterOptionalTypeCursorMotionEffects = new FfiConverterOptional(FfiConverterTypeCursorMotionEffects);
 
+// FfiConverter for number | undefined
+const FfiConverterOptionalInt32 = new FfiConverterOptional(FfiConverterInt32);
+
 // FfiConverter for ActionTarget | undefined
 const FfiConverterOptionalTypeActionTarget = new FfiConverterOptional(FfiConverterTypeActionTarget);
 
@@ -6572,14 +8831,17 @@ const FfiConverterSequenceTypeSessionOutput = new FfiConverterArray(FfiConverter
 // FfiConverter for bigint | undefined
 const FfiConverterOptionalInt64 = new FfiConverterOptional(FfiConverterInt64);
 
-// FfiConverter for number | undefined
-const FfiConverterOptionalInt32 = new FfiConverterOptional(FfiConverterInt32);
-
 // FfiConverter for Array<bigint>
 const FfiConverterSequenceUInt64 = new FfiConverterArray(FfiConverterUInt64);
 
 // FfiConverter for Array<bigint> | undefined
 const FfiConverterOptionalSequenceUInt64 = new FfiConverterOptional(FfiConverterSequenceUInt64);
+
+// FfiConverter for DesktopQueryError | undefined
+const FfiConverterOptionalTypeDesktopQueryError = new FfiConverterOptional(FfiConverterTypeDesktopQueryError);
+
+// FfiConverter for VirtualDesktopMembership | undefined
+const FfiConverterOptionalTypeVirtualDesktopMembership = new FfiConverterOptional(FfiConverterTypeVirtualDesktopMembership);
 
 // FfiConverter for Array<WindowInfo>
 const FfiConverterSequenceTypeWindowInfo = new FfiConverterArray(FfiConverterTypeWindowInfo);
@@ -6599,8 +8861,29 @@ const FfiConverterSequenceTypeVisualParseWarning = new FfiConverterArray(FfiConv
 // FfiConverter for UnknownReason | undefined
 const FfiConverterOptionalTypeUnknownReason = new FfiConverterOptional(FfiConverterTypeUnknownReason);
 
+// FfiConverter for AgentActivitySource | undefined
+const FfiConverterOptionalTypeAgentActivitySource = new FfiConverterOptional(FfiConverterTypeAgentActivitySource);
+
+// FfiConverter for AgentActivityRect | undefined
+const FfiConverterOptionalTypeAgentActivityRect = new FfiConverterOptional(FfiConverterTypeAgentActivityRect);
+
+// FfiConverter for AgentActivityPoint | undefined
+const FfiConverterOptionalTypeAgentActivityPoint = new FfiConverterOptional(FfiConverterTypeAgentActivityPoint);
+
+// FfiConverter for AgentActivityImage | undefined
+const FfiConverterOptionalTypeAgentActivityImage = new FfiConverterOptional(FfiConverterTypeAgentActivityImage);
+
+// FfiConverter for AgentActivityOutcome | undefined
+const FfiConverterOptionalTypeAgentActivityOutcome = new FfiConverterOptional(FfiConverterTypeAgentActivityOutcome);
+
 // FfiConverter for ScrollBy | undefined
 const FfiConverterOptionalTypeScrollBy = new FfiConverterOptional(FfiConverterTypeScrollBy);
+
+// FfiConverter for VisualPreset | undefined
+const FfiConverterOptionalTypeVisualPreset = new FfiConverterOptional(FfiConverterTypeVisualPreset);
+
+// FfiConverter for VisualQuality | undefined
+const FfiConverterOptionalTypeVisualQuality = new FfiConverterOptional(FfiConverterTypeVisualQuality);
 
 // FfiConverter for CaptureScope | undefined
 const FfiConverterOptionalTypeCaptureScope = new FfiConverterOptional(FfiConverterTypeCaptureScope);
@@ -6629,6 +8912,12 @@ const FfiConverterSequenceTypePredicateOutcome = new FfiConverterArray(FfiConver
 // FfiConverter for ElementFrame | undefined
 const FfiConverterOptionalTypeElementFrame = new FfiConverterOptional(FfiConverterTypeElementFrame);
 
+// FfiConverter for ElementRange | undefined
+const FfiConverterOptionalTypeElementRange = new FfiConverterOptional(FfiConverterTypeElementRange);
+
+// FfiConverter for WindowManagementSpace | undefined
+const FfiConverterOptionalTypeWindowManagementSpace = new FfiConverterOptional(FfiConverterTypeWindowManagementSpace);
+
 // FfiConverter for Array<WindowElement>
 const FfiConverterSequenceTypeWindowElement = new FfiConverterArray(FfiConverterTypeWindowElement);
 
@@ -6640,6 +8929,12 @@ const FfiConverterOptionalTypeWindowBounds = new FfiConverterOptional(FfiConvert
 
 // FfiConverter for Array<SnapshotImage>
 const FfiConverterSequenceTypeSnapshotImage = new FfiConverterArray(FfiConverterTypeSnapshotImage);
+
+// FfiConverter for DesktopActivityWindow | undefined
+const FfiConverterOptionalTypeDesktopActivityWindow = new FfiConverterOptional(FfiConverterTypeDesktopActivityWindow);
+
+// FfiConverter for DesktopActivityDelivery | undefined
+const FfiConverterOptionalTypeDesktopActivityDelivery = new FfiConverterOptional(FfiConverterTypeDesktopActivityDelivery);
 
 
 /**
@@ -6679,6 +8974,13 @@ export default Object.freeze({
     FfiConverterTypeActionResult,
     FfiConverterTypeActionRoute,
     FfiConverterTypeActionTarget,
+    FfiConverterTypeAgentActivityImage,
+    FfiConverterTypeAgentActivityImageMime,
+    FfiConverterTypeAgentActivityKind,
+    FfiConverterTypeAgentActivityOutcome,
+    FfiConverterTypeAgentActivityPoint,
+    FfiConverterTypeAgentActivityRect,
+    FfiConverterTypeAgentActivitySource,
     FfiConverterTypeAppInfo,
     FfiConverterTypeBoundsExpectation,
     FfiConverterTypeCaptureScope,
@@ -6702,11 +9004,20 @@ export default Object.freeze({
     FfiConverterTypeCursorThemeOutput,
     FfiConverterTypeCursorThemeSelection,
     FfiConverterTypeCursorVisualOutput,
+    FfiConverterTypeDesktopActivityDelivery,
+    FfiConverterTypeDesktopActivityInput,
+    FfiConverterTypeDesktopActivityKind,
+    FfiConverterTypeDesktopActivityLocation,
+    FfiConverterTypeDesktopActivityOutcome,
+    FfiConverterTypeDesktopActivityWindow,
+    FfiConverterTypeDesktopQueryError,
+    FfiConverterTypeDesktopQueryErrorCode,
     FfiConverterTypeDesktopScope,
     FfiConverterTypeDragInput,
     FfiConverterTypeEffectiveScope,
     FfiConverterTypeElementFrame,
     FfiConverterTypeElementPredicate,
+    FfiConverterTypeElementRange,
     FfiConverterTypeElementSelector,
     FfiConverterTypeEndSessionInput,
     FfiConverterTypeEndSessionOutput,
@@ -6714,6 +9025,7 @@ export default Object.freeze({
     FfiConverterTypeGetAgentCursorStateOutput,
     FfiConverterTypeGetCursorPositionInput,
     FfiConverterTypeGetDesktopStateInput,
+    FfiConverterTypeGetDisplayStateInput,
     FfiConverterTypeGetScreenSizeInput,
     FfiConverterTypeGetSessionInput,
     FfiConverterTypeGetWindowStateInput,
@@ -6722,6 +9034,7 @@ export default Object.freeze({
     FfiConverterTypeInvokeMenuInput,
     FfiConverterTypeListAppsInput,
     FfiConverterTypeListAppsOutput,
+    FfiConverterTypeListDisplaysInput,
     FfiConverterTypeListSessionsInput,
     FfiConverterTypeListSessionsOutput,
     FfiConverterTypeListWindowsInput,
@@ -6731,11 +9044,17 @@ export default Object.freeze({
     FfiConverterTypeParseVisualRegionsOptions,
     FfiConverterTypeParseVisualRegionsOutput,
     FfiConverterTypePlatform,
+    FfiConverterTypePointerMoveInput,
+    FfiConverterTypePointerScrollInput,
     FfiConverterTypePredicateOutcome,
+    FfiConverterTypePresentAgentActivityInput,
     FfiConverterTypePressKeyInput,
     FfiConverterTypeScrollBy,
     FfiConverterTypeScrollDirection,
     FfiConverterTypeScrollInput,
+    FfiConverterTypeScrollUnit,
+    FfiConverterTypeSemanticActionInput,
+    FfiConverterTypeSemanticOperation,
     FfiConverterTypeSessionClientKindOutput,
     FfiConverterTypeSessionLifecycleState,
     FfiConverterTypeSessionOutput,
@@ -6747,6 +9066,7 @@ export default Object.freeze({
     FfiConverterTypeSetAgentCursorMotionOutput,
     FfiConverterTypeSetAgentCursorThemeInput,
     FfiConverterTypeSetAgentCursorThemeOutput,
+    FfiConverterTypeSetAgentVisualsInput,
     FfiConverterTypeSetWindowFrameInput,
     FfiConverterTypeSnapshotImage,
     FfiConverterTypeStartSessionInput,
@@ -6757,6 +9077,7 @@ export default Object.freeze({
     FfiConverterTypeVerificationStatus,
     FfiConverterTypeVerifyStateInput,
     FfiConverterTypeVerifyStateOutput,
+    FfiConverterTypeVirtualDesktopMembership,
     FfiConverterTypeVisualActionCoordinateSpace,
     FfiConverterTypeVisualCaptureProvenance,
     FfiConverterTypeVisualCaptureSource,
@@ -6765,14 +9086,22 @@ export default Object.freeze({
     FfiConverterTypeVisualParseTiming,
     FfiConverterTypeVisualParseWarning,
     FfiConverterTypeVisualParserMetadata,
+    FfiConverterTypeVisualPreset,
+    FfiConverterTypeVisualQuality,
     FfiConverterTypeVisualRegion,
     FfiConverterTypeVisualRegionBounds,
     FfiConverterTypeVisualRegionKind,
     FfiConverterTypeVisualScreenshotReference,
     FfiConverterTypeWindowBounds,
+    FfiConverterTypeWindowControlStateInput,
     FfiConverterTypeWindowElement,
     FfiConverterTypeWindowInfo,
+    FfiConverterTypeWindowManagementInput,
+    FfiConverterTypeWindowManagementOperation,
+    FfiConverterTypeWindowManagementSpace,
     FfiConverterTypeWindowPredicate,
+    FfiConverterTypeWindowRestoreInput,
     FfiConverterTypeWindowStateOutput,
+    FfiConverterTypeWindowStatusInput,
   }
 });

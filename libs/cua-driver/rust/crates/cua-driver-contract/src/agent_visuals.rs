@@ -137,8 +137,66 @@ fn tool<O: ToolOutput>(
         output_validator: crate::validate_typed_output::<O>,
     }
 }
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum DesktopActivityStatus {
+    Accepted,
+    Ignored,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DesktopActivityOutput {
+    status: DesktopActivityStatus,
+}
+
+impl ToolOutput for DesktopActivityOutput {
+    fn validate(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn output_schema() -> Value {
+        crate::outputs::output_schema_with_additional_properties::<Self>(false)
+    }
+}
+
+fn desktop_activity_schema() -> Value {
+    // Keep tools/list provider-compatible. The tagged desktop activity input enforces
+    // the required fields and allowed keys for each operation at dispatch.
+    json!({
+        "type":"object",
+        "required":["operation"],
+        "additionalProperties":false,
+        "properties":{
+            "operation":{"type":"string","enum":["configure","begin","end","action_start","action_end"],"description":"Activity lifecycle or presentation update."},
+            "label":{"type":"string","minLength":1,"maxLength":48,"description":"Public name of the agent, shown on the desktop."},
+            "panel":{"type":"boolean","description":"Show the shared desktop activity panel."},
+            "outline":{"type":"boolean","description":"Outline the exact window while the agent acts."},
+            "point":{"type":"boolean","description":"Mark the last native-confirmed physical pointer position."},
+            "intent":{"type":"string","minLength":1,"maxLength":120,"description":"Describe the intended work without typed text, document content or secrets."},
+            "outcome":{"type":"string","enum":["completed","refused","interrupted","unknown"],"description":"End state of the session or action."},
+            "id":{"type":"integer","minimum":1,"maximum":MAX_ACTIVITY_GENERATION,"description":"Adapter action identifier scoped to this transport."},
+            "kind":{"type":"string","enum":["read","wait","click","drag","scroll","move_pointer","type","key","open","manage","browser","clipboard","files","record","other"],"description":"Action category. Do not include action arguments."},
+            "location":{"type":"string","enum":["desktop","browser","separate_desktop"],"description":"Desktop, browser, or separate desktop."},
+            "delivery":{"type":"string","enum":["none","direct","unknown"],"description":"Known non-shared delivery route. Only native input can establish shared input."},
+            "window":{
+                "type":"object",
+                "description":"Exact native target lifetime for a desktop action.",
+                "required":["window_id","pid","identity"],
+                "additionalProperties":false,
+                "properties":{
+                    "window_id":{"type":"integer","minimum":1,"maximum":MAX_ACTIVITY_GENERATION},
+                    "pid":{"type":"integer","minimum":1,"maximum":u32::MAX},
+                    "identity":{"type":"string","maxLength":128}
+                }
+            }
+        }
+    })
+}
+
 pub fn contracts() -> Vec<ToolContract> {
     vec![
+        tool::<DesktopActivityOutput>("agent_desktop_activity", "Use agent_desktop_activity to publish scoped human-only Windows desktop activity from the adapter. Requires CUA_DESKTOP_ACTIVITY=1. It does not send input or read the desktop.", "agent_visuals.desktop_activity", desktop_activity_schema()),
         tool::<SetAgentVisualsOutput>("set_agent_visuals","Configure the current session's human-only native activity presentation. Off clears pending visuals without changing capture or input.","agent_visuals.configure",json!({
             "type":"object","properties":{
                 "session":{"type":"string","description":"Public session label whose presentation settings change. Omit it to use the authenticated transport's implicit lifecycle session."},

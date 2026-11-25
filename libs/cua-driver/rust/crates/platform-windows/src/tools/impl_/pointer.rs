@@ -144,7 +144,7 @@ impl Tool for MovePointerTool {
         let cancelled = Arc::new(AtomicBool::new(false));
         let _cancel_on_drop = crate::input::path::CancelOnDrop(cancelled.clone());
         let admission = cua_driver_core::tool::retain_desktop_action_admission();
-        let result = tokio::task::spawn_blocking(move || {
+        let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
             let _admission = admission;
             if let Err(error) = exact_window_ownership_result(pid, hwnd, crate::win32::window_owner_pid(hwnd)) {
                 return error;
