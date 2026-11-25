@@ -94,7 +94,8 @@ pub struct DesktopActivityWindow {
     pub identity: String,
 }
 
-fn activity_label_is_valid(value: &str, limit: usize) -> bool {
+/// Check that an activity label is nonblank, bounded, and safe to display as one line.
+pub fn activity_label_is_valid(value: &str, limit: usize) -> bool {
     !value.trim().is_empty()
         && value.chars().count() <= limit
         && value.chars().all(|c| {

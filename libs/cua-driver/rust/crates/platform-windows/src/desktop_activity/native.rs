@@ -8,6 +8,7 @@ use crate::activity::native::{
     create_protected_hud, exact_window_frame, flush_capture_exclusion, register_protected_hud_class,
 };
 use crate::overlay::{WinSurface, WinZOrderEnforcer};
+use cua_driver_contract::activity_label_is_valid;
 use cursor_overlay::activity::{paint_hud_text, ActivityRect};
 use cursor_overlay::{session_fill_rgba, ZOrderEnforcer};
 use std::cmp::Reverse;
@@ -178,7 +179,7 @@ impl Renderer {
                         .entry(window.identity.clone())
                         .or_insert_with(|| {
                             crate::win32::process_name(window.pid)
-                                .filter(|name| super::safe_label(name, 64))
+                                .filter(|name| activity_label_is_valid(name, 64))
                         });
                     Some(match name.as_deref() {
                         Some(application) => application.to_owned(),
