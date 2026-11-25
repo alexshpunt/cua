@@ -142,6 +142,7 @@ struct Cues {
 pub(super) struct Renderer {
     panel: Option<Hud<Panel>>,
     cues: HashMap<String, Cues>,
+    applications: HashMap<String, Option<String>>,
 }
 
 impl Renderer {
@@ -163,10 +164,32 @@ impl Renderer {
                 DispatchMessageW(&message);
             }
         }
-        if let Some((bounds, panel)) = (panel && !rows.is_empty())
-            .then(|| Panel::layout(rows))
-            .flatten()
-        {
+        let mut used_applications = HashSet::new();
+        let layout = (panel && !rows.is_empty())
+            .then(|| {
+                Panel::layout(rows, |action| {
+                    let window = action
+                        .window
+                        .as_ref()
+                        .filter(|_| window_frame(action).is_some())?;
+                    used_applications.insert(window.identity.as_str());
+                    let name = self
+                        .applications
+                        .entry(window.identity.clone())
+                        .or_insert_with(|| {
+                            crate::win32::process_name(window.pid)
+                                .filter(|name| super::safe_label(name, 64))
+                        });
+                    Some(match name.as_deref() {
+                        Some(application) => application.to_owned(),
+                        None => format!("Window {}", window.window_id),
+                    })
+                })
+            })
+            .flatten();
+        self.applications
+            .retain(|identity, _| used_applications.contains(identity.as_str()));
+        if let Some((bounds, panel)) = layout {
             Hud::update(&mut self.panel, bounds, panel, Panel::paint);
         } else {
             self.panel = None;
@@ -438,7 +461,10 @@ struct Panel {
 }
 
 impl Panel {
-    fn layout(rows: &[Agent]) -> Option<(ActivityRect, Self)> {
+    fn layout<'a>(
+        rows: &'a [Agent],
+        mut target_name: impl FnMut(&'a Action) -> Option<String>,
+    ) -> Option<(ActivityRect, Self)> {
         let Monitor { work, scale, .. } = monitor(POINT { x: 0, y: 0 }, true)?;
         let s = |n| scaled(n, scale);
         let width = s(456).min(work.width as i32 - s(24));
@@ -484,17 +510,11 @@ impl Panel {
                 let (status, route, shared) = agent.action.as_ref().map_or(
                     ("Between actions", String::new(), false),
                     |action| {
-                        let location = action
-                            .window
-                            .as_ref()
-                            .filter(|_| matches!(action.location, Location::Desktop))
-                            .map_or_else(
-                                || match action.location {
-                                    Location::Desktop => "Desktop · target unknown".to_owned(),
-                                    other => other.label().to_owned(),
-                                },
-                                |w| format!("Window {}", w.window_id),
-                            );
+                        let location = match action.location {
+                            Location::Desktop => target_name(action)
+                                .unwrap_or_else(|| "Desktop · target unknown".to_owned()),
+                            other => other.label().to_owned(),
+                        };
                         (
                             action.kind.label(),
                             format!("{}  ·  {}", action.delivery.label(), location),
