@@ -16,10 +16,10 @@ use windows::Win32::Graphics::Gdi::{ClientToScreen, ScreenToClient};
 use windows::Win32::System::Diagnostics::Debug::{self, GetThreadContext, CONTEXT};
 use windows::Win32::System::Threading;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL,
-    MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP,
-    MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK,
-    MOUSEEVENTF_WHEEL, MOUSEINPUT,
+    INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_HWHEEL, MOUSEEVENTF_LEFTDOWN,
+    MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MIDDLEDOWN, MOUSEEVENTF_MIDDLEUP, MOUSEEVENTF_MOVE,
+    MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_VIRTUALDESK, MOUSEEVENTF_WHEEL,
+    MOUSEINPUT,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     ChildWindowFromPointEx, GetAncestor, GetClassLongPtrW, GetForegroundWindow, GetSystemMetrics,
@@ -33,7 +33,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 // Global pointer insertion has no supported receiver-read witness. Keep that
 // uncertainty across calls; a later keyboard receipt cannot acknowledge it.
 unsafe fn send_unconfirmed_input(events: &[INPUT], size: i32) -> u32 {
-    let inserted = unsafe { SendInput(events, size) };
+    let inserted = unsafe { crate::input::send_desktop_input(events, size) };
     if inserted > 0 {
         crate::focus_return::note_unconfirmed_input();
     }
@@ -745,7 +745,7 @@ impl ClickWitness {
         if self.attachment.is_none() {
             return unsafe { send_unconfirmed_input(events, size) };
         }
-        let sent = unsafe { SendInput(events, size) };
+        let sent = unsafe { crate::input::send_desktop_input(events, size) };
         self.inserted |= sent > 0;
         sent
     }
@@ -973,6 +973,7 @@ fn send_click_synthesized_mods_impl(
                     break;
                 }
                 if index == 1 {
+                    crate::desktop_activity::note_pointer_arrival(sx, sy);
                     button_held = true;
                     witness.await_button(true);
                 } else if index == 2 {
@@ -1371,6 +1372,8 @@ pub fn send_wheel_synthesized(sx: i32, sy: i32, ticks: i32, horizontal: bool) ->
     unsafe {
         // Wheel routes to the window under the cursor — place it on the target.
         SetCursorPos(sx, sy)?;
+        crate::desktop_activity::note_shared();
+        crate::desktop_activity::note_pointer_arrival(sx, sy);
         crate::focus_return::note_unconfirmed_input();
 
         let events = [wheel_input];
@@ -1400,6 +1403,8 @@ pub fn foreground_window() -> Result<u64> {
 pub fn move_cursor_desktop(x: i32, y: i32) -> Result<()> {
     unsafe { SetCursorPos(x, y) }
         .map_err(|error| anyhow::anyhow!("SetCursorPos({x}, {y}) failed: {error}"))?;
+    crate::desktop_activity::note_shared();
+    crate::desktop_activity::note_pointer_arrival(x, y);
     crate::focus_return::note_unconfirmed_input();
     Ok(())
 }

@@ -73,7 +73,7 @@ impl Tool for InputTimelineTool {
         let _cancel_on_drop = crate::input::path::CancelOnDrop(cancelled.clone());
         // The worker keeps desktop input admission until it has released everything it holds.
         let admission = cua_driver_core::tool::retain_desktop_action_admission();
-        let result = tokio::task::spawn_blocking(move || {
+        let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
             let _admission = admission;
             crate::input::timeline::send_timeline(hwnd, pid, &program, cancelled, bitmap_to_screen)
         })

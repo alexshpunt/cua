@@ -131,6 +131,9 @@ pub(crate) unsafe fn force_foreground_attached(target: HWND) -> bool {
         actual = ?actual,
         "foreground activation observation"
     );
+    if actual == target {
+        crate::desktop_activity::note_shared();
+    }
     actual == target
 }
 
@@ -159,16 +162,15 @@ pub(crate) unsafe fn force_foreground_assisted(target: HWND) -> (bool, bool) {
 /// the most recent input, but produces no window message, so nothing is queued for a window to
 /// read and focus return needs no read evidence for it.
 fn null_mouse_input() {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEINPUT,
-    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::{INPUT, INPUT_0, INPUT_MOUSE, MOUSEINPUT};
     let input = INPUT {
         r#type: INPUT_MOUSE,
         Anonymous: INPUT_0 {
             mi: MOUSEINPUT::default(),
         },
     };
-    let sent = unsafe { SendInput(&[input], std::mem::size_of::<INPUT>() as i32) };
+    let sent =
+        unsafe { crate::input::send_desktop_input(&[input], std::mem::size_of::<INPUT>() as i32) };
     tracing::debug!(sent, "foreground unlock: null mouse input");
 }
 
@@ -179,9 +181,7 @@ const VK_NONAME: u16 = 0xFC;
 /// front, usually the human's, receives it, and nothing witnesses that it read the key, so the
 /// pulse is unconfirmed input.
 fn unlock_pulse() {
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT,
-    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::{INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT};
     let key = |flags| INPUT {
         r#type: INPUT_KEYBOARD,
         Anonymous: INPUT_0 {
@@ -196,7 +196,8 @@ fn unlock_pulse() {
     };
     crate::focus_return::note_unconfirmed_input();
     let pulse = [key(KEYBD_EVENT_FLAGS(0)), key(KEYEVENTF_KEYUP)];
-    let sent = unsafe { SendInput(&pulse, std::mem::size_of::<INPUT>() as i32) };
+    let sent =
+        unsafe { crate::input::send_desktop_input(&pulse, std::mem::size_of::<INPUT>() as i32) };
     if sent == 1 {
         // Only the press went in; do not leave the key down.
         let _ = super::keyboard::release_inserted_keys(&pulse, 1);

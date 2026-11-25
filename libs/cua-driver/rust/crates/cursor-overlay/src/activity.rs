@@ -467,18 +467,18 @@ pub fn paint_activity(
 /// The widest typed text a card shows before it keeps only the end.
 const TEXT_MAX_WIDTH: f32 = 340.0;
 
-fn text_width(text: &str) -> f32 {
+fn text_width(text: &str, size: f32) -> f32 {
     let Some(font) = font() else {
         return 0.0;
     };
     text.chars()
-        .map(|c| font.metrics(c, 11.0).advance_width.round())
+        .map(|c| font.metrics(c, size).advance_width.round())
         .sum()
 }
 
 /// The text, or its end after an ellipsis when it is wider than `max`, with its width.
 fn tail_to_width(text: &str, max: f32) -> (String, f32) {
-    let width = text_width(text);
+    let width = text_width(text, 11.0);
     if width <= max {
         return (text.to_owned(), width);
     }
@@ -486,35 +486,93 @@ fn tail_to_width(text: &str, max: f32) -> (String, f32) {
     while !characters.is_empty() {
         characters.remove(0);
         let candidate = format!("…{}", characters.iter().collect::<String>());
-        let width = text_width(&candidate);
+        let width = text_width(&candidate, 11.0);
         if width <= max {
             return (candidate, width);
         }
     }
-    ("…".to_owned(), text_width("…"))
+    ("…".to_owned(), text_width("…", 11.0))
 }
 
 fn caption(pixmap: &mut Pixmap, text: &str, x: f32, y: f32, alpha: f32) {
+    let (w, h) = (pixmap.width(), pixmap.height());
+    if let Some(bounds) = Rect::from_xywh(0.0, 0.0, w as f32, h as f32) {
+        rasterize_text(
+            pixmap,
+            text,
+            (x, y),
+            bounds,
+            11.0,
+            [231, 242, 250, 255],
+            alpha,
+        );
+    }
+}
+
+/// Paint one line in a HUD cell. Keep columns separate and indicate clipped text with an ellipsis.
+pub fn paint_hud_text(pixmap: &mut Pixmap, text: &str, bounds: Rect, size: f32, rgba: [u8; 4]) {
     let Some(font) = font() else {
         return;
     };
+    let mut line = text.to_owned();
+    if text_width(text, size) > bounds.width() {
+        let mut remaining = bounds.width() - text_width("…", size);
+        line.clear();
+        for c in text.chars() {
+            remaining -= font.metrics(c, size).advance_width.round();
+            if remaining < 0.0 {
+                break;
+            }
+            line.push(c);
+        }
+        line.push('…');
+    }
+    rasterize_text(
+        pixmap,
+        &line,
+        (bounds.x(), bounds.y()),
+        bounds,
+        size,
+        rgba,
+        1.0,
+    );
+}
+
+fn rasterize_text(
+    pixmap: &mut Pixmap,
+    text: &str,
+    (x, y): (f32, f32),
+    bounds: Rect,
+    size: f32,
+    [r, g, b, a]: [u8; 4],
+    opacity: f32,
+) {
+    let Some(font) = font() else {
+        return;
+    };
+    let opacity = opacity * (f32::from(a) / 255.0);
     let mut dx = x as i32;
     for c in text.chars() {
-        let (metrics, bitmap) = font.rasterize(c, 11.0);
+        let (metrics, bitmap) = font.rasterize(c, size);
         for yy in 0..metrics.height {
             for xx in 0..metrics.width {
                 let px = dx + metrics.xmin + xx as i32;
-                let py = y as i32 + 11 - metrics.height as i32 - metrics.ymin + yy as i32;
-                if px >= 0
-                    && py >= 0
-                    && px < (pixmap.width() as i32)
-                    && py < (pixmap.height() as i32)
+                let py = y as i32 + size as i32 - metrics.height as i32 - metrics.ymin + yy as i32;
+                if (px as f32) >= bounds.left()
+                    && (py as f32) >= bounds.top()
+                    && (px as f32) < bounds.right()
+                    && (py as f32) < bounds.bottom()
                 {
-                    let a = bitmap[yy * metrics.width + xx] as f32 / 255.0 * alpha;
+                    let coverage = bitmap[yy * metrics.width + xx] as f32 / 255.0;
                     let Some(rect) = Rect::from_xywh(px as f32, py as f32, 1.0, 1.0) else {
                         continue;
                     };
-                    pixmap.fill_rect(rect, &paint(231, 242, 250, a), Transform::identity(), None);
+                    pixmap.fill_rect(
+                        rect,
+                        &paint(r, g, b, coverage * opacity),
+                        Transform::identity(),
+                        None,
+                    );
                 }
             }
         }

@@ -388,7 +388,7 @@ fn wake() {
     }
 }
 #[cfg(target_os = "windows")]
-mod native;
+pub(crate) mod native;
 
 #[cfg(test)]
 mod tests {

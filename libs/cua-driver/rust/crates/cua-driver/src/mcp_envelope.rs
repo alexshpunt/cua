@@ -265,6 +265,25 @@ where
                 continue;
             }
         }
+        // Keep sideband updates in wire order, independent of the native action
+        // queue. No presentation payload goes to the legacy observation timer.
+        if cua_driver_core::desktop_activity::enabled()
+            && request
+                .tool_call()
+                .is_ok_and(|call| call.name == cua_driver_core::desktop_activity::TOOL)
+        {
+            let mut request = request;
+            crate::proxy::apply_direct_session_identity(&mut request, &session);
+            let response = cua_driver_core::server::handle_request_with_transport_session(
+                request,
+                id,
+                sdk.as_ref(),
+                &session,
+            )
+            .await;
+            write_response(&writer, response).await?;
+            continue;
+        }
         if tasks.len() >= MAX_PENDING {
             write_response(&writer, Response::error(id, -32029, "in_flight_limit")).await?;
             continue;

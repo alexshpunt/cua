@@ -95,39 +95,7 @@ fn source_valid(source: &ActivitySource) -> bool {
             pid,
             identity,
             bounds,
-        } => unsafe {
-            let hwnd = HWND(*window_id as *mut _);
-            if !IsWindow(hwnd).as_bool()
-                || !IsWindowVisible(hwnd).as_bool()
-                || IsIconic(hwnd).as_bool()
-                || crate::uia::windows_enum::window_is_cloaked(hwnd)
-            {
-                return false;
-            }
-            let mut current_pid = 0;
-            GetWindowThreadProcessId(hwnd, Some(&mut current_pid));
-            let Some((property, expected)) = identity_property(identity, *pid) else {
-                return false;
-            };
-            let property: Vec<u16> = property.encode_utf16().chain(Some(0)).collect();
-            if current_pid != *pid
-                || GetPropW(hwnd, PCWSTR(property.as_ptr())).0 as usize != expected
-            {
-                return false;
-            }
-            let mut rect = RECT::default();
-            if DwmGetWindowAttribute(
-                hwnd,
-                DWMWA_EXTENDED_FRAME_BOUNDS,
-                &mut rect as *mut _ as *mut _,
-                std::mem::size_of::<RECT>() as u32,
-            )
-            .is_err()
-            {
-                return false;
-            }
-            native_rect(rect) == Some(*bounds)
-        },
+        } => exact_window_frame(*window_id, *pid, identity) == Some(*bounds),
         ActivitySource::Display { display, bounds } => {
             crate::display::enumerate().ok().is_some_and(|topology| {
                 topology.displays.iter().any(|d| {
@@ -140,6 +108,91 @@ fn source_valid(source: &ActivitySource) -> bool {
             })
         }
     }
+}
+
+/// Return current physical frame bounds only while the exact window lifetime remains visible.
+pub(crate) fn exact_window_frame(window_id: u64, pid: u32, identity: &str) -> Option<ActivityRect> {
+    let (property, expected) = identity_property(identity, pid)?;
+    let property: Vec<u16> = property.encode_utf16().chain(Some(0)).collect();
+    unsafe {
+        let hwnd = HWND(window_id as *mut _);
+        if !IsWindow(hwnd).as_bool()
+            || !IsWindowVisible(hwnd).as_bool()
+            || IsIconic(hwnd).as_bool()
+            || crate::uia::windows_enum::window_is_cloaked(hwnd)
+        {
+            return None;
+        }
+        let mut owner = 0;
+        GetWindowThreadProcessId(hwnd, Some(&mut owner));
+        if owner != pid || GetPropW(hwnd, PCWSTR(property.as_ptr())).0 as usize != expected {
+            return None;
+        }
+        let mut rect = RECT::default();
+        DwmGetWindowAttribute(
+            hwnd,
+            DWMWA_EXTENDED_FRAME_BOUNDS,
+            &mut rect as *mut _ as *mut _,
+            std::mem::size_of::<RECT>() as u32,
+        )
+        .ok()?;
+        native_rect(rect).filter(|rect| rect.valid())
+    }
+}
+
+/// Register a hidden, non-interactive HUD window class in this process.
+pub(crate) fn register_protected_hud_class(class: PCWSTR) {
+    unsafe {
+        let Ok(instance) = GetModuleHandleW(PCWSTR::null()) else {
+            return;
+        };
+        let window_class = WNDCLASSEXW {
+            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
+            lpfnWndProc: Some(procedure),
+            hInstance: instance.into(),
+            lpszClassName: class,
+            ..Default::default()
+        };
+        RegisterClassExW(&window_class);
+    }
+}
+
+/// Create hidden, click-through HWND with capture exclusion set. The owner must flush before showing it.
+pub(crate) fn create_protected_hud(class: PCWSTR, bounds: ActivityRect) -> Option<HWND> {
+    unsafe {
+        let instance = GetModuleHandleW(PCWSTR::null()).ok()?;
+        let hwnd = CreateWindowExW(
+            WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
+            class,
+            PCWSTR::null(),
+            WS_POPUP,
+            bounds.x,
+            bounds.y,
+            bounds.width as i32,
+            bounds.height as i32,
+            None,
+            None,
+            instance,
+            None,
+        )
+        .ok()?;
+        // Older Windows can accept WDA_EXCLUDEFROMCAPTURE as WDA_MONITOR, which
+        // leaves an opaque placeholder in a capture. Require the exact mode.
+        let mut affinity = 0;
+        if SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE).is_err()
+            || GetWindowDisplayAffinity(hwnd, &mut affinity).is_err()
+            || affinity != WDA_EXCLUDEFROMCAPTURE.0
+        {
+            let _ = DestroyWindow(hwnd);
+            return None;
+        }
+        Some(hwnd)
+    }
+}
+
+/// Wait for the DWM frame after capture exclusion takes effect, before exposing the HWND.
+pub(crate) fn flush_capture_exclusion() -> bool {
+    (0..2).all(|_| unsafe { DwmFlush() }.is_ok())
 }
 
 unsafe extern "system" fn procedure(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
@@ -179,7 +232,7 @@ fn prepare(key: String, mut work: Work, settings: VisualSettings) -> Option<Prep
     }
     Some(Prepared { key, work, preview })
 }
-fn create(class: &[u16], prepared: Prepared) -> Option<Active> {
+fn create(class: PCWSTR, prepared: Prepared) -> Option<Active> {
     let Prepared { key, work, preview } = prepared;
     if !work.ready(Instant::now()) {
         return None;
@@ -192,56 +245,31 @@ fn create(class: &[u16], prepared: Prepared) -> Option<Active> {
     if u64::from(b.width) * u64::from(b.height) > MAX_SURFACE_PIXELS {
         return None;
     }
-    unsafe {
-        let instance = GetModuleHandleW(PCWSTR::null()).ok()?;
-        let hwnd = CreateWindowExW(
-            WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW,
-            PCWSTR(class.as_ptr()),
-            PCWSTR(class.as_ptr()),
-            WS_POPUP,
-            b.x,
-            b.y,
-            b.width as i32,
-            b.height as i32,
-            None,
-            None,
-            instance,
-            None,
-        )
-        .ok()?;
-        // Never show even one unprotected frame. The cursor uses a different existing window,
-        // so its recorder visibility policy remains unchanged.
-        if SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE).is_err() {
-            let _ = DestroyWindow(hwnd);
+    let hwnd = create_protected_hud(class, b)?;
+    if !flush_capture_exclusion() {
+        let _ = unsafe { DestroyWindow(hwnd) };
+        return None;
+    }
+    let surface = match unsafe { WinSurface::create(b.x, b.y, b.width as i32, b.height as i32) } {
+        Some(s) => s,
+        None => {
+            let _ = unsafe { DestroyWindow(hwnd) };
             return None;
         }
-        for _ in 0..2 {
-            if DwmFlush().is_err() {
-                let _ = DestroyWindow(hwnd);
-                return None;
-            }
-        }
-        let surface = match WinSurface::create(b.x, b.y, b.width as i32, b.height as i32) {
-            Some(s) => s,
-            None => {
-                let _ = DestroyWindow(hwnd);
-                return None;
-            }
-        };
-        huds()
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
-            .insert(key.clone(), hwnd.0 as isize);
-        Some(Active {
-            key,
-            hwnd,
-            surface,
-            work,
-            preview,
-            cued: false,
-            continued: false,
-        })
-    }
+    };
+    huds()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(key.clone(), hwnd.0 as isize);
+    Some(Active {
+        key,
+        hwnd,
+        surface,
+        work,
+        preview,
+        cued: false,
+        continued: false,
+    })
 }
 
 fn cue(key: &str, event: &ActivityEvent) {
@@ -307,20 +335,8 @@ pub(super) fn run(rx: Receiver<()>) {
     {
         return;
     }
-    let class: Vec<u16> = "Cua.ProtectedActivityHud\0".encode_utf16().collect();
-    unsafe {
-        let Ok(instance) = GetModuleHandleW(PCWSTR::null()) else {
-            return;
-        };
-        let window_class = WNDCLASSEXW {
-            cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-            lpfnWndProc: Some(procedure),
-            hInstance: instance.into(),
-            lpszClassName: PCWSTR(class.as_ptr()),
-            ..Default::default()
-        };
-        RegisterClassExW(&window_class);
-    }
+    let class = windows::core::w!("Cua.ProtectedActivityHud");
+    register_protected_hud_class(class);
     let mut active: HashMap<String, Active> = HashMap::new();
     // At most one bounded image decode is in flight. It must never monopolize
     // the window-owner loop that expires and destroys already-visible surfaces.
@@ -360,7 +376,7 @@ pub(super) fn run(rx: Receiver<()>) {
                             active.remove(&oldest);
                         }
                     }
-                    if let Some(mut item) = create(&class, prepared) {
+                    if let Some(mut item) = create(class, prepared) {
                         item.continued = continued;
                         active.insert(key, item);
                     } else {

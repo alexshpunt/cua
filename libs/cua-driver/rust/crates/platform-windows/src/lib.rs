@@ -27,6 +27,8 @@
 use cua_driver_core::tool::ToolRegistry;
 
 pub mod activity;
+#[cfg(any(windows, test))]
+mod desktop_activity;
 pub mod diagnostics;
 pub mod health_report;
 pub mod overlay;

@@ -182,7 +182,7 @@ impl Tool for GetWindowControlStateTool {
         let flag = Arc::new(AtomicBool::new(false));
         let _cancel_on_drop = crate::input::path::CancelOnDrop(flag.clone());
         let state = self.state.clone();
-        match tokio::task::spawn_blocking(move || state.window_status.observe_control(target, &flag)).await {
+        match cua_driver_core::desktop_activity::spawn_blocking(move || state.window_status.observe_control(target, &flag)).await {
             Ok(Ok(output)) => ToolResult::text("Fresh exact-window control metadata; no pixels, UI, activation or desktop switch. This one-use reference admits native management or existing minimized-window restore.")
                 .with_structured(serde_json::to_value(output).expect("window control state serializes")),
             Ok(Err(error)) => ToolResult::error(error.detail.clone()).with_structured(json!({
@@ -454,7 +454,7 @@ impl Tool for ManageWindowTool {
         let _cancel_on_drop = crate::input::path::CancelOnDrop(flag.clone());
         let admission = cua_driver_core::tool::retain_desktop_action_admission();
         let pending = serde_json::to_value(&input).expect("management input serializes");
-        match tokio::task::spawn_blocking(move || {
+        match cua_driver_core::desktop_activity::spawn_blocking(move || {
             let _admission = admission;
             let mut backend = NativeBackend { admitted, flag, started: Instant::now(), initial: None,
                 mutation_attempted: false, mutation_accepted: false };

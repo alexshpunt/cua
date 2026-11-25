@@ -969,7 +969,8 @@ pub fn advertised_risk_for(tool: &str) -> RiskAssessment {
         | "set_agent_cursor_motion"
         | "set_agent_cursor_theme"
         | "set_agent_visuals"
-        | "present_agent_activity" => RiskClass::R1,
+        | "present_agent_activity"
+        | crate::desktop_activity::TOOL => RiskClass::R1,
 
         "clipboard_write" => RiskClass::R1,
 

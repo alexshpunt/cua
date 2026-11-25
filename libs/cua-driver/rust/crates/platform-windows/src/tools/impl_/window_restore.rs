@@ -377,7 +377,7 @@ impl Tool for GetWindowStatusTool {
         let flag = Arc::new(AtomicBool::new(false));
         let _cancel_on_drop = crate::input::path::CancelOnDrop(flag.clone());
         let state = self.state.clone();
-        match tokio::task::spawn_blocking(move || state.window_status.observe(target, &flag)).await {
+        match cua_driver_core::desktop_activity::spawn_blocking(move || state.window_status.observe(target, &flag)).await {
             Ok(Ok(output)) => ToolResult::text("Fresh exact-window metadata; no screenshot, UI tree or activation. The state reference grants only one explicit restore operation.")
                 .with_structured(serde_json::to_value(output).expect("window status serializes")),
             Ok(Err(error)) => refusal(error.code, error.detail),
@@ -528,7 +528,7 @@ impl Tool for RestoreWindowTool {
         let window_id = input.window_id;
         let state_id = input.state_id;
         let pending_state_id = state_id.clone();
-        match tokio::task::spawn_blocking(move || {
+        match cua_driver_core::desktop_activity::spawn_blocking(move || {
             let _admission = admission;
             if let Err(error) = exact_window_ownership_result(pid, window_id, crate::win32::window_owner_pid(window_id)) {
                 return restore_refusal(error, pid, window_id, &state_id);

@@ -241,6 +241,7 @@ fn session_guidance_is_exempt(tool_name: &str) -> bool {
             | "get_agent_cursor_state"
             | "set_agent_visuals"
             | "present_agent_activity"
+            | crate::desktop_activity::TOOL
     )
 }
 

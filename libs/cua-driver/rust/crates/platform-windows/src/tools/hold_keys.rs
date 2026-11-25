@@ -77,7 +77,7 @@ impl Tool for HoldKeysTool {
         // The worker keeps desktop input admission until it has released every key it holds.
         let admission = cua_driver_core::tool::retain_desktop_action_admission();
         let cursor_key = resolve_cursor_key(&args);
-        let result = tokio::task::spawn_blocking(move || {
+        let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
             let _admission = admission;
             let report = crate::input::path::send_hold(
                 hwnd,

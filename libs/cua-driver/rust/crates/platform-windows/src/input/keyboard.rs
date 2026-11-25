@@ -23,7 +23,7 @@ use std::thread::sleep;
 use std::time::{Duration, Instant};
 use windows::Win32::Foundation::{BOOL, HWND, LPARAM, TRUE, WPARAM};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    MapVirtualKeyW, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+    MapVirtualKeyW, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
     KEYEVENTF_EXTENDEDKEY, KEYEVENTF_KEYUP, KEYEVENTF_SCANCODE, KEYEVENTF_UNICODE, MAPVK_VK_TO_VSC,
     VIRTUAL_KEY,
 };
@@ -1174,12 +1174,15 @@ pub(crate) fn release_inserted_keys(events: &[INPUT], inserted: usize) -> bool {
         })
         .collect();
     releases.is_empty()
-        || unsafe { SendInput(&releases, std::mem::size_of::<INPUT>() as i32) } as usize
+        || unsafe {
+            crate::input::send_desktop_input(&releases, std::mem::size_of::<INPUT>() as i32)
+        } as usize
             == releases.len()
 }
 
 fn insert_unobservable(events: &[INPUT]) -> UnitRead {
-    let sent = unsafe { SendInput(events, std::mem::size_of::<INPUT>() as i32) };
+    let sent =
+        unsafe { crate::input::send_desktop_input(events, std::mem::size_of::<INPUT>() as i32) };
     if sent > 0 {
         crate::focus_return::note_unconfirmed_input();
     }
@@ -1342,7 +1345,9 @@ impl InputQueueAttachment {
         };
         let split = keys.len();
         let deadline = Instant::now() + timeout;
-        let sent = unsafe { SendInput(&events[..split], std::mem::size_of::<INPUT>() as i32) };
+        let sent = unsafe {
+            crate::input::send_desktop_input(&events[..split], std::mem::size_of::<INPUT>() as i32)
+        };
         if sent as usize != split {
             release_inserted_keys(events, sent as usize);
             return Ok(UnitRead::Short(sent));
@@ -1380,7 +1385,9 @@ impl InputQueueAttachment {
             release_inserted_keys(events, split);
             return Err(error);
         }
-        let sent = unsafe { SendInput(&events[split..], std::mem::size_of::<INPUT>() as i32) };
+        let sent = unsafe {
+            crate::input::send_desktop_input(&events[split..], std::mem::size_of::<INPUT>() as i32)
+        };
         if sent as usize != events.len() - split {
             release_inserted_keys(events, split + sent as usize);
             return Ok(UnitRead::Short(split as u32 + sent));

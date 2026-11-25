@@ -137,8 +137,100 @@ fn tool<O: ToolOutput>(
         output_validator: crate::validate_typed_output::<O>,
     }
 }
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum DesktopActivityStatus {
+    Accepted,
+    Ignored,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct DesktopActivityOutput {
+    status: DesktopActivityStatus,
+}
+
+impl ToolOutput for DesktopActivityOutput {
+    fn validate(&self) -> Result<(), String> {
+        Ok(())
+    }
+
+    fn output_schema() -> Value {
+        crate::outputs::output_schema_with_additional_properties::<Self>(false)
+    }
+}
+
+fn desktop_activity_schema() -> Value {
+    let id = json!({"type":"integer","minimum":1,"maximum":MAX_ACTIVITY_GENERATION});
+    let operation = |name: &str, fields: Value, required: &[&str]| {
+        let mut fields = fields.as_object().unwrap().clone();
+        fields.insert("operation".into(), json!({"const":name,"type":"string"}));
+        let mut required = required.to_vec();
+        required.push("operation");
+        json!({"type":"object","required":required,"properties":fields,"additionalProperties":false})
+    };
+    let rules = [
+        operation(
+            "configure",
+            json!({
+                "label":{"type":"string","minLength":1,"maxLength":48},
+                "panel":{"type":"boolean"},
+                "outline":{"type":"boolean"},
+                "point":{"type":"boolean"}
+            }),
+            &["label", "panel", "outline", "point"],
+        ),
+        operation(
+            "begin",
+            json!({"intent":{"type":"string","minLength":1,"maxLength":120,
+            "description":"Describe the intended work without typed text, document content or secrets."}}),
+            &["intent"],
+        ),
+        operation(
+            "end",
+            json!({"outcome":{"enum":["completed","interrupted"],"type":"string"}}),
+            &["outcome"],
+        ),
+        operation(
+            "action_start",
+            json!({
+                "id":id,
+                "kind":{"enum":["read","wait","click","drag","scroll","move_pointer","type","key","open","manage","browser","clipboard","files","record","other"],"type":"string"},
+                "location":{"enum":["desktop","browser","separate_desktop"],"type":"string"},
+                "delivery":{"enum":["none","direct","unknown"],"type":"string"},
+                "window":{"type":"object","required":["window_id","pid","identity"],"additionalProperties":false,"properties":{
+                    "window_id":id,"pid":{"type":"integer","minimum":1,"maximum":u32::MAX},
+                    "identity":{"type":"string","maxLength":128}
+                }}
+            }),
+            &["id", "kind", "location"],
+        ),
+        operation(
+            "action_end",
+            json!({"id":id,
+                "outcome":{"enum":["completed","refused","interrupted","unknown"],"type":"string"}
+            }),
+            &["id", "outcome"],
+        ),
+    ];
+    let mut all_fields = serde_json::Map::new();
+    for rule in &rules {
+        all_fields.extend(rule["properties"].as_object().unwrap().clone());
+    }
+    all_fields.insert(
+        "operation".into(),
+        json!({"type":"string","enum":["configure","begin","end","action_start","action_end"]}),
+    );
+    all_fields.insert(
+        "outcome".into(),
+        json!({"type":"string","enum":["completed","refused","interrupted","unknown"]}),
+    );
+    json!({"type":"object","properties":all_fields,"required":["operation"],"additionalProperties":false,"oneOf":rules})
+}
+
 pub fn contracts() -> Vec<ToolContract> {
     vec![
+        tool::<DesktopActivityOutput>("agent_desktop_activity", "Use agent_desktop_activity to publish scoped human-only Windows desktop activity from the adapter. It does not send input or read the desktop.", "agent_visuals.desktop_activity", desktop_activity_schema()),
         tool::<SetAgentVisualsOutput>("set_agent_visuals","Configure the current session's human-only native activity presentation. Off clears pending visuals without changing capture or input.","agent_visuals.configure",json!({
             "type":"object","properties":{
                 "session":{"type":"string","description":"Public session label whose presentation settings change. Omit it to use the authenticated transport's implicit lifecycle session."},

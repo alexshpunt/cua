@@ -40,7 +40,7 @@ async fn background_scroll(
     args: Value,
 ) -> ToolResult {
     use crate::input::delivery::EventKind;
-    let result = tokio::task::spawn_blocking(move || {
+    let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
         let pid = input.pid;
         let hwnd = input.window_id;
         if let Err(error) =
@@ -161,7 +161,7 @@ impl Tool for ScrollAtTool {
         let cancelled = Arc::new(AtomicBool::new(false));
         let _cancel_on_drop = crate::input::path::CancelOnDrop(cancelled.clone());
         let admission = cua_driver_core::tool::retain_desktop_action_admission();
-        let result = tokio::task::spawn_blocking(move || {
+        let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
             let _admission = admission;
             let pid = input.pid;
             let hwnd = input.window_id;
