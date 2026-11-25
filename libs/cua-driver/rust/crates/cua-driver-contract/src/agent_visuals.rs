@@ -161,7 +161,7 @@ impl ToolOutput for DesktopActivityOutput {
 }
 
 fn desktop_activity_schema() -> Value {
-    // Keep tools/list provider-compatible. Update's tagged deserializer enforces
+    // Keep tools/list provider-compatible. The tagged desktop activity input enforces
     // the required fields and allowed keys for each operation at dispatch.
     json!({
         "type":"object",

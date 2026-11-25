@@ -65,6 +65,7 @@ from ._native import (
     open_mac_os_screen_recording_settings,
     request_mac_os_permissions,
 )
+
 # Cua Cursor Motion: plan and play the agent cursor's motions.
 from ._native import (
     CursorEase,
@@ -107,7 +108,6 @@ from ._native_contract import (
     WindowElement,
     WindowInfo,
     WindowStateOutput,
-
     ActionDelivery,
     ActionDeliveryMode,
     ActionEffect,
@@ -130,6 +130,12 @@ from ._native_contract import (
     CursorMotionTiming,
     CursorReducedMotion,
     CursorThemeSelection,
+    DesktopActivityDelivery,
+    DesktopActivityInput,
+    DesktopActivityKind,
+    DesktopActivityLocation,
+    DesktopActivityOutcome,
+    DesktopActivityWindow,
     DesktopScope,
     DragInput,
     ElementPredicate,
@@ -203,9 +209,7 @@ def _create_python_sdk(cls, options=None, *, embedded=False):
         lambda: cls.connect_with_client_kind(None, SdkClientKind.PYTHON),
         lambda: cls.create_with_client_kind(options, SdkClientKind.PYTHON),
         embedded=embedded,
-        claude_code_compatibility=bool(
-            getattr(options, "claude_code_compatibility", False)
-        ),
+        claude_code_compatibility=bool(getattr(options, "claude_code_compatibility", False)),
     )
 
 
@@ -221,6 +225,7 @@ def _create_configured_with_authorization_host_python_sdk(cls, options, host):
     return cls.create_configured_with_authorization_host_and_client_kind(
         options, host, SdkClientKind.PYTHON
     )
+
 
 def _create_configured_with_activity_observer_python_sdk(cls, options, observer):
     """Create a runtime with a content-free activity observer."""
@@ -274,7 +279,6 @@ __all__ = [
     "WindowElement",
     "WindowInfo",
     "WindowStateOutput",
-
     "ActionCompletion",
     "ActionDelivery",
     "ActionDeliveryMode",
@@ -301,6 +305,12 @@ __all__ = [
     "CursorMotionTiming",
     "CursorReducedMotion",
     "CursorThemeSelection",
+    "DesktopActivityDelivery",
+    "DesktopActivityInput",
+    "DesktopActivityKind",
+    "DesktopActivityLocation",
+    "DesktopActivityOutcome",
+    "DesktopActivityWindow",
     "DesktopScope",
     "DragInput",
     "ElementPredicate",

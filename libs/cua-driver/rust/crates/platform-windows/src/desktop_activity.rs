@@ -3,6 +3,10 @@
 
 //! Bounded presentation state. No input argument bodies or window titles enter it.
 
+use cua_driver_contract::{
+    DesktopActivityDelivery, DesktopActivityInput as Update, DesktopActivityKind,
+    DesktopActivityLocation, DesktopActivityOutcome, DesktopActivityWindow as Window,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Weak;
@@ -14,41 +18,42 @@ mod native;
 #[cfg(windows)]
 pub(crate) use self::ipc::{apply, end, note_direct, note_pointer_arrival, note_shared};
 
-const MAX_ID: u64 = 9_007_199_254_740_991;
 const LIMIT: usize = 8;
 const RECENT_MS: u64 = 20_000;
 const STALE_MS: u64 = 2_000;
 
 macro_rules! labels {
-    ($name:ident {$($variant:ident => $label:literal),+ $(,)?}) => {
+    ($name:ident from $input:ident {$($variant:ident => $label:literal),+ $(,)?}
+        $(only {$($internal:ident => $internal_label:literal),+ $(,)?})?
+    ) => {
         #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
         #[serde(rename_all = "snake_case")]
-        pub(super) enum $name {$($variant),+}
+        pub(super) enum $name {$($variant),+ $($(, $internal)+)?}
         impl $name {
             pub(super) fn label(self) -> &'static str {
-                match self { $(Self::$variant => $label),+ }
+                match self {
+                    $(Self::$variant => $label,)+
+                    $($(Self::$internal => $internal_label,)+)?
+                }
+            }
+        }
+        impl From<$input> for $name {
+            fn from(value: $input) -> Self {
+                match value { $($input::$variant => Self::$variant,)+ }
             }
         }
     };
 }
-labels!(Kind {
+labels!(Kind from DesktopActivityKind {
     Read => "Reading", Wait => "Waiting", Click => "Clicking", Drag => "Dragging",
     Scroll => "Scrolling", MovePointer => "Moving pointer", Type => "Typing", Key => "Pressing keys",
     Open => "Opening", Manage => "Managing window", Browser => "Using browser", Clipboard => "Using clipboard",
     Files => "Working with files", Record => "Recording", Other => "Working",
-    SessionStarted => "Session started", SessionEnded => "Session ended",
-});
-labels!(Location { Desktop => "Desktop", Browser => "Browser", SeparateDesktop => "Separate desktop" });
-labels!(Delivery { None => "No input", Direct => "Background", Shared => "Shared input", Unknown => "Input route unknown" });
-labels!(Outcome { Completed => "Completed", Refused => "Refused", Interrupted => "Interrupted", Unknown => "Unknown" });
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(super) struct Window {
-    pub(super) window_id: u64,
-    pub(super) pid: u32,
-    pub(super) identity: String,
-}
+} only { SessionStarted => "Session started", SessionEnded => "Session ended" });
+labels!(Location from DesktopActivityLocation { Desktop => "Desktop", Browser => "Browser", SeparateDesktop => "Separate desktop" });
+labels!(Delivery from DesktopActivityDelivery { None => "No input", Direct => "Background", Unknown => "Input route unknown" }
+    only { Shared => "Shared input" });
+labels!(Outcome from DesktopActivityOutcome { Completed => "Completed", Refused => "Refused", Interrupted => "Interrupted", Unknown => "Unknown" });
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub(super) struct Action {
@@ -81,34 +86,6 @@ pub(super) struct Agent {
     pub(super) point: bool,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
-pub(crate) enum Update {
-    Configure {
-        label: String,
-        panel: bool,
-        outline: bool,
-        point: bool,
-    },
-    Begin {
-        intent: String,
-    },
-    End {
-        outcome: Outcome,
-    },
-    ActionStart {
-        id: u64,
-        kind: Kind,
-        location: Location,
-        window: Option<Window>,
-        delivery: Option<Delivery>,
-    },
-    ActionEnd {
-        id: u64,
-        outcome: Outcome,
-    },
-}
-
 struct Pending {
     action: Action,
     order: u64,
@@ -127,18 +104,6 @@ pub(super) struct Session {
     row: Agent,
     pending: BTreeMap<u64, Pending>,
     order: u64,
-}
-
-fn safe_label(value: &str, max: usize) -> bool {
-    !value.trim().is_empty()
-        && value.chars().count() <= max
-        && value.chars().all(|c| {
-            !c.is_control() && !matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
-        })
-}
-
-fn valid_id(id: u64) -> bool {
-    (1..=MAX_ID).contains(&id)
 }
 
 impl Session {
@@ -192,6 +157,7 @@ impl Session {
     }
 
     fn apply(&mut self, update: Update, now: u64) -> Result<bool, &'static str> {
+        update.validate_fields()?;
         match update {
             Update::Configure {
                 label,
@@ -199,9 +165,6 @@ impl Session {
                 outline,
                 point,
             } => {
-                if !safe_label(&label, 48) {
-                    return Err("invalid_activity_label");
-                }
                 self.row.label = label.trim().to_owned();
                 self.row.panel = panel;
                 self.row.outline = outline;
@@ -217,9 +180,6 @@ impl Session {
                 if self.row.label.is_empty() {
                     return Err("activity_unconfigured");
                 }
-                if !safe_label(&intent, 120) {
-                    return Err("invalid_activity_intent");
-                }
                 if self.row.active {
                     return Err("activity_already_active");
                 }
@@ -228,10 +188,7 @@ impl Session {
                 self.add_recent(Kind::SessionStarted, Outcome::Completed, now, false);
             }
             Update::End { outcome } => {
-                if !matches!(outcome, Outcome::Completed | Outcome::Interrupted) {
-                    return Err("invalid_activity_outcome");
-                }
-                return Ok(self.finish(outcome, now));
+                return Ok(self.finish(outcome.into(), now));
             }
             Update::ActionStart {
                 id,
@@ -240,12 +197,6 @@ impl Session {
                 window,
                 delivery,
             } => {
-                if !valid_id(id)
-                    || matches!(kind, Kind::SessionStarted | Kind::SessionEnded)
-                    || delivery == Some(Delivery::Shared)
-                {
-                    return Err("invalid_activity_action");
-                }
                 if !self.row.active || self.pending.contains_key(&id) {
                     return Ok(false);
                 }
@@ -253,10 +204,8 @@ impl Session {
                     return Err("activity_busy");
                 }
                 if window.as_ref().is_some_and(|window| {
-                    location != Location::Desktop
-                        || !valid_id(window.window_id)
-                        || cursor_overlay::activity::identity_property(&window.identity, window.pid)
-                            .is_none()
+                    cursor_overlay::activity::identity_property(&window.identity, window.pid)
+                        .is_none()
                 }) {
                     return Err("invalid_activity_window");
                 }
@@ -265,9 +214,9 @@ impl Session {
                     id,
                     Pending {
                         action: Action {
-                            kind,
-                            location,
-                            delivery: delivery.unwrap_or(Delivery::Unknown),
+                            kind: kind.into(),
+                            location: location.into(),
+                            delivery: delivery.map_or(Delivery::Unknown, Delivery::from),
                             window,
                             position: None,
                             position_frame: None,
@@ -278,13 +227,15 @@ impl Session {
                 );
             }
             Update::ActionEnd { id, outcome } => {
-                if !valid_id(id) {
-                    return Err("invalid_activity_action");
-                }
                 let Some(entry) = self.pending.remove(&id) else {
                     return Ok(false);
                 };
-                self.add_recent(entry.action.kind, outcome, now, entry.shared.is_some());
+                self.add_recent(
+                    entry.action.kind,
+                    outcome.into(),
+                    now,
+                    entry.shared.is_some(),
+                );
             }
         }
         Ok(true)
@@ -404,10 +355,10 @@ mod tests {
         session
     }
 
-    fn start(id: u64, location: Location) -> Update {
+    fn start(id: u64, location: DesktopActivityLocation) -> Update {
         Update::ActionStart {
             id,
-            kind: Kind::Click,
+            kind: DesktopActivityKind::Click,
             location,
             window: None,
             delivery: None,
@@ -417,8 +368,14 @@ mod tests {
     #[test]
     fn concurrent_browser_action_does_not_hide_live_native_input_and_late_completion_is_ignored() {
         let mut session = active();
-        assert_eq!(session.apply(start(2, Location::Desktop), 2), Ok(true));
-        assert_eq!(session.apply(start(1, Location::Browser), 3), Ok(true));
+        assert_eq!(
+            session.apply(start(2, DesktopActivityLocation::Desktop), 2),
+            Ok(true)
+        );
+        assert_eq!(
+            session.apply(start(1, DesktopActivityLocation::Browser), 3),
+            Ok(true)
+        );
         let alive = Arc::new(());
         let call = cua_driver_core::desktop_activity::Call {
             owner: String::new(),
@@ -439,7 +396,7 @@ mod tests {
             session.apply(
                 Update::ActionEnd {
                     id: 2,
-                    outcome: Outcome::Completed
+                    outcome: DesktopActivityOutcome::Completed
                 },
                 6
             ),
@@ -449,7 +406,7 @@ mod tests {
         assert_eq!(
             session.apply(
                 Update::End {
-                    outcome: Outcome::Interrupted
+                    outcome: DesktopActivityOutcome::Interrupted
                 },
                 7
             ),
@@ -459,7 +416,7 @@ mod tests {
             session.apply(
                 Update::ActionEnd {
                     id: 1,
-                    outcome: Outcome::Completed
+                    outcome: DesktopActivityOutcome::Completed
                 },
                 8
             ),
@@ -475,19 +432,25 @@ mod tests {
     fn stale_publisher_expires_without_keepalive_and_history_is_bounded() {
         let mut session = active();
         for id in 1..25 {
-            assert_eq!(session.apply(start(id, Location::Desktop), id), Ok(true));
+            assert_eq!(
+                session.apply(start(id, DesktopActivityLocation::Desktop), id),
+                Ok(true)
+            );
             assert_eq!(
                 session.apply(
                     Update::ActionEnd {
                         id,
-                        outcome: Outcome::Completed
+                        outcome: DesktopActivityOutcome::Completed
                     },
                     id
                 ),
                 Ok(true)
             );
         }
-        assert_eq!(session.apply(start(25, Location::Desktop), 25), Ok(true));
+        assert_eq!(
+            session.apply(start(25, DesktopActivityLocation::Desktop), 25),
+            Ok(true)
+        );
         let mut row = session.project(25);
         expire(&mut row, 25, 25 + STALE_MS - 1);
         assert!(row.active);
@@ -499,29 +462,5 @@ mod tests {
         assert_eq!(row.recent[0].outcome, Outcome::Interrupted);
         expire(&mut row, 25, 25 + STALE_MS + RECENT_MS);
         assert!(row.recent.is_empty());
-    }
-
-    #[test]
-    fn rejects_payloads_that_try_to_include_unbounded_or_untrusted_action_evidence() {
-        for key in ["typed_text", "position"] {
-            let value = format!(
-                r#"{{"operation":"action_start","id":1,"kind":"type","location":"desktop","{key}":"sentinel"}}"#
-            );
-            assert!(serde_json::from_str::<Update>(&value).is_err());
-        }
-        let mut session = active();
-        assert_eq!(
-            session.apply(
-                Update::ActionStart {
-                    id: 1,
-                    kind: Kind::Type,
-                    location: Location::Desktop,
-                    window: None,
-                    delivery: Some(Delivery::Shared)
-                },
-                2
-            ),
-            Err("invalid_activity_action")
-        );
     }
 }

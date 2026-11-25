@@ -9,6 +9,150 @@ use serde_json::Value;
 
 const MAX_GENERATION: u64 = (1u64 << 53) - 1;
 
+/// Metadata for the calling transport's desktop activity. No input is sent by this tool.
+#[derive(Clone, Serialize, Deserialize, JsonSchema, uniffi::Enum)]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
+pub enum DesktopActivityInput {
+    Configure {
+        label: String,
+        panel: bool,
+        outline: bool,
+        point: bool,
+    },
+    Begin {
+        intent: String,
+    },
+    End {
+        outcome: DesktopActivityOutcome,
+    },
+    ActionStart {
+        id: u64,
+        kind: DesktopActivityKind,
+        location: DesktopActivityLocation,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        window: Option<DesktopActivityWindow>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        delivery: Option<DesktopActivityDelivery>,
+    },
+    ActionEnd {
+        id: u64,
+        outcome: DesktopActivityOutcome,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopActivityKind {
+    Read,
+    Wait,
+    Click,
+    Drag,
+    Scroll,
+    MovePointer,
+    Type,
+    Key,
+    Open,
+    Manage,
+    Browser,
+    Clipboard,
+    Files,
+    Record,
+    Other,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopActivityLocation {
+    Desktop,
+    Browser,
+    SeparateDesktop,
+}
+
+/// Shared delivery is measured natively and cannot be published by the adapter.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopActivityDelivery {
+    None,
+    Direct,
+    Unknown,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema, uniffi::Enum)]
+#[serde(rename_all = "snake_case")]
+pub enum DesktopActivityOutcome {
+    Completed,
+    Refused,
+    Interrupted,
+    Unknown,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, JsonSchema, uniffi::Record)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopActivityWindow {
+    pub window_id: u64,
+    pub pid: u32,
+    pub identity: String,
+}
+
+fn activity_label_is_valid(value: &str, limit: usize) -> bool {
+    !value.trim().is_empty()
+        && value.chars().count() <= limit
+        && value.chars().all(|c| {
+            !c.is_control() && !matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+        })
+}
+
+impl DesktopActivityInput {
+    /// Validate fields without consulting platform state or establishing window identity.
+    pub fn validate_fields(&self) -> Result<(), &'static str> {
+        match self {
+            Self::Configure { label, .. } if !activity_label_is_valid(label, 48) => {
+                Err("invalid_activity_label")
+            }
+            Self::Begin { intent } if !activity_label_is_valid(intent, 120) => {
+                Err("invalid_activity_intent")
+            }
+            Self::End { outcome }
+                if !matches!(
+                    outcome,
+                    DesktopActivityOutcome::Completed | DesktopActivityOutcome::Interrupted
+                ) =>
+            {
+                Err("invalid_activity_outcome")
+            }
+            Self::ActionStart { id, .. } | Self::ActionEnd { id, .. }
+                if !(1..=MAX_GENERATION).contains(id) =>
+            {
+                Err("invalid_activity_action")
+            }
+            Self::ActionStart {
+                location,
+                window: Some(window),
+                ..
+            } if *location != DesktopActivityLocation::Desktop
+                || !(1..=MAX_GENERATION).contains(&window.window_id)
+                || window.pid == 0
+                || window.identity.len() > 128 =>
+            {
+                Err("invalid_activity_window")
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+impl ToolInput for DesktopActivityInput {
+    const TOOL_NAME: &'static str = "agent_desktop_activity";
+
+    fn input_schema() -> Value {
+        visual_schema(Self::TOOL_NAME)
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        self.validate_fields().map_err(str::to_owned)
+    }
+}
+
 /// An omitted setting keeps its current value, rather than resetting the session.
 #[derive(Clone, Default, Serialize, Deserialize, JsonSchema, uniffi::Record)]
 #[serde(deny_unknown_fields)]
