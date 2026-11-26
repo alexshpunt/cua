@@ -2954,6 +2954,9 @@ mod busy_target_activation_tests {
                 if stopped.recv_timeout(Duration::from_secs(12)).is_err() {
                     timed_out.store(true, Ordering::SeqCst);
                     STALL_RELEASE.store(true, Ordering::SeqCst);
+                    eprintln!(
+                        "[foreground-change] stall watchdog released target after 12 seconds"
+                    );
                 }
             });
             Self {
@@ -3313,9 +3316,23 @@ mod busy_target_activation_tests {
             );
             let _ = typing_tx.send(result);
         });
+        let started = Instant::now();
+        eprintln!("[foreground-change] waiting for target stall");
         stall.wait_until_blocked();
+        eprintln!(
+            "[foreground-change] target stalled at {:?}; requesting foreground change",
+            started.elapsed()
+        );
         bring_forward(other.hwnd);
+        eprintln!(
+            "[foreground-change] foreground changed at {:?}; waiting for typing worker",
+            started.elapsed()
+        );
         let result = wait_for_stalled_typing(&stall, typing_rx, typing);
+        eprintln!(
+            "[foreground-change] typing worker completed at {:?}",
+            started.elapsed()
+        );
         let error = result.expect_err("a foreground change must stop typing");
         let turn = error
             .downcast_ref::<ForegroundInputError>()
