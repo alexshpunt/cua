@@ -2108,7 +2108,7 @@ impl ToolRegistry {
             Ok(wait) => {
                 crate::post_action_wait::scope(
                     wait,
-                    self.invoke_authorized_unannotated(name, args, context, evidence),
+                    Box::pin(self.invoke_authorized_unannotated(name, args, context, evidence)),
                 )
                 .await
             }
