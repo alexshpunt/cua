@@ -47,7 +47,9 @@ describe.skipIf(!built)("Teleport's run on the native layer", () => {
     const cuaHome = path.join(home, ".cua");
     mkdirSync(cuaHome, { recursive: true, mode: 0o700 });
     writeFileSync(path.join(cuaHome, "spaces.json"), JSON.stringify([{ id: SPACE, name: "Fixture" }]));
-    writeFileSync(path.join(cuaHome, "spaces-credentials.json"), JSON.stringify({ [SPACE]: { service_urls: { mcp: "http://127.0.0.1:9/mcp" } } }), { mode: 0o600 });
+    writeFileSync(path.join(cuaHome, "spaces-credentials.json"), JSON.stringify({ [SPACE]: { service_urls: { mcp: "http://127.0.0.1:9/mcp" } } }), {
+      mode: 0o600,
+    });
     Object.assign(process.env, {
       HOME: home,
       USERPROFILE: home,

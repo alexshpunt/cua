@@ -20,7 +20,13 @@ export const DEMO_RECOVERY_KEY = "DEMO-7K2Q-RX4M-9TPA-W3HC";
 /** The broker's answer before setup: no vault, Touch ID and a passphrase available. */
 export function demoNoVaultOverview(now: number): KeyvaultOverview {
   const o = demoKeyvaultOverview(now, [], true);
-  return { ...o, availability: "no_vault", message: "No Keyvault yet.", itemsTotal: 0, status: o.status && { ...o.status, initialized: false, items: 0, unlock_protectors: [] } };
+  return {
+    ...o,
+    availability: "no_vault",
+    message: "No Keyvault yet.",
+    itemsTotal: 0,
+    status: o.status && { ...o.status, initialized: false, items: 0, unlock_protectors: [] },
+  };
 }
 
 export function demoKeyvaultSetupHandlers({ state, wait, emit, stepMs }: DemoContext): DemoHandlers<"keyvault.setup"> {

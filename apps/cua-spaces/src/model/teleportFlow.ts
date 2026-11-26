@@ -111,7 +111,10 @@ export class TeleportPickerController {
   #generation = 0;
   readonly host: TeleportHost;
 
-  constructor(host: TeleportHost, options: { spaceName: string; preselect?: { entry: CatalogEntry; files?: string[] } }) {
+  constructor(
+    host: TeleportHost,
+    options: { spaceName: string; preselect?: { entry: CatalogEntry; files?: string[] } },
+  ) {
     this.host = host;
     this.#state = initialPicker(options.spaceName);
     if (options.preselect) {
@@ -225,7 +228,14 @@ export interface PickerGrid {
 /** The Apps tab as tiles: each app previews its frontmost window. */
 export function appGrid(
   s: PickerState,
-  windows: { windowId: number; appId: string; appName: string; windowTitle: string; supported: boolean; bundlePath?: string | null }[],
+  windows: {
+    windowId: number;
+    appId: string;
+    appName: string;
+    windowTitle: string;
+    supported: boolean;
+    bundlePath?: string | null;
+  }[],
 ): PickerGrid {
   return core("grid.apps", {
     state: s,
@@ -242,7 +252,14 @@ export function appGrid(
 
 /** The Open windows tab as tiles: this machine's windows matching `query`. */
 export function windowGrid(
-  windows: { windowId: number; appId: string; appName: string; windowTitle: string; supported: boolean; bundlePath?: string | null }[],
+  windows: {
+    windowId: number;
+    appId: string;
+    appName: string;
+    windowTitle: string;
+    supported: boolean;
+    bundlePath?: string | null;
+  }[],
   query: string,
   selected: string | null,
 ): PickerGrid {
@@ -298,7 +315,11 @@ export type PickerGridTab = "apps" | "windows" | "space";
 
 /** The grid's primary button: "Continue", "Teleport to <Space>" or
  * "Stream to This Mac", live with a choosable tile selected. */
-export function gridPrimary(tab: PickerGridTab, spaceName: string, grid: PickerGrid): { label: string; enabled: boolean } {
+export function gridPrimary(
+  tab: PickerGridTab,
+  spaceName: string,
+  grid: PickerGrid,
+): { label: string; enabled: boolean } {
   return core("grid.primary", { tab, spaceName, grid });
 }
 

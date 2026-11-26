@@ -93,13 +93,7 @@ function Body({ session: s, teleport, images }: { session: TeleportSession; tele
           />
           <div className="relative">
             <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              aria-label="Search"
-              placeholder="Search"
-              className="pl-8"
-              value={s.query}
-              onChange={(e) => teleport.setQuery(e.target.value)}
-            />
+            <Input aria-label="Search" placeholder="Search" className="pl-8" value={s.query} onChange={(e) => teleport.setQuery(e.target.value)} />
           </div>
           {s.tab === "space" && s.remoteError ? <p className="text-xs text-muted-foreground">{s.remoteError}</p> : null}
           <TeleportGrid session={s} teleport={teleport} images={images} />
@@ -143,11 +137,7 @@ function Options({ state, session, teleport }: { state: PickerState; session: Te
       <section>
         <SectionHeading className="mt-0">Move</SectionHeading>
         <GroupedSection>
-          <RadioGroup
-            value={state.move ?? "app_only"}
-            onValueChange={(v) => teleport.send({ type: "move", move: v as TeleportMove })}
-            aria-label="Move"
-          >
+          <RadioGroup value={state.move ?? "app_only"} onValueChange={(v) => teleport.send({ type: "move", move: v as TeleportMove })} aria-label="Move">
             {moves.map((m) => (
               <label key={m} className="flex cursor-default items-center gap-3 px-4 py-2.5 text-[13px]" data-move={m}>
                 <Radio.Root
@@ -166,11 +156,7 @@ function Options({ state, session, teleport }: { state: PickerState; session: Te
         <GroupedSection>
           {session.frame.sensitive.map((o) => (
             <label key={o.group} className="flex cursor-default items-start gap-3 px-4 py-2.5" data-sensitive={o.group} data-checked={o.checked || undefined}>
-              <Checkbox
-                className="mt-0.5"
-                checked={o.checked}
-                onCheckedChange={(value) => teleport.send({ type: "sensitive", group: o.group, value })}
-              />
+              <Checkbox className="mt-0.5" checked={o.checked} onCheckedChange={(value) => teleport.send({ type: "sensitive", group: o.group, value })} />
               <span className="min-w-0">
                 <span className="block text-[13px]" data-sensitive-label>
                   {messageText(o.label)}

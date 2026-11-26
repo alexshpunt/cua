@@ -176,9 +176,7 @@ describe("the Teleport drop zone", () => {
     expect(fileSend.sendFiles).not.toHaveBeenCalled();
 
     fireDrop({ type: "drop", position: { x: 120, y: 260 }, paths: ["/tmp/here.txt"] });
-    await waitFor(() =>
-      expect(fileSend.sendFiles).toHaveBeenCalledWith("direct:aurora", ["/tmp/here.txt"]),
-    );
+    await waitFor(() => expect(fileSend.sendFiles).toHaveBeenCalledWith("direct:aurora", ["/tmp/here.txt"]));
   });
 
   it("highlights itself as a drop target while a file is dragged over it", async () => {

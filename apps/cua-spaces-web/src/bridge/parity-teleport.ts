@@ -10,16 +10,7 @@
 
 import type { CoreClient } from "./core";
 import type { ShareInput, ShareSheetState, ShareSheetView } from "./contracts/share";
-import type {
-  OpenWindow,
-  PickerFrame,
-  PickerGrid,
-  PickerGridPrimary,
-  PickerGridTab,
-  PickerGridTabItem,
-  PickerState,
-  RemoteWindow,
-} from "./contracts/teleport";
+import type { OpenWindow, PickerFrame, PickerGrid, PickerGridPrimary, PickerGridTab, PickerGridTabItem, PickerState, RemoteWindow } from "./contracts/teleport";
 import { shareInitial, shareReduce, shareStore, shareView } from "./share";
 import type { BridgeStore } from "./store";
 import {

@@ -114,7 +114,9 @@ export function moveOf(native: Native, word: unknown): TeleportMove {
 export function groupsOf(native: Native, words: unknown): TeleportSensitiveGroup[] {
   if (!Array.isArray(words)) return [];
   const G = native.TeleportSensitiveGroup;
-  return words.flatMap((w): TeleportSensitiveGroup[] => (w === "sign_ins" ? [G.SignIns] : w === "passwords" ? [G.Passwords] : w === "history" ? [G.History] : []));
+  return words.flatMap((w): TeleportSensitiveGroup[] =>
+    w === "sign_ins" ? [G.SignIns] : w === "passwords" ? [G.Passwords] : w === "history" ? [G.History] : [],
+  );
 }
 
 const strings = (v: unknown): string[] | undefined => (Array.isArray(v) && v.every((s) => typeof s === "string") ? (v as string[]) : undefined);

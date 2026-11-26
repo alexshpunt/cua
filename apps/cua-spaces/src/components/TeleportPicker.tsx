@@ -8,14 +8,7 @@ import { type CatalogEntry, entryFromCore } from "@trycua/cua/teleport";
 import type { OpenWindow, PickerTab, RemoteWindow, TeleportPickerConfig } from "../model/teleport";
 import { createTeleportBridge, type TeleportBridge } from "../native/teleport";
 import { createTeleportAppsBridge, type TeleportAppsBridge } from "../native/teleportApps";
-import {
-  gridPrimary,
-  gridStep,
-  gridTabs,
-  remoteGrid,
-  windowGrid,
-  type PickerGridTab,
-} from "../model/teleportFlow";
+import { gridPrimary, gridStep, gridTabs, remoteGrid, windowGrid, type PickerGridTab } from "../model/teleportFlow";
 import { AppTeleportPicker } from "./AppTeleportPicker";
 import { useGridLoads } from "./pickerLoads";
 import { PickerTileView, tileIconKey, tileThumbnailKey } from "./PickerTile";
@@ -34,10 +27,7 @@ type Tab = "apps" | PickerTab;
  * Space's windows here. It reads its target Space (and an optional
  * preselected app from a drop or a window drag) from the shell.
  */
-export function TeleportPicker({
-  bridge,
-  apps,
-}: { bridge?: TeleportBridge; apps?: TeleportAppsBridge } = {}) {
+export function TeleportPicker({ bridge, apps }: { bridge?: TeleportBridge; apps?: TeleportAppsBridge } = {}) {
   const t = useT(["teleport", "common"]);
   const teleport = useMemo(() => bridge ?? createTeleportBridge(), [bridge]);
   const appsBridge = useMemo(() => apps ?? createTeleportAppsBridge(), [apps]);

@@ -64,8 +64,7 @@ export function AppTeleportPicker({
   const t = useT(["teleport", "common"]);
   const home = useHome(homeProp);
   const controller = useMemo(
-    () =>
-      new TeleportPickerController(host, preselect ? { spaceName, preselect } : { spaceName }),
+    () => new TeleportPickerController(host, preselect ? { spaceName, preselect } : { spaceName }),
     [host, spaceName, preselect],
   );
   const s = useSyncExternalStore(controller.subscribe, () => controller.state);
@@ -122,9 +121,7 @@ export function AppTeleportPicker({
 
   switch (s.step) {
     case "loading":
-      return (
-        <Status title={t("teleport.app_picker.loading")} spinner />
-      );
+      return <Status title={t("teleport.app_picker.loading")} spinner />;
     case "pick":
       return (
         <div
@@ -216,7 +213,9 @@ export function AppTeleportPicker({
                   <input
                     type="checkbox"
                     checked={o.checked}
-                    onChange={(ev) => controller.dispatch({ type: "sensitive", group: o.group, value: ev.target.checked })}
+                    onChange={(ev) =>
+                      controller.dispatch({ type: "sensitive", group: o.group, value: ev.target.checked })
+                    }
                   />
                   <span>
                     <span className="ta-optin-label">{tMsg(o.label)}</span>
@@ -231,7 +230,11 @@ export function AppTeleportPicker({
               {s.files.map((f) => (
                 <div key={f} className="ta-file">
                   <span title={f}>{displayPath(f, home)}</span>
-                  <button type="button" className="hp-cancel" onClick={() => controller.dispatch({ type: "remove-file", path: f })}>
+                  <button
+                    type="button"
+                    className="hp-cancel"
+                    onClick={() => controller.dispatch({ type: "remove-file", path: f })}
+                  >
                     {t("teleport.app_picker.remove_file")}
                   </button>
                 </div>
@@ -268,7 +271,14 @@ export function AppTeleportPicker({
       );
     }
     case "planning":
-      return <Status title={t("teleport.app_picker.preparing", { name: s.entry?.name ?? t("teleport.app_picker.preparing_fallback") })} spinner />;
+      return (
+        <Status
+          title={t("teleport.app_picker.preparing", {
+            name: s.entry?.name ?? t("teleport.app_picker.preparing_fallback"),
+          })}
+          spinner
+        />
+      );
     case "consent": {
       const p = s.plan!;
       return (
@@ -331,7 +341,9 @@ export function AppTeleportPicker({
               {t("common.action.back")}
             </button>
             <span className="hp-footer-note">
-              {p.totalBytes ? t("teleport.app_picker.bytes_leave", { size: formatBytes(p.totalBytes) }) : t("teleport.app_picker.nothing_leaves")}
+              {p.totalBytes
+                ? t("teleport.app_picker.bytes_leave", { size: formatBytes(p.totalBytes) })
+                : t("teleport.app_picker.nothing_leaves")}
             </span>
             <div className="hp-footer-right">
               <button type="button" className="hp-cancel" onClick={onClose}>
@@ -361,7 +373,11 @@ export function AppTeleportPicker({
           <div className="ta-bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
             <span style={{ width: `${pct}%` }} />
           </div>
-          <p className="hp-status-hint">{last ? t("teleport.app_picker.event_line", { kind: last.kind, detail: last.detail }) : t("teleport.app_picker.starting")}</p>
+          <p className="hp-status-hint">
+            {last
+              ? t("teleport.app_picker.event_line", { kind: last.kind, detail: last.detail })
+              : t("teleport.app_picker.starting")}
+          </p>
         </div>
       );
     }
@@ -375,7 +391,10 @@ export function AppTeleportPicker({
       ].filter(Boolean);
       return (
         <Status
-          title={t("teleport.app_picker.done_title", { app: s.plan?.app.name ?? t("teleport.app_picker.done_title_fallback"), space: spaceName })}
+          title={t("teleport.app_picker.done_title", {
+            app: s.plan?.app.name ?? t("teleport.app_picker.done_title_fallback"),
+            space: spaceName,
+          })}
           hint={parts.join(" ")}
           primary={{ label: t("common.action.done"), onClick: onClose }}
         />
@@ -384,7 +403,11 @@ export function AppTeleportPicker({
     case "error":
       return (
         <Status
-          title={s.entry ? t("teleport.app_picker.error_title_named", { name: s.entry.name }) : t("teleport.app_picker.error_title")}
+          title={
+            s.entry
+              ? t("teleport.app_picker.error_title_named", { name: s.entry.name })
+              : t("teleport.app_picker.error_title")
+          }
           error={s.error ?? ""}
           secondary={{ label: t("common.action.back"), onClick: () => controller.dispatch({ type: "back" }) }}
           primary={{ label: t("common.action.close"), onClick: onClose }}

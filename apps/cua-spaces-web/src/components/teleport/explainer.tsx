@@ -28,12 +28,12 @@ export function TeleportExplainer() {
   return (
     <div className="space-y-4 px-5 pb-4 text-[13px] leading-relaxed" data-teleport-explainer>
       <p>
-        <strong className="font-semibold">Teleport copies an app from your Mac to the Space, so you don't have to sign in again there.</strong> An agent working in the
-        Space can then use the app as you.
+        <strong className="font-semibold">Teleport copies an app from your Mac to the Space, so you don't have to sign in again there.</strong> An agent working
+        in the Space can then use the app as you.
       </p>
       <p>
-        <strong className="font-semibold">Your Mac will ask for permission next.</strong> It may say an app wants to use confidential information stored in your Keychain.
-        That is where your Mac keeps your saved sign-ins. Choose Allow so Cua can read the ones you picked.
+        <strong className="font-semibold">Your Mac will ask for permission next.</strong> It may say an app wants to use confidential information stored in your
+        Keychain. That is where your Mac keeps your saved sign-ins. Choose Allow so Cua can read the ones you picked.
       </p>
       <p className="text-muted-foreground">Only what you ticked on the last screen is copied. If you say no, the app still arrives, but signed out.</p>
     </div>

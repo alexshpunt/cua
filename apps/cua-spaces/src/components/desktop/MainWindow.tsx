@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: FSL-1.1-MIT
 // Copyright (c) 2026 Cua AI, Inc.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { FIXTURE_SPACES } from '../../model/fixtures';
-import type { Space } from '../../model/types';
+import { FIXTURE_SPACES } from "../../model/fixtures";
+import type { Space } from "../../model/types";
 import {
   deleteFailedText,
   powerButton,
@@ -17,39 +17,40 @@ import {
   type SidebarRow,
   type SpaceDetailView,
   type SpaceUsage,
-} from '../../model/window';
-import { createFileSendBridge, type FileSendBridge } from '../../native/fileSend';
+} from "../../model/window";
+import { createFileSendBridge, type FileSendBridge } from "../../native/fileSend";
 import {
   type GpuChoice,
   createSpacesBridge,
   type SpacesBridge,
   type ViewerWindowRequest,
-} from '../../native/spacesBridge';
-import { createTeleportBridge, type TeleportBridge } from '../../native/teleport';
+} from "../../native/spacesBridge";
+import { createTeleportBridge, type TeleportBridge } from "../../native/teleport";
+import { createHostBridge, type HostBridge, type HostStatus, type OnboardingState } from "../../native/host";
+import { createInstallerBridge, type InstallerBridge } from "../../native/installer";
+import { createAgentsBridge, type AgentsBridge } from "../../native/persistent";
+import { createDriveBridge, type DriveBridge } from "../../native/drive";
+import { AgentsPage, DrivePage, NotificationsPage, useAgentNotifications } from "./AgentsPages";
+import { createDevicesBridge, type DevicesBridge } from "../../native/devices";
+import { createShareBridge, type ShareBridge } from "../../native/share";
 import {
-  createHostBridge,
-  type HostBridge,
-  type HostStatus,
-  type OnboardingState,
-} from '../../native/host';
-import { createInstallerBridge, type InstallerBridge } from '../../native/installer';
-import { createAgentsBridge, type AgentsBridge } from '../../native/persistent';
-import { createDriveBridge, type DriveBridge } from '../../native/drive';
-import { AgentsPage, DrivePage, NotificationsPage, useAgentNotifications } from './AgentsPages';
-import { createDevicesBridge, type DevicesBridge } from '../../native/devices';
-import { createShareBridge, type ShareBridge } from '../../native/share';
-import { connectedClouds, createCloudBridge, isCloudWord, type CloudBridge, type CloudStatusWire } from '../../native/cloud';
-import { ConnectCloudSheet } from '../ConnectCloudSheet';
-import { ShareRemovalBanner, ShareSheet } from '../ShareSheet';
-import { hasFeature } from '../../model/spaces';
-import { canRunContainer, canRunMacos, type LocalStatus } from '../../native/local';
-import { createWindowDragBridge, type WindowDragBridge } from '../../native/windowDrag';
-import type { PortalAction } from '../../state/portal';
-import { useSpacesSync } from '../../state/cloud';
-import { createFromPlan } from '../../state/createSpace';
-import { RadialProgress } from '../RadialProgress';
-import { InstallerFlow } from '../InstallerFlow';
-import { SettingsPanel } from '../SettingsPanel';
+  connectedClouds,
+  createCloudBridge,
+  isCloudWord,
+  type CloudBridge,
+  type CloudStatusWire,
+} from "../../native/cloud";
+import { ConnectCloudSheet } from "../ConnectCloudSheet";
+import { ShareRemovalBanner, ShareSheet } from "../ShareSheet";
+import { hasFeature } from "../../model/spaces";
+import { canRunContainer, canRunMacos, type LocalStatus } from "../../native/local";
+import { createWindowDragBridge, type WindowDragBridge } from "../../native/windowDrag";
+import type { PortalAction } from "../../state/portal";
+import { useSpacesSync } from "../../state/cloud";
+import { createFromPlan } from "../../state/createSpace";
+import { RadialProgress } from "../RadialProgress";
+import { InstallerFlow } from "../InstallerFlow";
+import { SettingsPanel } from "../SettingsPanel";
 import {
   ApproveSheet,
   ConfirmMachineSheet,
@@ -59,23 +60,23 @@ import {
   RenameSheet,
   RevokeSheet,
   useDevices,
-} from '../Devices';
-import type { ApprovalPrompt, DeviceRow, UnconfirmedMachine } from '../../model/devices';
-import { readMenuBar, writeMenuBar } from '../../state/settings';
-import { SpaceAgentList } from '../SpaceAgentList';
-import type { WriteText } from '../CopyButton';
-import { FactList } from '../FactList';
-import { OsIconMark } from '../OsIcon';
-import { SpaceWindowList } from '../SpaceWindowList';
-import TeleportDropZone from '../TeleportDropZone';
-import { ThisMachinePanel } from '../ThisMachinePanel';
-import { THIS_MACHINE_ID } from '../../model/host';
-import { Thumbnail } from '../Thumbnail';
-import { NewSpaceWizard, type CreatePlan, type SpaceHost } from './NewSpaceWizard';
-import { useExperiments } from '../../state/experiments';
-import { createLoginItemBridge, type LoginItemBridge } from '../../native/loginItem';
-import { launchPlan, readLaunchChoice, writeLaunchChoice } from '../../model/loginItem';
-import { Sym } from './Sym';
+} from "../Devices";
+import type { ApprovalPrompt, DeviceRow, UnconfirmedMachine } from "../../model/devices";
+import { readMenuBar, writeMenuBar } from "../../state/settings";
+import { SpaceAgentList } from "../SpaceAgentList";
+import type { WriteText } from "../CopyButton";
+import { FactList } from "../FactList";
+import { OsIconMark } from "../OsIcon";
+import { SpaceWindowList } from "../SpaceWindowList";
+import TeleportDropZone from "../TeleportDropZone";
+import { ThisMachinePanel } from "../ThisMachinePanel";
+import { THIS_MACHINE_ID } from "../../model/host";
+import { Thumbnail } from "../Thumbnail";
+import { NewSpaceWizard, type CreatePlan, type SpaceHost } from "./NewSpaceWizard";
+import { useExperiments } from "../../state/experiments";
+import { createLoginItemBridge, type LoginItemBridge } from "../../native/loginItem";
+import { launchPlan, readLaunchChoice, writeLaunchChoice } from "../../model/loginItem";
+import { Sym } from "./Sym";
 import { tMsg, useT } from "../../i18n";
 
 export interface MainWindowProps {
@@ -104,19 +105,19 @@ export interface MainWindowProps {
   forceOnboarding?: boolean;
 }
 
-type Banner = { tone: 'info' | 'error'; text: string } | null;
+type Banner = { tone: "info" | "error"; text: string } | null;
 
 const SCREENSHOT_MS = 5_000;
 
 function viewerRequest(space: Space): ViewerWindowRequest {
-  return { id: space.id, name: space.name, controller: 'you', os: space.os };
+  return { id: space.id, name: space.name, controller: "you", os: space.os };
 }
 
 /** The selected Space's detail (the app core's `spaces::sidebar::detail`). */
 function detailOf(
   space: Space,
   usage: SpaceUsage | null | undefined,
-  hostArch: string | null | undefined
+  hostArch: string | null | undefined,
 ): SpaceDetailView {
   return spaceDetail(space, usage, hostArch);
 }
@@ -168,14 +169,17 @@ export function MainWindow({
   const agentsBridge = useMemo(() => agentsProp ?? createAgentsBridge(), [agentsProp]);
   const driveBridge = useMemo(() => driveProp ?? createDriveBridge(), [driveProp]);
   const loginItem = useMemo(() => loginItemProp ?? createLoginItemBridge(), [loginItemProp]);
-  const postNotification = useCallback((title: string, body: string) => devicesBridge.notify(title, body), [devicesBridge]);
+  const postNotification = useCallback(
+    (title: string, body: string) => devicesBridge.notify(title, body),
+    [devicesBridge],
+  );
   const feed = useAgentNotifications(agentsBridge, postNotification);
   const [sharing, setSharing] = useState<Space | null>(null);
   const live = bridge.isNative;
 
   const [spaces, setSpaces] = useState<Space[]>(live ? [] : FIXTURE_SPACES);
   const dispatch = useCallback((action: PortalAction) => {
-    if (action.type === 'sync-spaces') setSpaces(action.spaces);
+    if (action.type === "sync-spaces") setSpaces(action.spaces);
   }, []);
   const sync = useSpacesSync(bridge, dispatch, now);
   // Devices: read quietly while signed in; a device asking for approval
@@ -207,17 +211,13 @@ export function MainWindow({
           fn();
         };
         void bridge.onSignedIn(() => done(resolve)).then((off) => offs.push(off));
-        void bridge
-          .onSignInFailed((reason) => done(() => reject(new Error(reason))))
-          .then((off) => offs.push(off));
+        void bridge.onSignInFailed((reason) => done(() => reject(new Error(reason)))).then((off) => offs.push(off));
         bridge.beginSignIn().catch((e: unknown) => done(() => reject(e)));
       }),
-    [bridge]
+    [bridge],
   );
 
-  const [onboarding, setOnboarding] = useState<OnboardingState | null>(
-    forceOnboarding ? { completed: false } : null
-  );
+  const [onboarding, setOnboarding] = useState<OnboardingState | null>(forceOnboarding ? { completed: false } : null);
   const [hostStatus, setHostStatus] = useState<HostStatus | null>(null);
   const [local, setLocal] = useState<LocalStatus | null>(null);
   const [gpus, setGpus] = useState<GpuChoice[] | null>(null);
@@ -227,15 +227,14 @@ export function MainWindow({
   // `?view=new-space|settings|this-machine|host-setup|drive|onboarding-presentation|onboarding-drive|onboarding-done` opens that
   // view on load (the shell sets it from CUA_SPACES_START_VIEW, for demos
   // and captures), as the SwiftUI app's start views do.
-  const startView =
-    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('view');
+  const startView = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("view");
   const [selectedId, setSelectedId] = useState<string | null>(
-    startView === 'this-machine' || startView === 'host-setup' ? THIS_MACHINE_ID : null
+    startView === "this-machine" || startView === "host-setup" ? THIS_MACHINE_ID : null,
   );
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState("");
   const [newMenu, setNewMenu] = useState(false);
-  const [wizard, setWizard] = useState<boolean | 'linux' | 'macos' | 'address'>(
-    startView === 'new-space' || startView === 'new-space-resources'
+  const [wizard, setWizard] = useState<boolean | "linux" | "macos" | "address">(
+    startView === "new-space" || startView === "new-space-resources",
   );
   useEffect(() => {
     if (wizard) refreshClouds();
@@ -243,31 +242,26 @@ export function MainWindow({
   // Captures: `?view=new-space-resources&image=..&on=..&disk=..` opens on
   // the Resources step (the SwiftUI app's CUA_SPACES_START_VIEW does the same).
   const [startActions] = useState(() => {
-    if (startView !== 'new-space-resources') return undefined;
+    if (startView !== "new-space-resources") return undefined;
     const q = new URLSearchParams(window.location.search);
     const actions: ({ type: string } & Record<string, unknown>)[] = [];
-    if (q.get('image')) actions.push({ type: 'choose-image', ref: q.get('image') });
-    actions.push({ type: 'set-placement', placement: 'local' });
-    actions.push({ type: 'next' });
-    if (Number(q.get('disk'))) actions.push({ type: 'set-disk', diskGb: Number(q.get('disk')) });
-    if (Number(q.get('cpus'))) actions.push({ type: 'set-cpus', cpus: Number(q.get('cpus')) });
-    if (Number(q.get('memory')))
-      actions.push({ type: 'set-memory', memoryGb: Number(q.get('memory')) });
+    if (q.get("image")) actions.push({ type: "choose-image", ref: q.get("image") });
+    actions.push({ type: "set-placement", placement: "local" });
+    actions.push({ type: "next" });
+    if (Number(q.get("disk"))) actions.push({ type: "set-disk", diskGb: Number(q.get("disk")) });
+    if (Number(q.get("cpus"))) actions.push({ type: "set-cpus", cpus: Number(q.get("cpus")) });
+    if (Number(q.get("memory"))) actions.push({ type: "set-memory", memoryGb: Number(q.get("memory")) });
     return actions;
   });
   const [banner, setBanner] = useState<Banner>(null);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  const [view, setView] = useState<'spaces' | 'settings' | 'agents' | 'drive' | 'notifications'>(
-    startView === 'settings'
-      ? 'settings'
-      : startView === 'drive'
-        ? 'drive'
-        : 'spaces'
+  const [view, setView] = useState<"spaces" | "settings" | "agents" | "drive" | "notifications">(
+    startView === "settings" ? "settings" : startView === "drive" ? "drive" : "spaces",
   );
   const [menuBar, setMenuBar] = useState<boolean>(() => readMenuBar());
   const openSpace = useCallback((id: string) => {
     setSelectedId(id);
-    setView('spaces');
+    setView("spaces");
   }, []);
 
   useEffect(() => {
@@ -307,7 +301,7 @@ export function MainWindow({
   }, [agentsBridge, loginItem, view]);
   const serves = useMemo(
     () => ({ providesSpaces: Boolean(hostStatus?.configured && hostStatus.provideSpaces), runsAgents }),
-    [hostStatus, runsAgents]
+    [hostStatus, runsAgents],
   );
 
   // Launch at login, once per launch after the first run: an install that
@@ -324,7 +318,7 @@ export function MainWindow({
         readLaunchChoice(),
         true,
         Boolean(hostStatus.configured && hostStatus.provideSpaces) || agents.length > 0,
-        status
+        status,
       );
       if (plan.register) await loginItem.set(true);
       if (plan.record !== null) writeLaunchChoice(plan.record);
@@ -377,15 +371,15 @@ export function MainWindow({
     if (!live) return;
     const offs: Array<() => void> = [];
     let cancelled = false;
-    void import('@tauri-apps/api/event')
+    void import("@tauri-apps/api/event")
       .then(async ({ listen }) => {
-        const a = await listen<{ spaceId?: string | null }>('main:select', (event) => {
+        const a = await listen<{ spaceId?: string | null }>("main:select", (event) => {
           if (event.payload?.spaceId) openSpace(event.payload.spaceId);
         });
-        const b = await listen('main:new-space', () => setWizard(true));
-        const c = await listen('main:settings', () => setView('settings'));
+        const b = await listen("main:new-space", () => setWizard(true));
+        const c = await listen("main:settings", () => setView("settings"));
         // The menu bar item's Cua Volume conflicts.
-        const d = await listen('main:volume', () => setView('drive'));
+        const d = await listen("main:volume", () => setView("drive"));
         if (cancelled) {
           a();
           b();
@@ -401,10 +395,7 @@ export function MainWindow({
   }, [live, openSpace]);
 
   // Sections, search and the selection fallback are the app core's.
-  const sidebar = useMemo(
-    () => buildSidebar(spaces, query, selectedId),
-    [spaces, query, selectedId]
-  );
+  const sidebar = useMemo(() => buildSidebar(spaces, query, selectedId), [spaces, query, selectedId]);
   const byId = useMemo(() => new Map(spaces.map((s) => [s.id, s])), [spaces]);
   const selected = (sidebar.selectedId ? byId.get(sidebar.selectedId) : undefined) ?? null;
   // Memory and storage of the Space whose detail shows, at the core's low rate.
@@ -416,7 +407,7 @@ export function MainWindow({
     const read = () =>
       teleport.spaceUsage?.(usageId).then(
         (u) => !cancelled && u && setUsage({ id: usageId, usage: u }),
-        () => {}
+        () => {},
       );
     void read();
     const timer = window.setInterval(read, USAGE_REFRESH_MS);
@@ -452,7 +443,7 @@ export function MainWindow({
             void bridge.openSpaceWindow({
               id,
               name: plan.name || plan.image.name,
-              controller: 'you',
+              controller: "you",
               os: plan.image.os,
             });
           }
@@ -461,7 +452,7 @@ export function MainWindow({
           // The row says why (the core's pending row keeps the error).
         });
     },
-    [bridge, sync, openSpace]
+    [bridge, sync, openSpace],
   );
 
   // The power button: the row says Suspending (and the like) at once; a
@@ -471,7 +462,7 @@ export function MainWindow({
       const space = byId.get(id);
       if (space) void sync.setPower(space, on);
     },
-    [byId, sync]
+    [byId, sync],
   );
 
   const deleteSpace = useCallback(
@@ -479,21 +470,18 @@ export function MainWindow({
       setConfirmDelete(null);
       sync.deleteSpace(space, removeOnly).catch((error: unknown) => {
         setBanner({
-          tone: 'error',
-          text: deleteFailedText(
-            space.name,
-            error instanceof Error ? error.message : String(error)
-          ),
+          tone: "error",
+          text: deleteFailedText(space.name, error instanceof Error ? error.message : String(error)),
         });
       });
     },
-    [sync]
+    [sync],
   );
 
   const signIn = useCallback(() => {
     bridge.beginSignIn().catch((error: unknown) => {
       setBanner({
-        tone: 'error',
+        tone: "error",
         text: `Sign-in failed: ${error instanceof Error ? error.message : String(error)}`,
       });
     });
@@ -522,12 +510,12 @@ export function MainWindow({
             identity={sync.identity}
             onOpenExternal={(url) => void bridge.openExternal(url).catch(() => {})}
             initialStep={
-              startView === 'onboarding-done'
-                ? 'done'
-                : startView === 'onboarding-presentation'
-                  ? 'presentation'
-                  : startView === 'onboarding-drive'
-                    ? 'drive'
+              startView === "onboarding-done"
+                ? "done"
+                : startView === "onboarding-presentation"
+                  ? "presentation"
+                  : startView === "onboarding-drive"
+                    ? "drive"
                     : undefined
             }
             onDone={(mode) => {
@@ -543,37 +531,31 @@ export function MainWindow({
     );
   }
 
-  const detail = selected
-    ? detailOf(
-        selected,
-        usage?.id === selected.id ? usage.usage : null,
-        sync.hostArch
-      )
-    : null;
+  const detail = selected ? detailOf(selected, usage?.id === selected.id ? usage.usage : null, sync.hostArch) : null;
   const isHost = Boolean(detail?.isHost);
   const runAction = (id: DetailActionId, space: Space) => {
     switch (id) {
-      case 'teleport':
+      case "teleport":
         void bridge.openTeleportPicker(viewerRequest(space));
         break;
-      case 'pip':
+      case "pip":
         void bridge.pinSpacePip(viewerRequest(space));
         break;
-      case 'share':
+      case "share":
         setSharing(space);
         break;
-      case 'power': {
+      case "power": {
         const button = powerButton(space);
         if (button) powerSpace(space.id, button.turnOn);
         break;
       }
-      case 'delete':
+      case "delete":
         setConfirmDelete(space.id);
         break;
-      case 'open':
+      case "open":
         void bridge.openSpaceWindow(viewerRequest(space));
         break;
-      case 'cancel':
+      case "cancel":
         // The row shows Cancelling, then goes (or says why the cancel failed).
         void sync.cancelCreate(space.id);
         break;
@@ -603,7 +585,7 @@ export function MainWindow({
               title={t("spaces.main.new_more")}
               onClick={() => setNewMenu((o) => !o)}
               onBlur={() => setNewMenu(false)}
-              onKeyDown={(event) => event.key === 'Escape' && setNewMenu(false)}
+              onKeyDown={(event) => event.key === "Escape" && setNewMenu(false)}
             >
               <Sym name="chevron.down" size={12} />
             </button>
@@ -617,7 +599,7 @@ export function MainWindow({
                   onMouseDown={(event) => {
                     event.preventDefault();
                     setNewMenu(false);
-                    setWizard('address');
+                    setWizard("address");
                   }}
                 >
                   {t("spaces.wizard.add_address")}
@@ -643,7 +625,7 @@ export function MainWindow({
             <ul className="dw-nav-list" role="listbox" aria-label={sidebar.thisMachine.name}>
               <SpaceRowItem
                 row={sidebar.thisMachine}
-                selected={view === 'spaces' && selected?.id === sidebar.thisMachine.id}
+                selected={view === "spaces" && selected?.id === sidebar.thisMachine.id}
                 onSelect={openSpace}
               />
             </ul>
@@ -656,7 +638,7 @@ export function MainWindow({
                   <SpaceRowItem
                     key={row.id}
                     row={row}
-                    selected={view === 'spaces' && selected?.id === row.id}
+                    selected={view === "spaces" && selected?.id === row.id}
                     onSelect={openSpace}
                     onPower={powerSpace}
                   />
@@ -670,9 +652,9 @@ export function MainWindow({
           <ul className="dw-nav-list" aria-label={t("spaces.main.agents_label")}>
             {(
               [
-                ['agents', 'Agents'],
-                ...(chrome.volumeLabel ? [['drive', chrome.volumeLabel] as const] : []),
-                ['notifications', 'Notifications'],
+                ["agents", "Agents"],
+                ...(chrome.volumeLabel ? [["drive", chrome.volumeLabel] as const] : []),
+                ["notifications", "Notifications"],
               ] as const
             ).map(([id, label]) => (
               <li key={id}>
@@ -695,8 +677,8 @@ export function MainWindow({
             className="dw-icon-btn"
             aria-label={chrome.settingsLabel}
             title={t("spaces.main.settings_hint", { label: chrome.settingsLabel, shortcut: chrome.settingsShortcut })}
-            aria-pressed={view === 'settings'}
-            onClick={() => setView((v) => (v === 'settings' ? 'spaces' : 'settings'))}
+            aria-pressed={view === "settings"}
+            onClick={() => setView((v) => (v === "settings" ? "spaces" : "settings"))}
           >
             <Sym name="gearshape" />
           </button>
@@ -704,21 +686,21 @@ export function MainWindow({
       </aside>
 
       <main className="dw-main">
-        {view === 'agents' ? (
+        {view === "agents" ? (
           <AgentsPage
             bridge={agentsBridge}
-            thisMachine={sidebar.thisMachine?.id.startsWith('relay:') ? sidebar.thisMachine.id : null}
+            thisMachine={sidebar.thisMachine?.id.startsWith("relay:") ? sidebar.thisMachine.id : null}
             now={now}
           />
-        ) : view === 'drive' && volumeShown ? (
+        ) : view === "drive" && volumeShown ? (
           <DrivePage bridge={agentsBridge} />
-        ) : view === 'notifications' ? (
+        ) : view === "notifications" ? (
           <NotificationsPage feed={feed} bridge={agentsBridge} now={now} />
         ) : (
           <>
             <header className="dw-toolbar" data-tauri-drag-region>
               <div className="dw-toolbar-title" data-tauri-drag-region>
-                {view === 'settings' ? (
+                {view === "settings" ? (
                   <h1>{chrome.settingsLabel}</h1>
                 ) : selected ? (
                   <h1>{selected.name}</h1>
@@ -726,7 +708,7 @@ export function MainWindow({
                   <h1>{chrome.title}</h1>
                 )}
               </div>
-              {view === 'spaces' && selected && detail && detail.actions.length > 0 && (
+              {view === "spaces" && selected && detail && detail.actions.length > 0 && (
                 <div className="dw-toolbar-actions">
                   {detail.actions.map((a) =>
                     a.primary ? (
@@ -769,13 +751,13 @@ export function MainWindow({
                           a.label
                         )}
                       </button>
-                    )
+                    ),
                   )}
                 </div>
               )}
             </header>
 
-            {view === 'spaces' && selected && detail && confirmDelete === selected.id && (
+            {view === "spaces" && selected && detail && confirmDelete === selected.id && (
               <div className="dw-banner" role="alertdialog" aria-label={detail.confirm.title}>
                 <span>
                   <strong>{detail.confirm.title}</strong> {detail.confirm.message}
@@ -809,7 +791,7 @@ export function MainWindow({
                 spaceId={sharing.id}
                 spaceName={sharing.name}
                 signedIn={Boolean(sync.identity)}
-                shareable={sharing.id.startsWith('relay:') || hasFeature(sharing, 'relay_attach')}
+                shareable={sharing.id.startsWith("relay:") || hasFeature(sharing, "relay_attach")}
                 onClose={() => setSharing(null)}
                 onOpenExternal={(url) => void bridge.openExternal(url).catch(() => {})}
               />
@@ -828,11 +810,7 @@ export function MainWindow({
             )}
 
             {banner && (
-              <div
-                className="dw-banner"
-                data-tone={banner.tone}
-                role={banner.tone === 'error' ? 'alert' : 'status'}
-              >
+              <div className="dw-banner" data-tone={banner.tone} role={banner.tone === "error" ? "alert" : "status"}>
                 <span>{banner.text}</span>
                 <button
                   type="button"
@@ -846,15 +824,15 @@ export function MainWindow({
             )}
 
             <div className="dw-content">
-              {view === 'settings' ? (
+              {view === "settings" ? (
                 <div className="dw-content-inner dw-settings">
                   <SettingsPanel
                     menuBar={menuBar}
                     onMenuBarMode={(enabled) => {
                       writeMenuBar(enabled);
                       setMenuBar(enabled);
-                      void import('@tauri-apps/api/event')
-                        .then(({ emit }) => emit('settings:changed', { menuBar: enabled }))
+                      void import("@tauri-apps/api/event")
+                        .then(({ emit }) => emit("settings:changed", { menuBar: enabled }))
                         .catch(() => {});
                     }}
                     signedInIdentity={sync.identity}
@@ -874,10 +852,10 @@ export function MainWindow({
                     loginItem={loginItem}
                     serves={serves}
                     onShowWelcome={() => {
-                      setView('spaces');
+                      setView("spaces");
                       setOnboarding({ ...(onboarding ?? {}), completed: false });
                     }}
-                    onClose={() => setView('spaces')}
+                    onClose={() => setView("spaces")}
                   />
                   {devicesBridge.isNative && (
                     <DevicesSection
@@ -904,12 +882,22 @@ export function MainWindow({
                     <>
                       <p>{chrome.emptyDetail}</p>
                       <div className="dw-empty-tiles">
-                        {([
-                          ['linux', chrome.emptyAction, chrome.emptyLinuxDetail],
-                          ['macos', chrome.emptyMacosAction, chrome.emptyMacosDetail],
-                        ] as const).map(([os, name, detail]) => (
-                          <button key={os} type="button" className="wz-tile" aria-label={t("spaces.main.os_tile_label", { name, detail })} onClick={() => setWizard(os)}>
-                            <span className="wz-tile-icon"><OsIconMark id={`os-${os}`} size={24} /></span>
+                        {(
+                          [
+                            ["linux", chrome.emptyAction, chrome.emptyLinuxDetail],
+                            ["macos", chrome.emptyMacosAction, chrome.emptyMacosDetail],
+                          ] as const
+                        ).map(([os, name, detail]) => (
+                          <button
+                            key={os}
+                            type="button"
+                            className="wz-tile"
+                            aria-label={t("spaces.main.os_tile_label", { name, detail })}
+                            onClick={() => setWizard(os)}
+                          >
+                            <span className="wz-tile-icon">
+                              <OsIconMark id={`os-${os}`} size={24} />
+                            </span>
                             <span className="wz-tile-title">{name}</span>
                             <span className="wz-tile-desc">{detail}</span>
                           </button>
@@ -917,7 +905,9 @@ export function MainWindow({
                       </div>
                     </>
                   )}
-                  <button type="button" className="dw-btn dw-btn-quiet" onClick={() => setWizard(true)}>{chrome.newSpaceLabel}</button>
+                  <button type="button" className="dw-btn dw-btn-quiet" onClick={() => setWizard(true)}>
+                    {chrome.newSpaceLabel}
+                  </button>
                 </div>
               ) : isHost ? (
                 <div className="dw-content-inner">
@@ -926,7 +916,7 @@ export function MainWindow({
                       host={host}
                       identity={sync.identity}
                       onStatus={setHostStatus}
-                      initialSetup={startView === 'host-setup'}
+                      initialSetup={startView === "host-setup"}
                     />
                   </section>
                 </div>
@@ -955,13 +945,11 @@ export function MainWindow({
             if (event.target === event.currentTarget) setWizard(false);
           }}
           onKeyDown={(event) => {
-            if (event.key === 'Escape') setWizard(false);
+            if (event.key === "Escape") setWizard(false);
           }}
         >
           <NewSpaceWizard
-            defaultLocation={
-              isCloudWord(sync.defaultLocation.value) ? 'yours' : 'local'
-            }
+            defaultLocation={isCloudWord(sync.defaultLocation.value) ? "yours" : "local"}
             clouds={clouds}
             hosts={hosts}
             experiments={experiments}
@@ -973,8 +961,8 @@ export function MainWindow({
             storage={live ? local?.storage : undefined}
             gpus={live ? gpus : null}
             onOpenExternal={(url) => void bridge.openExternal(url).catch(() => {})}
-            quick={typeof wizard === 'string' && wizard !== 'address' ? wizard : undefined}
-            startActions={wizard === 'address' ? [{ type: 'show-address' }] : startActions}
+            quick={typeof wizard === "string" && wizard !== "address" ? wizard : undefined}
+            startActions={wizard === "address" ? [{ type: "show-address" }] : startActions}
             onCreate={startCreate}
             onAddByAddress={async (url, token, name) => {
               const id = await sync.addSpace(url, token, name);
@@ -1052,7 +1040,7 @@ export function MainWindow({
           onClose={() => setConfirmingMachine(null)}
         />
       )}
-      <Shortcuts onNew={() => setWizard(true)} onSettings={() => setView('settings')} />
+      <Shortcuts onNew={() => setWizard(true)} onSettings={() => setView("settings")} />
     </div>
   );
 }
@@ -1061,16 +1049,16 @@ function Shortcuts({ onNew, onSettings }: { onNew: () => void; onSettings: () =>
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (!(event.metaKey || event.ctrlKey)) return;
-      if (event.key.toLowerCase() === 'n') {
+      if (event.key.toLowerCase() === "n") {
         event.preventDefault();
         onNew();
-      } else if (event.key === ',') {
+      } else if (event.key === ",") {
         event.preventDefault();
         onSettings();
       }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [onNew, onSettings]);
   return null;
 }
@@ -1085,7 +1073,7 @@ function PowerRowButton({ button, onPress }: { button: PowerButton; onPress: () 
       aria-label={tMsg(button.help)}
       title={tMsg(button.help)}
       disabled={!button.enabled}
-      data-busy={button.busy ? 'true' : undefined}
+      data-busy={button.busy ? "true" : undefined}
       onClick={onPress}
     >
       {button.busy ? <span className="dw-spinner" aria-hidden="true" /> : <Sym name={button.symbol} />}
@@ -1107,14 +1095,14 @@ function SpaceRowItem({
 }) {
   const power = row.power;
   return (
-    <li className="dw-row-wrap" data-power={power && onPower ? 'true' : undefined}>
+    <li className="dw-row-wrap" data-power={power && onPower ? "true" : undefined}>
       <button
         type="button"
         role="option"
         aria-selected={selected}
         className="dw-row"
-        data-dim={row.dim ? 'true' : undefined}
-        data-nested={row.nested ? 'true' : undefined}
+        data-dim={row.dim ? "true" : undefined}
+        data-nested={row.nested ? "true" : undefined}
         onClick={() => onSelect(row.id)}
       >
         <OsIconMark id={row.osIcon} size={13} className="dw-row-os" />
@@ -1142,9 +1130,7 @@ function SpaceRowItem({
           </>
         )}
       </button>
-      {power && onPower && (
-        <PowerRowButton button={power} onPress={() => onPower(row.id, power.turnOn)} />
-      )}
+      {power && onPower && <PowerRowButton button={power} onPress={() => onPower(row.id, power.turnOn)} />}
     </li>
   );
 }
@@ -1189,7 +1175,7 @@ function SpaceDetail({
 
   const section = (title: string) => {
     switch (title) {
-      case 'Stream':
+      case "Stream":
         return (
           <div className="dw-card">
             <SpaceWindowList
@@ -1199,26 +1185,19 @@ function SpaceDetail({
               onClosePipDesktop={() => void bridge.unpinSpacePip(space.id).catch(() => {})}
               onPipWindow={(win, options) =>
                 void teleport
-                  .streamRemoteWindow(
-                    space.id,
-                    space.name,
-                    win.id,
-                    win.appName,
-                    win.title,
-                    options.replica
-                  )
+                  .streamRemoteWindow(space.id, space.name, win.id, win.appName, win.title, options.replica)
                   .catch(() => {})
               }
             />
           </div>
         );
-      case 'Agents':
+      case "Agents":
         return (
           <div className="dw-card">
             <SpaceAgentList spaceId={space.id} teleport={teleport} />
           </div>
         );
-      case 'Teleport':
+      case "Teleport":
         return (
           <TeleportDropZone
             spaceId={space.id}
@@ -1235,7 +1214,7 @@ function SpaceDetail({
 
   return (
     <div className="dw-content-inner">
-      <div className={shot ? 'dw-preview dw-preview-live' : 'dw-preview'}>
+      <div className={shot ? "dw-preview dw-preview-live" : "dw-preview"}>
         {shot ? (
           <img src={shot} alt={t("spaces.detail.preview_alt", { name: space.name })} />
         ) : space.sdk ? (

@@ -77,9 +77,25 @@ describe("teleport grid", () => {
       tabs: [{ tab: "apps", label: "Apps" }],
       query: "",
       primary: { label: "Continue", enabled: true },
-      grid: { sections: [{ title: "Apps", tiles: [tile("Slack", { selected: true }), tile("Notion")] }, { title: "Not available", tiles: unavailable }], emptyText: null },
+      grid: {
+        sections: [
+          { title: "Apps", tiles: [tile("Slack", { selected: true }), tile("Notion")] },
+          { title: "Not available", tiles: unavailable },
+        ],
+        emptyText: null,
+      },
     } as unknown as TeleportSession;
-    const teleport = { icon: vi.fn(), thumbnail: vi.fn(), select: vi.fn(), activate: vi.fn(), step: vi.fn(), close: vi.fn(), setTab: vi.fn(), search: vi.fn(), send: vi.fn() } as unknown as TeleportStore;
+    const teleport = {
+      icon: vi.fn(),
+      thumbnail: vi.fn(),
+      select: vi.fn(),
+      activate: vi.fn(),
+      step: vi.fn(),
+      close: vi.fn(),
+      setTab: vi.fn(),
+      search: vi.fn(),
+      send: vi.fn(),
+    } as unknown as TeleportStore;
     hooks.teleport = { session, images: new Map(), teleport };
     const { container } = render(<TeleportDialog />);
     // The footer, by role and name.

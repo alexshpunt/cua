@@ -5,13 +5,13 @@ pieces live. Architecture overview: `README.md`.
 
 ## 1. Pieces
 
-| Piece | Where | Role |
-| --- | --- | --- |
-| App (Tauri) | `apps/cua-spaces` | UI; `src-tauri` commands are thin calls into cua-spaces / cua-daemon |
-| cua-spaces | `libs/cua/crates/cua-spaces` | Spaces core, linked in-process by the app; also hosted by the daemon |
-| `cua daemon` | `libs/cua/crates/cua-daemon`, CLI in `cua-cli` | shared runtime: registry, media bridge, `cua daemon mcp` |
-| cua-spacesd | `libs/cua-spacesd` | the only daemon inside a Space (:3211 gRPC/gRPC-Web, `/media`, `/mcp`, `/health`; QUIC media on 3212) |
-| Golden (macOS) | `scripts/golden/` | Lume image with `Cua Spacesd.app` + `CuaDriverLocal.app` |
+| Piece          | Where                                          | Role                                                                                                  |
+| -------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| App (Tauri)    | `apps/cua-spaces`                              | UI; `src-tauri` commands are thin calls into cua-spaces / cua-daemon                                  |
+| cua-spaces     | `libs/cua/crates/cua-spaces`                   | Spaces core, linked in-process by the app; also hosted by the daemon                                  |
+| `cua daemon`   | `libs/cua/crates/cua-daemon`, CLI in `cua-cli` | shared runtime: registry, media bridge, `cua daemon mcp`                                              |
+| cua-spacesd    | `libs/cua-spacesd`                             | the only daemon inside a Space (:3211 gRPC/gRPC-Web, `/media`, `/mcp`, `/health`; QUIC media on 3212) |
+| Golden (macOS) | `scripts/golden/`                              | Lume image with `Cua Spacesd.app` + `CuaDriverLocal.app`                                              |
 
 Removed: `mcp/spaces_mcp.py` and `agent_harness.py` (now `cua daemon mcp` and
 `cua_spaces::agents`), Lume CLI driver,
@@ -53,17 +53,17 @@ Agent CLIs: Settings → AI agents installs the cua skills and registers
 Space ids are `direct:<host:port>`, `local:<name>` and `relay:<id>`. A legacy `cloud:<name>`
 row reads as `direct`.
 
-| Area | Commands |
-| --- | --- |
-| Roster | `list_spaces`, `space_info(spaceId)`, `add_space(url, token, name)`, `create_space({image, on, kind, runtime, name, …})`, `delete_space`, `remove_space`, `get_default_location`, `set_default_location(on)`; event `spaces:changed` |
-| Status | `account_status` (who is signed in; reads the local session), `begin_sign_in`, `sign_out`, `daemon_status`, `ensure_daemon`, `local_status` |
-| This machine | `host_status`, `host_setup`, `host_stop_sharing`, `host_start_sharing`, `host_remove`, `onboarding_state`, `complete_onboarding`, `installer_*` |
-| Space ops | `space_screenshot`, `send_files_to_space`, `list_remote_windows`, `remote_window_thumbnail`, `space_app_icon`, `list_space_agents` |
-| Streams | `open_space_stream(space, {kind: display|window}, opts)` → ticketed `wsUrl` (the Space's own ticket URL), `close_space_stream` |
-| Teleport an app | `teleport_catalog(spaceId?)`, `teleport_app_icon(path, size)`, `teleport_entry_for_path(path)`, `teleport_parse_drop(items)`, `teleport_plan(spaceId, entry, options)`, `teleport_run(spaceId, plan, consent, onEvent)`, `teleport_choose_files` → the SDK core (`cua_teleport::ux`, `cua_spaces::teleport_app`) |
-| Session teleport | `teleport_manifest(app, scope)`, `teleport_push(app, scope, space, include, acknowledgeSensitive)` → cua-spaces `Approval` + `Space::teleport` (the transfer overlay's Retry) |
-| Hotspot | `start_hotspot`, `stop_hotspot`, `hotspot_status`; event `hotspot:changed` |
-| App UI | viewer/PiP/window-stream windows, teleport picker, spaces list, transfer overlay, window drag, `agent_setup_*`, teleport policy |
+| Area             | Commands                                                                                                                                                                                                                                                                                                         |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| Roster           | `list_spaces`, `space_info(spaceId)`, `add_space(url, token, name)`, `create_space({image, on, kind, runtime, name, …})`, `delete_space`, `remove_space`, `get_default_location`, `set_default_location(on)`; event `spaces:changed`                                                                             |
+| Status           | `account_status` (who is signed in; reads the local session), `begin_sign_in`, `sign_out`, `daemon_status`, `ensure_daemon`, `local_status`                                                                                                                                                                      |
+| This machine     | `host_status`, `host_setup`, `host_stop_sharing`, `host_start_sharing`, `host_remove`, `onboarding_state`, `complete_onboarding`, `installer_*`                                                                                                                                                                  |
+| Space ops        | `space_screenshot`, `send_files_to_space`, `list_remote_windows`, `remote_window_thumbnail`, `space_app_icon`, `list_space_agents`                                                                                                                                                                               |
+| Streams          | `open_space_stream(space, {kind: display                                                                                                                                                                                                                                                                         | window}, opts)`→ ticketed`wsUrl`(the Space's own ticket URL),`close_space_stream` |
+| Teleport an app  | `teleport_catalog(spaceId?)`, `teleport_app_icon(path, size)`, `teleport_entry_for_path(path)`, `teleport_parse_drop(items)`, `teleport_plan(spaceId, entry, options)`, `teleport_run(spaceId, plan, consent, onEvent)`, `teleport_choose_files` → the SDK core (`cua_teleport::ux`, `cua_spaces::teleport_app`) |
+| Session teleport | `teleport_manifest(app, scope)`, `teleport_push(app, scope, space, include, acknowledgeSensitive)` → cua-spaces `Approval` + `Space::teleport` (the transfer overlay's Retry)                                                                                                                                    |
+| Hotspot          | `start_hotspot`, `stop_hotspot`, `hotspot_status`; event `hotspot:changed`                                                                                                                                                                                                                                       |
+| App UI           | viewer/PiP/window-stream windows, teleport picker, spaces list, transfer overlay, window drag, `agent_setup_*`, teleport policy                                                                                                                                                                                  |
 
 The loopback control server (`~/.cua/spaces-control.json`) serves
 `/pip/pin`, `/pip/unpin`, `/viewer/open` and `/window/stream` (a ticketed
@@ -113,11 +113,11 @@ Live tests run only against Docker/Lume sandboxes, never the host's apps.
 The picker window (label `teleport-picker`, a normal decorated window) opens
 on "Teleport an app…": every app on this Mac, classified by the cua SDK.
 
-| Level | Meaning | Moves |
-| --- | --- | --- |
-| Full | a provider imports its signed-in state | app, app with files (when it opens files), app with state |
-| Install only | a pinned, checksum-verified install from the manifest; opens empty or with files | app, app with files |
-| Not available | shown disabled with the reason | nothing |
+| Level         | Meaning                                                                          | Moves                                                     |
+| ------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Full          | a provider imports its signed-in state                                           | app, app with files (when it opens files), app with state |
+| Install only  | a pinned, checksum-verified install from the manifest; opens empty or with files | app, app with files                                       |
+| Not available | shown disabled with the reason                                                   | nothing                                                   |
 
 The flow is the SDK's headless picker (`@trycua/cua/teleport`, aliased to
 its source in `vite.config.ts`); `AppTeleportPicker.tsx` is its view. The

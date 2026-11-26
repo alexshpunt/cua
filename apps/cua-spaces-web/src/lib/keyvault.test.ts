@@ -53,7 +53,14 @@ describe("vaultLines", () => {
 });
 
 describe("keyvaultRows", () => {
-  const ids = ["keyvault-auto-wipe", "keyvault-auto-wipe-note", "keyvault-unlock-prompt", "keyvault-site-icons", "keyvault-site-icons-note", "keyvault-protection:Unlock"];
+  const ids = [
+    "keyvault-auto-wipe",
+    "keyvault-auto-wipe-note",
+    "keyvault-unlock-prompt",
+    "keyvault-site-icons",
+    "keyvault-site-icons-note",
+    "keyvault-protection:Unlock",
+  ];
   const rows = ids.map((id) => ({ id }) as SettingsRow);
 
   it("keeps every row when the host reports the site icons setting", () => {

@@ -4,12 +4,20 @@
 import { AppWindowIcon } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 
-import { GRID_COLUMNS, iconKey, thumbnailKey, type PickerTile, type PickerTileIcon, type PickerTileThumbnail, type TeleportSession, type TeleportStore } from "@/bridge";
+import {
+  GRID_COLUMNS,
+  iconKey,
+  thumbnailKey,
+  type PickerTile,
+  type PickerTileIcon,
+  type PickerTileThumbnail,
+  type TeleportSession,
+  type TeleportStore,
+} from "@/bridge";
 import { cn } from "@/lib/utils";
 
 /** What a tile asks the host for, as `grid_frame` in the core's parity writes it. */
-const iconSource = (i: PickerTileIcon) =>
-  i.kind === "host" ? `host ${i.path}` : i.kind === "guest" ? `guest ${i.appName} ${i.appId} ${i.pid}` : "-";
+const iconSource = (i: PickerTileIcon) => (i.kind === "host" ? `host ${i.path}` : i.kind === "guest" ? `guest ${i.appName} ${i.appId} ${i.pid}` : "-");
 const thumbnailSource = (t: PickerTileThumbnail) =>
   t.kind === "host-window" ? `window ${t.windowId}` : t.kind === "guest-window" ? `guest ${t.windowId}@${t.epoch}` : "-";
 
@@ -25,7 +33,15 @@ const thumbnailSource = (t: PickerTileThumbnail) =>
  * available") would otherwise fill it, and a reader with a budget (an
  * agent's snapshot) never reached the dialog's Cancel and Continue.
  */
-export function TeleportGrid({ session: s, teleport, images }: { session: TeleportSession; teleport: TeleportStore; images: ReadonlyMap<string, string | null> }) {
+export function TeleportGrid({
+  session: s,
+  teleport,
+  images,
+}: {
+  session: TeleportSession;
+  teleport: TeleportStore;
+  images: ReadonlyMap<string, string | null>;
+}) {
   const onKeyDown = (e: KeyboardEvent) => {
     const delta = { ArrowRight: 1, ArrowLeft: -1, ArrowDown: GRID_COLUMNS, ArrowUp: -GRID_COLUMNS }[e.key];
     if (delta !== undefined) {
@@ -37,7 +53,13 @@ export function TeleportGrid({ session: s, teleport, images }: { session: Telepo
     }
   };
   return (
-    <div role="listbox" aria-label="Apps and windows" tabIndex={0} onKeyDown={onKeyDown} className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/60">
+    <div
+      role="listbox"
+      aria-label="Apps and windows"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      className="rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+    >
       {s.grid.sections.map((section, i) => (
         <section key={`${section.title}-${i}`} data-grid-section={section.title} className="mb-4 last:mb-0">
           {section.title ? <h3 className="mb-2 text-xs font-medium text-muted-foreground">{section.title}</h3> : null}

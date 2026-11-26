@@ -32,9 +32,7 @@ export function TeleportSetupSheet({ setup, teleport }: { setup: TeleportSetup; 
   return (
     <div className="space-y-4 px-5 pb-4" data-teleport-setup={setup.blocked ? "blocked" : "ready"} aria-busy={setup.checking || undefined}>
       <p className="text-[13px] text-muted-foreground" data-setup-intro>
-        {setup.blocked
-          ? `${name} cannot be teleported yet. Here is what is missing.`
-          : `Choose the ${name} profile to teleport. Everything it needs is ready.`}
+        {setup.blocked ? `${name} cannot be teleported yet. Here is what is missing.` : `Choose the ${name} profile to teleport. Everything it needs is ready.`}
       </p>
       <GroupedSection>
         <SettingRow
@@ -53,13 +51,7 @@ export function TeleportSetupSheet({ setup, teleport }: { setup: TeleportSetup; 
         <SettingRow
           data-setup-row="files"
           label="Full Disk Access"
-          help={
-            denied ? (
-              <span data-setup-say="files">{r.files.say}</span>
-            ) : r.profile_empty ? null : (
-              `So Cua can read ${name}'s sign-ins when you approve.`
-            )
-          }
+          help={denied ? <span data-setup-say="files">{r.files.say}</span> : r.profile_empty ? null : `So Cua can read ${name}'s sign-ins when you approve.`}
           value={state(denied ? "Needed" : "Allowed")}
           control={
             denied ? (
@@ -114,7 +106,12 @@ function Profiles({ readiness: r, chosen, onChoose }: { readiness: KvReadiness; 
     <GroupedSection title="Profile" data-setup-profiles footer={r.profile_empty ? <span data-setup-say="profile">{r.files.say}</span> : null}>
       <RadioGroup value={chosen ?? ""} onValueChange={(v) => onChoose(String(v))} aria-label="Profile">
         {r.profiles.map((p) => (
-          <label key={p.dir} className="flex min-h-11 cursor-default items-center gap-3 px-4 py-2 text-[13px]" data-setup-profile={p.dir} data-last-used={p.last_used || undefined}>
+          <label
+            key={p.dir}
+            className="flex min-h-11 cursor-default items-center gap-3 px-4 py-2 text-[13px]"
+            data-setup-profile={p.dir}
+            data-last-used={p.last_used || undefined}
+          >
             <Radio.Root
               value={p.dir}
               className="flex size-4 shrink-0 items-center justify-center rounded-full border border-input bg-card shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/60 data-checked:border-brand data-checked:bg-brand dark:bg-input/30" // design-ok: radio control ring, not a content box

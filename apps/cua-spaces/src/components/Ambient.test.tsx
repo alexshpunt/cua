@@ -11,9 +11,7 @@ import { Ambient } from "./Ambient";
 
 describe("Ambient (notched) teleport morph", () => {
   it("shows the 'N Spaces' tab and hides the teleport hint while idle", () => {
-    render(
-      <Ambient spaces={FIXTURE_SPACES} displayStyle="notched" onExpand={vi.fn()} teleportOpen={false} />,
-    );
+    render(<Ambient spaces={FIXTURE_SPACES} displayStyle="notched" onExpand={vi.fn()} teleportOpen={false} />);
     // The idle tab is the clickable ambient affordance.
     const tab = screen.getByRole("button", { name: /Spaces, .* active/ });
     expect(tab).toHaveClass("ambient-tab");
@@ -24,9 +22,7 @@ describe("Ambient (notched) teleport morph", () => {
   });
 
   it("morphs into the compact 'Teleport to Cua' hint (no icon) when the drag starts", () => {
-    render(
-      <Ambient spaces={FIXTURE_SPACES} displayStyle="notched" onExpand={vi.fn()} teleportOpen />,
-    );
+    render(<Ambient spaces={FIXTURE_SPACES} displayStyle="notched" onExpand={vi.fn()} teleportOpen />);
     const tab = screen.getByRole("button", { name: /Spaces, .* active/ });
     expect(tab.parentElement).toHaveAttribute("data-teleport", "on");
     const hint = screen.getByRole("status", { name: /Teleport to Cua/ });

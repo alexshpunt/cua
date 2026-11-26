@@ -176,7 +176,12 @@ describe.skipIf(!wasmBuilt)("teleport picker", () => {
     const t = new TeleportStore(adapter, await testCore());
     const review = await reviewChrome(t);
     expect(asked).toEqual([{ providerId: "chrome", spaceId: space.id }]);
-    expect(review.domains.filter((d) => d.selected).map((d) => d.domain).sort()).toEqual(["docs.rs", "linear.app"]);
+    expect(
+      review.domains
+        .filter((d) => d.selected)
+        .map((d) => d.domain)
+        .sort(),
+    ).toEqual(["docs.rs", "linear.app"]);
   });
 
   it("sends from the Keyvault's saved items, the ones chosen, instead of the live app", async () => {

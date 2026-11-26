@@ -382,7 +382,7 @@ fn session_first_actions_show_pointer_and_badge_in_the_video() {
         settle(ACTION_DWELL_MS);
 
         let ((x, y), coordinate_point) = empty_window_point(
-            &state,
+            state.structured(),
             (screen_width, screen_height),
             &[keyboard_point, semantic_point],
         );
@@ -542,11 +542,10 @@ fn overlay_footprints_overlap(a: (f64, f64), b: (f64, f64)) -> bool {
 /// the taskbar sit; none of those is in the fixture's tree, and clicking one
 /// opens another app over the fixture.
 fn empty_window_point(
-    state: &ToolResponse,
+    structured: &serde_json::Value,
     (screen_width, screen_height): (f64, f64),
     avoid: &[(f64, f64)],
 ) -> ((f64, f64), (f64, f64)) {
-    let structured = state.structured();
     let bounds = &structured["window_bounds"];
     let (Some(shot_width), Some(shot_height), Some(x), Some(y), Some(width), Some(height)) = (
         structured["screenshot_width"].as_f64(),
@@ -564,6 +563,12 @@ fn empty_window_point(
         .as_array()
         .into_iter()
         .flatten()
+        // A group box encloses its children rather than covering their blank
+        // space. Keep actionable groups and every child as obstacles.
+        .filter(|element| {
+            element["role"].as_str() != Some("Group")
+                || element["actionable"].as_bool() != Some(false)
+        })
         .filter_map(|element| {
             let frame = &element["frame"];
             Some([
@@ -1615,6 +1620,29 @@ mod pixel_oracle_tests {
 
     const CURSOR_X: f64 = 200.0;
     const CURSOR_Y: f64 = 150.0;
+
+    #[test]
+    fn empty_point_can_be_inside_a_noninteractive_group_but_not_its_button() {
+        let mut elements: Vec<serde_json::Value> = (0..5)
+            .map(|i| {
+                serde_json::json!({
+                    "role": "Group", "actionable": false,
+                    "frame": {"x": 100, "y": 100 + i * 120, "w": 800, "h": 120}
+                })
+            })
+            .collect();
+        elements.push(serde_json::json!({
+            "role": "Button", "actionable": true,
+            "frame": {"x": 400, "y": 330, "w": 200, "h": 140}
+        }));
+        let state = serde_json::json!({
+            "window_bounds": {"x": 100, "y": 100, "width": 800, "height": 600},
+            "screenshot_width": 800, "screenshot_height": 600,
+            "elements": elements
+        });
+        let (_, (x, y)) = empty_window_point(&state, (1000.0, 800.0), &[]);
+        assert!(x < 392.0 || x > 608.0 || y < 322.0 || y > 478.0);
+    }
 
     #[test]
     fn accepts_colocated_pointer_and_badge_at_1x() {

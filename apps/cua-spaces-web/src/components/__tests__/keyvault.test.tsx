@@ -12,8 +12,20 @@ import { KeyvaultPage } from "@/components/keyvault/keyvault-page";
 
 // The virtualized list measures its viewport, which jsdom has none of: draw every row.
 vi.mock("@legendapp/list/react", () => ({
-  LegendList: ({ data, renderItem, keyExtractor }: { data: unknown[]; renderItem: (a: { item: unknown }) => React.ReactNode; keyExtractor: (i: unknown) => string }) => (
-    <div>{data.map((item) => <div key={keyExtractor(item)}>{renderItem({ item })}</div>)}</div>
+  LegendList: ({
+    data,
+    renderItem,
+    keyExtractor,
+  }: {
+    data: unknown[];
+    renderItem: (a: { item: unknown }) => React.ReactNode;
+    keyExtractor: (i: unknown) => string;
+  }) => (
+    <div>
+      {data.map((item) => (
+        <div key={keyExtractor(item)}>{renderItem({ item })}</div>
+      ))}
+    </div>
   ),
 }));
 
@@ -79,7 +91,9 @@ describe.skipIf(!wasmBuilt)("Keyvault page: categories (the core's sidebar and p
       return r!;
     });
     fireEvent.click(within(row).getByRole("button", { name: "Dismiss" }));
-    await waitFor(() => expect(within(document.querySelector<HTMLElement>('[data-access="d:design-review"]')!).queryByRole("button", { name: "Dismiss" })).toBeNull());
+    await waitFor(() =>
+      expect(within(document.querySelector<HTMLElement>('[data-access="d:design-review"]')!).queryByRole("button", { name: "Dismiss" })).toBeNull(),
+    );
     // Still live: only the notch's indicator is hidden.
     const o = (await adapter.call("keyvault.overview", {})) as KeyvaultOverview;
     expect(o.dismissed).toEqual(["imp-github"]);

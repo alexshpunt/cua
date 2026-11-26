@@ -87,7 +87,14 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
 
   beforeAll(async () => {
     home = mkdtempSync(path.join(tmpdir(), "cua-vault-native-"));
-    Object.assign(process.env, { HOME: home, USERPROFILE: home, CUA_HOME: path.join(home, ".cua"), CUA_TELEMETRY: "0", DO_NOT_TRACK: "1", CUA_KEYCHAIN_NONINTERACTIVE: "1" });
+    Object.assign(process.env, {
+      HOME: home,
+      USERPROFILE: home,
+      CUA_HOME: path.join(home, ".cua"),
+      CUA_TELEMETRY: "0",
+      DO_NOT_TRACK: "1",
+      CUA_KEYCHAIN_NONINTERACTIVE: "1",
+    });
     native = await loadNative(dir);
   });
 
@@ -175,8 +182,10 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
   });
 
   const call = (method: string, args: Record<string, unknown> = {}) => bridge.registry.handle(method, args, { window: "win-1" });
-  const code = (method: string, args: Record<string, unknown> = {}) => bridge.registry.dispatch({ id: "x", method, args }).then((r) => (r.ok ? null : r.error.code));
-  const message = (method: string, args: Record<string, unknown> = {}) => bridge.registry.dispatch({ id: "x", method, args }).then((r) => (r.ok ? null : r.error.message));
+  const code = (method: string, args: Record<string, unknown> = {}) =>
+    bridge.registry.dispatch({ id: "x", method, args }).then((r) => (r.ok ? null : r.error.code));
+  const message = (method: string, args: Record<string, unknown> = {}) =>
+    bridge.registry.dispatch({ id: "x", method, args }).then((r) => (r.ok ? null : r.error.message));
   const kinds = () => fake.commands.map((c) => c.tag);
   const shapes = async (method: string, args: Record<string, unknown> = {}) => {
     const answer = await call(method, args);
@@ -487,7 +496,10 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
       it("fails a wrong passphrase in the broker's words", async () => {
         await setUp(unlockOverview(native, "unlock-passphrase"));
         fake.unlockWithPassphrase = async () => {
-          throw Object.assign(new Error("CuaError.PermissionDenied: the credential does not unlock this vault"), { [Symbol.for("typeName")]: "CuaError", tag: "PermissionDenied" });
+          throw Object.assign(new Error("CuaError.PermissionDenied: the credential does not unlock this vault"), {
+            [Symbol.for("typeName")]: "CuaError",
+            tag: "PermissionDenied",
+          });
         };
         const reply = await bridge.registry.dispatch({ id: "u", method: "keyvault.unlockVault", args: {} });
         expect(reply).toMatchObject({ ok: false, error: { code: "failed", message: "the credential does not unlock this vault" } });
@@ -530,7 +542,16 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
     it("feeds the notch the sign-ins live in a Space, and Dismiss hides them there and nowhere else", async () => {
       await setUp(parityOverview(native, withCopy));
       const sent: [string | null | undefined, string[] | undefined][] = [];
-      const stop = feedNotch({ setSpaces: () => {}, setShown: () => {}, setKeyvault: (label, signedIn) => void sent.push([label, signedIn]), setPinned: () => {}, setActivity: () => {} }, model);
+      const stop = feedNotch(
+        {
+          setSpaces: () => {},
+          setShown: () => {},
+          setKeyvault: (label, signedIn) => void sent.push([label, signedIn]),
+          setPinned: () => {},
+          setActivity: () => {},
+        },
+        model,
+      );
       expect(sent.at(-1)![0]).toBe(model.keyvault.sharingLabel);
       expect(sent.at(-1)![1]).toContain("local:aurora");
       await call("keyvault.dismiss", { imports: ["imp-1"] });
@@ -607,14 +628,25 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
 
     it("lists the Space's windows", async () => {
       const windows = await shapes("teleport.remoteWindows", { spaceId: aurora });
-      expect(windows[0]).toMatchObject({ id: "w-1", appName: "Firefox", title: "Mozilla Firefox", visible: true, appId: "org.mozilla.firefox", widthPx: 1280, heightPx: 720, pid: 321 });
+      expect(windows[0]).toMatchObject({
+        id: "w-1",
+        appName: "Firefox",
+        title: "Mozilla Firefox",
+        visible: true,
+        appId: "org.mozilla.firefox",
+        widthPx: 1280,
+        heightPx: 720,
+        pid: 321,
+      });
       expect(windows[0].targetEpoch).toBe(7);
       // No bounds and no pid: none reported.
       expect(windows[1]).toMatchObject({ id: "w-2", widthPx: null, heightPx: null, pid: null });
     });
 
     it("draws icons and previews as data URLs: this machine's from the SDK, the Space's through its icon cache", async () => {
-      expect(await shapes("teleport.icon", { spaceId: aurora, icon: { kind: "host", path: "/Applications/Slack.app" } })).toBe(`data:image/png;base64,${Buffer.from(PNG).toString("base64")}`);
+      expect(await shapes("teleport.icon", { spaceId: aurora, icon: { kind: "host", path: "/Applications/Slack.app" } })).toBe(
+        `data:image/png;base64,${Buffer.from(PNG).toString("base64")}`,
+      );
       expect(await call("teleport.icon", { spaceId: aurora, icon: { kind: "host", path: "/Applications/Other.app" } })).toBeNull();
       backend.guestIcons.set("Firefox", SVG);
       expect(await shapes("teleport.icon", { spaceId: aurora, icon: { kind: "guest", appName: "Firefox", appId: "org.mozilla.firefox", pid: 321 } })).toBe(
@@ -633,7 +665,9 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
       expect(await code("teleport.thumbnail", { spaceId: aurora, thumbnail: { kind: "host-window" } })).toBe("bad_args");
       expect(await code("teleport.thumbnail", { spaceId: aurora, thumbnail: { kind: "host-window", windowId: -1 } })).toBe("bad_args");
 
-      expect(await shapes("teleport.thumbnail", { spaceId: aurora, thumbnail: { kind: "guest-window", windowId: "w-1", epoch: 7 } })).toMatch(/^data:image\/jpeg;base64,/);
+      expect(await shapes("teleport.thumbnail", { spaceId: aurora, thumbnail: { kind: "guest-window", windowId: "w-1", epoch: 7 } })).toMatch(
+        /^data:image\/jpeg;base64,/,
+      );
       expect(space.thumbnailCalls).toEqual([{ windowId: "w-1", epoch: 7n, max: 480 }]);
       expect(await call("teleport.thumbnail", { spaceId: aurora, thumbnail: { kind: "guest-window", windowId: "w-2" } })).toBeNull();
       expect(space.thumbnailCalls.at(-1)).toEqual({ windowId: "w-2", epoch: 0n, max: 480 });
@@ -643,7 +677,13 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
     describe("plan and run", () => {
       const choose = async (id = "slack") => {
         await call("teleport.catalog", { spaceId: aurora });
-        return (await call("teleport.plan", { spaceId: aurora, entry: { id }, move: "app_with_state", files: ["/tmp/a.txt"], sensitiveGroups: ["sign_ins", "history", "nonsense"] })) as { json: string; app: { providerId: string | null } };
+        return (await call("teleport.plan", {
+          spaceId: aurora,
+          entry: { id },
+          move: "app_with_state",
+          files: ["/tmp/a.txt"],
+          sensitiveGroups: ["sign_ins", "history", "nonsense"],
+        })) as { json: string; app: { providerId: string | null } };
       };
       const run = (planJson: string, consent: Record<string, unknown> = { approved: true, acknowledgeSensitive: true }, runId = "run-1") =>
         call("teleport.run", { spaceId: aurora, plan: { json: planJson }, consent, runId });
@@ -666,7 +706,12 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
 
       it("maps the move words, and the app alone for anything else", async () => {
         await call("teleport.catalog", { spaceId: aurora });
-        for (const [word, move] of [["app_only", "appOnly"], ["app_with_files", "appWithFiles"], ["app_with_state", "appWithState"], ["bogus", "appOnly"]]) {
+        for (const [word, move] of [
+          ["app_only", "appOnly"],
+          ["app_with_files", "appWithFiles"],
+          ["app_with_state", "appWithState"],
+          ["bogus", "appOnly"],
+        ]) {
           await call("teleport.plan", { spaceId: aurora, entry: { id: "slack" }, move: word, files: [], sensitiveGroups: [] });
           expect((sdk.planCalls.at(-1)!.options as { moves: string }).moves).toBe(move);
         }
@@ -694,7 +739,9 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
         const report = await run(plan.json);
         expect(shapeProblems("teleport.run", report)).toEqual([]);
         expect(report).toEqual({ appId: "slack", installed: ["slack"], sent: [], imported: ["Cookies"], skipped: [], launched: true });
-        const progress = events.filter((e) => e.event === "teleport.progress").map((e) => e.payload as { runId: string; event: { step: number; kind: string; phase: string; doneBytes: number } });
+        const progress = events
+          .filter((e) => e.event === "teleport.progress")
+          .map((e) => e.payload as { runId: string; event: { step: number; kind: string; phase: string; doneBytes: number } });
         expect(progress.map((p) => [p.runId, p.event.step, p.event.kind, p.event.phase])).toEqual([
           ["run-1", 0, "install", "finished"],
           ["run-1", 1, "state", "progress"],
@@ -754,7 +801,11 @@ describe.skipIf(!built)("Teleport and the Keyvault on the app core", () => {
         expect(cache.planCount).toBe(0);
         const again = await choose();
         sdk.runError = Object.assign(new Error("CuaError.Runtime: the Space went away"), { [Symbol.for("typeName")]: "CuaError", tag: "Runtime" });
-        const reply = await bridge.registry.dispatch({ id: "r", method: "teleport.run", args: { spaceId: aurora, plan: { json: again.json }, consent: { approved: true }, runId: "r" } });
+        const reply = await bridge.registry.dispatch({
+          id: "r",
+          method: "teleport.run",
+          args: { spaceId: aurora, plan: { json: again.json }, consent: { approved: true }, runId: "r" },
+        });
         expect(reply).toMatchObject({ ok: false, error: { code: "failed", message: "the Space went away" } });
         expect(cache.planCount).toBe(0);
         expect(model.activity.transfer).toBe(false);

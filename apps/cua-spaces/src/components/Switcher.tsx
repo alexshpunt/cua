@@ -119,7 +119,11 @@ export function Switcher({
   }, [focusIndex]);
 
   return (
-    <section className="shelf switcher" aria-label={t("spaces.switcher.label")} data-drop-mode={dropMode ? "true" : undefined}>
+    <section
+      className="shelf switcher"
+      aria-label={t("spaces.switcher.label")}
+      data-drop-mode={dropMode ? "true" : undefined}
+    >
       <header className="shelf-header">
         {dropMode ? (
           <p className="shelf-drop-hint" role="status">
@@ -192,7 +196,11 @@ export function Switcher({
               tabIndex={focusIndex === NEW_TILE_INDEX ? 0 : -1}
               onFocus={() => onFocus(NEW_TILE_INDEX)}
               onClick={onNew}
-              aria-label={dropMode ? t("spaces.switcher.new_drop_label") : t("spaces.switcher.new_label", { shortcut: `${MOD} N` })}
+              aria-label={
+                dropMode
+                  ? t("spaces.switcher.new_drop_label")
+                  : t("spaces.switcher.new_label", { shortcut: `${MOD} N` })
+              }
             >
               <span className="tile-frame tile-new-frame">
                 <span className="tile-plus" aria-hidden="true">
@@ -209,34 +217,32 @@ export function Switcher({
               .slice()
               .sort((a, b) => Number(b.id === hotspotSpaceId) - Number(a.id === hotspotSpaceId))
               .map((space) => (
-              <SpaceTile
-                key={space.id}
-                space={space}
-                hotspot={space.id === hotspotSpaceId}
-                focused={query.trim() ? false : focusIndex === spaces.indexOf(space)}
-                onFocus={() => onFocus(spaces.indexOf(space))}
-                // A tile switches to its Space (opens its desktop); "This
-                // machine" opens its page in the main window. While a
-                // window-drag is in flight the tile is the teleport target.
-                onSelect={() =>
-                  !dropMode && space.status === "local" ? openList(space.id) : onSelect(space.id)
-                }
-                onPin={onPin ? () => onPin(space) : undefined}
-                onShareApp={onShareApp && space.status !== "local" ? () => onShareApp(space) : undefined}
-                onDelete={onDelete ? () => onDelete(space) : undefined}
-                onPower={onPower ? (on) => onPower(space, on) : undefined}
-                dropMode={dropMode}
-                dropTarget={dropMode && dropTargetId === space.id}
-                dropGhost={dropMode && dropTargetId === space.id ? dragGhost ?? null : null}
-              />
-            ))}
+                <SpaceTile
+                  key={space.id}
+                  space={space}
+                  hotspot={space.id === hotspotSpaceId}
+                  focused={query.trim() ? false : focusIndex === spaces.indexOf(space)}
+                  onFocus={() => onFocus(spaces.indexOf(space))}
+                  // A tile switches to its Space (opens its desktop); "This
+                  // machine" opens its page in the main window. While a
+                  // window-drag is in flight the tile is the teleport target.
+                  onSelect={() => (!dropMode && space.status === "local" ? openList(space.id) : onSelect(space.id))}
+                  onPin={onPin ? () => onPin(space) : undefined}
+                  onShareApp={onShareApp && space.status !== "local" ? () => onShareApp(space) : undefined}
+                  onDelete={onDelete ? () => onDelete(space) : undefined}
+                  onPower={onPower ? (on) => onPower(space, on) : undefined}
+                  dropMode={dropMode}
+                  dropTarget={dropMode && dropTargetId === space.id}
+                  dropGhost={dropMode && dropTargetId === space.id ? (dragGhost ?? null) : null}
+                />
+              ))}
           </>
         )}
       </div>
 
       {!dropMode && (
         <footer className="shelf-footer switcher-footer">
-          {(
+          {
             <div className="switcher-space-actions">
               {/* List first, gear second (the list sits left of Settings). */}
               <button
@@ -260,7 +266,7 @@ export function Switcher({
                 <GearGlyph className="glyph" />
               </button>
             </div>
-          )}
+          }
           <div className="switcher-footer-main">
             {hotspotActive && (
               <button
@@ -284,9 +290,6 @@ export function Switcher({
           </div>
         </footer>
       )}
-
-
     </section>
   );
 }
-

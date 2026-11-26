@@ -175,7 +175,9 @@ describe("TeleportPicker window tabs", () => {
     fireEvent.keyDown(pick, { key: "ArrowRight" });
     await waitFor(() => expect(screen.getByRole("option", { name: /bash/ })).toHaveAttribute("aria-selected", "true"));
     fireEvent.keyDown(pick, { key: "Enter" });
-    await waitFor(() => expect(streamRemoteWindow).toHaveBeenCalledWith("direct:aurora", "Aurora", "w-2", "Terminal", "bash", false));
+    await waitFor(() =>
+      expect(streamRemoteWindow).toHaveBeenCalledWith("direct:aurora", "Aurora", "w-2", "Terminal", "bash", false),
+    );
   });
 });
 
@@ -189,7 +191,14 @@ function recordingHost(): TeleportHost & { runs: unknown[] } {
     relayUnsealed: false,
     steps: [{ kind: "state", summary: "Import 1 firefox item(s)" }],
     consent: [
-      { kind: "secret", key: "cookies.sqlite", label: "Cookies", detail: "311 cookies, cookies.sqlite", bytes: 486400, sensitive: true },
+      {
+        kind: "secret",
+        key: "cookies.sqlite",
+        label: "Cookies",
+        detail: "311 cookies, cookies.sqlite",
+        bytes: 486400,
+        sensitive: true,
+      },
     ],
     sensitive: true,
     totalBytes: 486400,
@@ -224,14 +233,15 @@ describe("TeleportPicker: Teleport an app", () => {
     await waitFor(() => expect(selected()?.textContent).not.toBe(before));
   });
 
-
   it("lists every app with its capability, and disables unsupported ones with the reason", async () => {
     renderPicker(fakeBridge());
     expect(await screen.findByRole("tab", { name: "Apps" })).toHaveAttribute("aria-selected", "true");
     const ff = await screen.findByRole("option", { name: /Firefox/ });
     // One line per app: the capability rides in the accessible description.
     expect(ff).toHaveAccessibleDescription("App and signed-in state");
-    expect(screen.getByRole("option", { name: /Visual Studio Code/ })).toHaveAccessibleDescription("App, empty or with files");
+    expect(screen.getByRole("option", { name: /Visual Studio Code/ })).toHaveAccessibleDescription(
+      "App, empty or with files",
+    );
     const safari = screen.getByRole("option", { name: /Safari/ });
     expect(safari).toBeDisabled();
     expect(safari).toHaveAttribute("title", expect.stringMatching(/no Linux build/));

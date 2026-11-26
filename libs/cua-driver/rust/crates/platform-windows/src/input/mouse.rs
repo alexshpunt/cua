@@ -704,6 +704,39 @@ pub struct ClickReceipt {
 /// How long one press or release may take to be read by the target.
 const CLICK_READ_TIMEOUT: Duration = Duration::from_millis(1000);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PhaseRead {
+    Observed,
+    Unobservable,
+    TimedOut,
+    Lost,
+}
+
+impl PhaseRead {
+    fn can_continue(self) -> bool {
+        matches!(self, Self::Observed | Self::Unobservable)
+    }
+
+    fn final_release_inserted(self, foreground_valid: bool) -> bool {
+        foreground_valid && self != Self::Lost
+    }
+}
+
+#[cfg(test)]
+mod phase_read_tests {
+    use super::PhaseRead;
+
+    #[test]
+    fn only_a_final_release_can_finish_after_an_unread_timeout() {
+        assert!(!PhaseRead::TimedOut.can_continue());
+        assert!(PhaseRead::TimedOut.final_release_inserted(true));
+        assert!(!PhaseRead::TimedOut.final_release_inserted(false));
+        assert!(!PhaseRead::Lost.final_release_inserted(true));
+        assert!(PhaseRead::Observed.can_continue());
+        assert!(PhaseRead::Unobservable.can_continue());
+    }
+}
+
 /// Watches a foreground click being read by the target's input thread. Attached to that
 /// thread, the shared key state shows a mouse button or a modifier as down once the thread
 /// has read its press and as up once it has read its release. Events are inserted one phase
@@ -786,11 +819,11 @@ impl ClickWitness {
         sent
     }
 
-    /// Returns false only when an established witness loses its reader or
-    /// times out; no subsequent press should follow an unacknowledged phase.
-    fn await_keys(&mut self, keys: &[u16], down: bool) -> bool {
+    /// Distinguish an unread timeout from a lost reader so the final inserted
+    /// release can remain unobservable without allowing more input to follow it.
+    fn await_keys(&mut self, keys: &[u16], down: bool) -> PhaseRead {
         if self.attachment.is_none() || keys.is_empty() {
-            return true;
+            return PhaseRead::Unobservable;
         }
         let deadline = Instant::now() + CLICK_READ_TIMEOUT;
         loop {
@@ -799,34 +832,39 @@ impl ClickWitness {
             let foreground = unsafe { GetForegroundWindow() };
             if !attachment.matches_foreground(foreground) || !attachment.has_no_misrouted_input() {
                 self.give_up();
-                return false;
+                return PhaseRead::Lost;
             }
             if let Some(state) = crate::input::keyboard::keyboard_state() {
                 if keys
                     .iter()
                     .all(|key| (state[*key as usize] & 0x80 != 0) == down)
                 {
-                    return true;
+                    return PhaseRead::Observed;
                 }
             }
             if Instant::now() >= deadline {
                 self.give_up();
-                return false;
+                return PhaseRead::TimedOut;
             }
             sleep(Duration::from_millis(1));
         }
     }
 
-    fn await_button(&mut self, down: bool) -> bool {
+    fn await_button(&mut self, down: bool) -> PhaseRead {
         let button = [self.button];
         self.await_keys(&button, down)
     }
 
-    fn await_modifiers(&mut self, down: bool) -> bool {
+    fn await_modifiers(&mut self, down: bool) -> PhaseRead {
         let modifiers = std::mem::take(&mut self.modifiers);
         let observed = self.await_keys(&modifiers, down);
         self.modifiers = modifiers;
         observed
+    }
+
+    fn foreground_valid(&self) -> bool {
+        let actual = unsafe { GetForegroundWindow() }.0 as usize as u64;
+        crate::win32::foreground_matches_target_or_owned_window(self.target, actual)
     }
 
     /// The witness lost sight of the click: what it inserted is unconfirmed from now on.
@@ -1026,7 +1064,7 @@ fn send_click_synthesized_mods_impl(
             let sent = witness.insert(&mod_downs, false);
             held_modifiers = sent as usize;
             sent_ok = held_modifiers == mod_downs.len();
-            sent_ok &= witness.await_modifiers(true);
+            sent_ok &= witness.await_modifiers(true).can_continue();
             sleep(Duration::from_millis(5));
         }
 
@@ -1057,13 +1095,19 @@ fn send_click_synthesized_mods_impl(
                 if index == 1 {
                     crate::desktop_activity::note_pointer_arrival(sx, sy);
                     button_held = true;
-                    if !witness.await_button(true) {
+                    if !witness.await_button(true).can_continue() {
                         sent_ok = false;
                         break;
                     }
                 } else if index == 2 {
                     button_held = false;
-                    if !witness.await_button(false) {
+                    let phase = witness.await_button(false);
+                    if !phase.can_continue() {
+                        if i + 1 == count
+                            && phase.final_release_inserted(witness.foreground_valid())
+                        {
+                            break;
+                        }
                         // A completed click may close its target and hand focus
                         // to another window in the same app. It is successful
                         // but unobservable and may not restore the old focus.
@@ -1103,7 +1147,8 @@ fn send_click_synthesized_mods_impl(
         }
         sent_ok &= crate::input::keyboard::release_inserted_keys(&mod_downs, held_modifiers);
         if held_modifiers > 0 {
-            sent_ok &= witness.await_modifiers(false);
+            let phase = witness.await_modifiers(false);
+            sent_ok &= phase.final_release_inserted(witness.foreground_valid());
         }
         let read = witness.finish();
 
@@ -1347,7 +1392,7 @@ pub fn send_drag_synthesized(
                 mod_downs.len()
             );
         }
-        if !witness.await_modifiers(true) {
+        if !witness.await_modifiers(true).can_continue() {
             let _ = release_modifiers();
             bail!("The established drag reader did not confirm modifier presses; no mouse input was sent.");
         }
@@ -1365,7 +1410,7 @@ pub fn send_drag_synthesized(
         witness.give_up();
         bail!("SendInput did not insert the drag's button press");
     }
-    if !witness.await_button(true) {
+    if !witness.await_button(true).can_continue() {
         // SAFETY: the slice contains one initialized INPUT and the size is the
         // exact size of that type. This best-effort release cannot confirm receipt.
         let _ = unsafe {
@@ -1397,14 +1442,24 @@ pub fn send_drag_synthesized(
     // Always release, even after a failed move, so no button stays held.
     let released = send(&mut witness, button_input(up_flag), true)
         || send(&mut witness, button_input(up_flag), true);
-    let release_observed = !released || witness.await_button(false);
+    let release_phase = if released {
+        witness.await_button(false)
+    } else {
+        PhaseRead::Lost
+    };
+    let release_accepted =
+        released && release_phase.final_release_inserted(witness.foreground_valid());
     // A target that samples live key state while handling the release still
     // sees the modifiers held; release them after the settle.
     sleep(Duration::from_millis(40));
     let modifiers_released = release_modifiers();
-    let modifiers_observed =
-        !modifiers_released || mod_downs.is_empty() || witness.await_modifiers(false);
-    if !released || !modifiers_released || !moves_ok || !release_observed || !modifiers_observed {
+    let modifiers_accepted = if modifiers_released && !mod_downs.is_empty() {
+        let phase = witness.await_modifiers(false);
+        phase.final_release_inserted(witness.foreground_valid())
+    } else {
+        modifiers_released
+    };
+    if !released || !modifiers_released || !moves_ok || !release_accepted || !modifiers_accepted {
         witness.give_up();
     }
     let read = witness.finish();
@@ -1427,7 +1482,7 @@ pub fn send_drag_synthesized(
                was not inserted. The button was released; inspect the target before retrying."
         );
     }
-    if !release_observed || !modifiers_observed {
+    if !release_accepted || !modifiers_accepted {
         bail!("The established drag reader did not confirm an inserted release; inspect the target before retrying.");
     }
     Ok(read)

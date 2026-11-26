@@ -10,15 +10,15 @@ nothing touches the network.
 
 ## Windows
 
-| Surface | What it is |
-| --- | --- |
-| Main window (`main`) | Standard, opaque, decorated window. First run shows the welcome flow here; then the Spaces sidebar and detail. New Space (Cmd+N) is a sheet; Settings (Cmd+,) is a page. Closing it hides it; the Dock icon, the menu bar item and the notch reopen it. |
-| Menu bar item | The Cua mark as a template image. Click: open the main window. Right click: status line, Open Cua Spaces, New Space, Settings, Quit. |
-| Launch at login | Settings → General → Launch Cua Spaces at login (the first run's Done page ticks it). Linux: an XDG autostart entry; Windows: the current user's `Run` key; macOS: a LaunchAgent. A login launch passes `--autostart` and opens without the main window. |
-| Notch panel (`portal`) | The only overlay: the Space tiles (click one to open its desktop) and the Teleport drop prompt. Its New, list and gear buttons open the main window. |
-| Space viewer (`space-*`) | Ordinary resizable window. The remote display scales to fit; Actual Size (Cmd+0) shows it 1:1, Cmd+9 fits again. It never enters fullscreen on its own. |
-| Teleport picker (`teleport-picker`) | Standard opaque window: pick an app window, review the manifest, confirm. |
-| PiP (`pip-*`) | Small decorated window that floats above other windows. |
+| Surface                             | What it is                                                                                                                                                                                                                                               |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Main window (`main`)                | Standard, opaque, decorated window. First run shows the welcome flow here; then the Spaces sidebar and detail. New Space (Cmd+N) is a sheet; Settings (Cmd+,) is a page. Closing it hides it; the Dock icon, the menu bar item and the notch reopen it.  |
+| Menu bar item                       | The Cua mark as a template image. Click: open the main window. Right click: status line, Open Cua Spaces, New Space, Settings, Quit.                                                                                                                     |
+| Launch at login                     | Settings → General → Launch Cua Spaces at login (the first run's Done page ticks it). Linux: an XDG autostart entry; Windows: the current user's `Run` key; macOS: a LaunchAgent. A login launch passes `--autostart` and opens without the main window. |
+| Notch panel (`portal`)              | The only overlay: the Space tiles (click one to open its desktop) and the Teleport drop prompt. Its New, list and gear buttons open the main window.                                                                                                     |
+| Space viewer (`space-*`)            | Ordinary resizable window. The remote display scales to fit; Actual Size (Cmd+0) shows it 1:1, Cmd+9 fits again. It never enters fullscreen on its own.                                                                                                  |
+| Teleport picker (`teleport-picker`) | Standard opaque window: pick an app window, review the manifest, confirm.                                                                                                                                                                                |
+| PiP (`pip-*`)                       | Small decorated window that floats above other windows.                                                                                                                                                                                                  |
 
 Nothing is translucent: no vibrancy, no glass theme.
 
@@ -113,11 +113,11 @@ the release .pkg wraps that app.
 `.github/workflows/ci-cua-spaces.yml` builds them unsigned on pushes to main and on pull requests labelled `ci:full`; other pull requests run the frontend and Rust command-layer tests only. Silent / MDM installs can preselect the first-run choice
 (the user still confirms in the app):
 
-| Installer | Flag |
-| --- | --- |
-| NSIS | `setup.exe /S /MODE=host` (writes `%USERPROFILE%\.cua\spaces-install-mode`) |
-| MSI | `msiexec /i … /qn CUA_SPACES_MODE=host` (writes `%ProgramData%\Cua\spaces-install-mode`) |
-| any | launch with `--mode host\|client`, or write `~/.cua/spaces-install-mode` (`/Library/Application Support/Cua/…` or `/etc/cua/…` machine-wide) |
+| Installer | Flag                                                                                                                                         |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| NSIS      | `setup.exe /S /MODE=host` (writes `%USERPROFILE%\.cua\spaces-install-mode`)                                                                  |
+| MSI       | `msiexec /i … /qn CUA_SPACES_MODE=host` (writes `%ProgramData%\Cua\spaces-install-mode`)                                                     |
+| any       | launch with `--mode host\|client`, or write `~/.cua/spaces-install-mode` (`/Library/Application Support/Cua/…` or `/etc/cua/…` machine-wide) |
 
 ### Streams
 
@@ -163,15 +163,15 @@ The Tauri command contract is listed in `TELEPORT.md`.
 
 All commands run from `apps/cua-spaces`.
 
-| Task                        | Command                                               |
-| --------------------------- | ----------------------------------------------------- |
-| Install                     | `pnpm install`                                        |
-| Native dev (Tauri + Vite)   | `pnpm tauri dev`                                      |
-| Browser-only dev (no shell) | `pnpm dev` then open <http://localhost:1420>          |
-| Frontend tests              | `pnpm test`                                           |
-| Rust tests                  | `cargo test --manifest-path src-tauri/Cargo.toml`     |
-| Frontend type-check + build | `pnpm build`                                          |
-| Native build, no bundle     | `pnpm tauri build --no-bundle`                        |
+| Task                        | Command                                           |
+| --------------------------- | ------------------------------------------------- |
+| Install                     | `pnpm install`                                    |
+| Native dev (Tauri + Vite)   | `pnpm tauri dev`                                  |
+| Browser-only dev (no shell) | `pnpm dev` then open <http://localhost:1420>      |
+| Frontend tests              | `pnpm test`                                       |
+| Rust tests                  | `cargo test --manifest-path src-tauri/Cargo.toml` |
+| Frontend type-check + build | `pnpm build`                                      |
+| Native build, no bundle     | `pnpm tauri build --no-bundle`                    |
 
 In browser-only dev the native bridge is replaced by a local stand-in with
 fixtures. <http://localhost:1420> shows the notch panel (add `?display=no-notch`
@@ -199,10 +199,10 @@ The renderer asks Rust for a mode; Rust resizes the window and re-centres it
 at the top of the **current** monitor (falling back to the primary), clamped so
 the frame never leaves the display.
 
-| Mode           | Notched (pt) | No-notch (pt) |
-| -------------- | ------------ | ------------- |
-| `ambient`      | 420 × 38     | 180 × 34      |
-| `switcher`     | 760 × 320    | 760 × 300     |
+| Mode       | Notched (pt) | No-notch (pt) |
+| ---------- | ------------ | ------------- |
+| `ambient`  | 420 × 38     | 180 × 34      |
+| `switcher` | 760 × 320    | 760 × 300     |
 
 ### Notch detection (best-effort)
 
@@ -215,13 +215,13 @@ development-only toggle in the switcher footer, or `⌘⇧D` in dev builds.
 
 ### Keyboard
 
-| Key           | Action                                   |
-| ------------- | ---------------------------------------- |
-| Click ambient | Expand to the switcher                   |
-| `←` `→`       | Move focus across Spaces and **+ New**   |
-| `↩`           | Switch to the focused Space              |
+| Key             | Action                                 |
+| --------------- | -------------------------------------- |
+| Click ambient   | Expand to the switcher                 |
+| `←` `→`         | Move focus across Spaces and **+ New** |
+| `↩`            | Switch to the focused Space            |
 | `⌘N` / `Ctrl+N` | Open New Space in the main window      |
-| `esc`         | Collapse                                 |
+| `esc`           | Collapse                               |
 
 Selecting a Space updates MRU order and the selected state, shows a brief
 "Switching to …" confirmation, and collapses. The OS Space is **not** switched;

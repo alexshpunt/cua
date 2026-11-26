@@ -9,8 +9,7 @@ import { describe, expect, it } from "vitest";
 import { classify, presentHostFailure, refusalCode } from "../src/model/host-failure";
 import { Failure, reply } from "../src/bridge/host";
 
-const MISSING_RELEASE =
-  "http: download: https://github.com/trycua/cua/releases/download/cua-spacesd-v0.2.0/cua-spacesd-aarch64-apple-darwin.tar.gz: HTTP 404";
+const MISSING_RELEASE = "http: download: https://github.com/trycua/cua/releases/download/cua-spacesd-v0.2.0/cua-spacesd-aarch64-apple-darwin.tar.gz: HTTP 404";
 
 describe("host setup failures", () => {
   it("a missing release is a download failure without the URL", () => {
@@ -59,19 +58,20 @@ describe("host setup failures", () => {
     expect(f.message).not.toMatch(/429|http|relay/i);
   });
 
-  it.each(["http: relay: HTTP 429: computer limit for this token reached", "HTTP 429: at most 5 unused pairing codes", "You have 5 of 5 computers in use at once on Pro. Close one or upgrade to Teams."])(
-    "a limit the relay explains is not a throttle: %s",
-    (raw) => expect(classify(raw)).toBe("other"),
-  );
+  it.each([
+    "http: relay: HTTP 429: computer limit for this token reached",
+    "HTTP 429: at most 5 unused pairing codes",
+    "You have 5 of 5 computers in use at once on Pro. Close one or upgrade to Teams.",
+  ])("a limit the relay explains is not a throttle: %s", (raw) => expect(classify(raw)).toBe("other"));
 
-  it.each(["launchctl bootstrap gui/501: Bootstrap failed: 125: Domain does not support specified action (no Aqua session)", "no GUI session: sign in at the console"])(
-    "no one at the screen: %s",
-    (raw) => {
-      const f = presentHostFailure(raw);
-      expect(f.kind).toBe("guiSession");
-      expect(f.message).toContain("Sign in at the Mac");
-    },
-  );
+  it.each([
+    "launchctl bootstrap gui/501: Bootstrap failed: 125: Domain does not support specified action (no Aqua session)",
+    "no GUI session: sign in at the console",
+  ])("no one at the screen: %s", (raw) => {
+    const f = presentHostFailure(raw);
+    expect(f.kind).toBe("guiSession");
+    expect(f.message).toContain("Sign in at the Mac");
+  });
 
   it.each(["relay: HTTP 401 Unauthorized", "not signed in: run `cua login`", "unauthenticated"])("signed out: %s", (raw) => {
     const f = presentHostFailure(raw);
@@ -111,7 +111,10 @@ describe("host setup failures", () => {
     for (const word of ["relay", "enrol", "MFA", "token", "pairing"]) expect(`${f.title} ${f.message}`).not.toContain(word);
     // The kind and the code reach the page.
     const e = reply("1", new Failure("failed", f.message, f));
-    expect(e).toMatchObject({ ok: false, error: { kind: "needsProof", refusalCode: "new_computer_needs_proof", actionLabel: "Use a code from another computer" } });
+    expect(e).toMatchObject({
+      ok: false,
+      error: { kind: "needsProof", refusalCode: "new_computer_needs_proof", actionLabel: "Use a code from another computer" },
+    });
   });
 
   it("reads a refusal code only from the end of the error", () => {

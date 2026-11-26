@@ -87,7 +87,14 @@ describe("Teleport setup sheet", () => {
   it("says a profile with no sign-in data names the profiles that exist", async () => {
     const t = store();
     const r = demoReadiness("Profile 2", "profiles", 2);
-    sheet({ ...r, profile_empty: true, files: { state: "granted", say: 'The browser profile "Profile 2" has no sign-in data. Profiles found: Default, Profile 1.' } }, t);
+    sheet(
+      {
+        ...r,
+        profile_empty: true,
+        files: { state: "granted", say: 'The browser profile "Profile 2" has no sign-in data. Profiles found: Default, Profile 1.' },
+      },
+      t,
+    );
     await screen.findByText(/has no sign-in data/);
     expect(document.querySelector("[data-teleport-setup]")?.getAttribute("data-teleport-setup")).toBe("blocked");
   });
