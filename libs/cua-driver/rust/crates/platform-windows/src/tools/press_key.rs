@@ -215,7 +215,8 @@ impl Tool for PressKeyTool {
         // cached center.
         let background_webview_focus = elem_idx.is_some()
             && delivery.is_background()
-            && crate::input::has_chromium_descendant(hwnd);
+            && (crate::input::is_chromium_target_window(hwnd)
+                || crate::input::has_chromium_descendant(hwnd));
         let mut noact = if elem_idx.is_some() && delivery.is_background() {
             Some(crate::input::NoActivateGuard::arm(
                 windows::Win32::Foundation::HWND(hwnd as *mut _),

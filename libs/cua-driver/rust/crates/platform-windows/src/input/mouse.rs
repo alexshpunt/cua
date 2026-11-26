@@ -367,13 +367,26 @@ pub fn post_drag_screen(
     modifiers: &[&str],
 ) -> Result<()> {
     let root_hwnd = HWND(root as *mut _);
-    let (target, c_from) = deepest_child(
-        root_hwnd,
-        POINT {
+    // The measured Chromium background route posts all phases to its
+    // top-level frame; other windows receive input on their deepest child.
+    let (target, c_from) = if is_chromium_target_window(root) {
+        let mut point = POINT {
             x: sx_from,
             y: sy_from,
-        },
-    );
+        };
+        unsafe {
+            let _ = ScreenToClient(root_hwnd, &mut point);
+        }
+        (root_hwnd, point)
+    } else {
+        deepest_child(
+            root_hwnd,
+            POINT {
+                x: sx_from,
+                y: sy_from,
+            },
+        )
+    };
     let mut c_to = POINT { x: sx_to, y: sy_to };
     unsafe {
         let _ = ScreenToClient(target, &mut c_to);

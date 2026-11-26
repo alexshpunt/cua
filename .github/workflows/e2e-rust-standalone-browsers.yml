@@ -74,7 +74,9 @@ jobs:
             artifact: rust-browser-linux-x11
             products: chrome
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    # Cold Windows builds plus the complete two-browser matrix and report can
+    # exceed an hour; retain time for the report and artifact upload.
+    timeout-minutes: 120
     env:
       CUA_E2E_SOURCE_SHA: ${{ needs.source.outputs.sha }}
       CUA_TEST_REQUIRE_EXTERNAL_BROWSERS: "1"

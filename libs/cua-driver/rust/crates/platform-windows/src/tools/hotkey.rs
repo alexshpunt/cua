@@ -12,7 +12,8 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 
 use super::impl_::{
-    focus_by_pixel, focus_cached_element_for_foreground, position_keyboard_cursor, ToolState,
+    bitmap_to_screen, focus_by_pixel, focus_cached_element_for_foreground,
+    position_keyboard_cursor, resolve_onscreen_point_with_scroll, ToolState,
 };
 
 // ── hotkey ────────────────────────────────────────────────────────────────────
@@ -290,6 +291,48 @@ impl Tool for HotkeyTool {
             // which background must not do. Surface background_unavailable; the
             // agent escalates to delivery_mode:"foreground".
             return crate::input::delivery::background_unavailable_error(hwnd, event_kind);
+        }
+        // A named Chromium element needs renderer focus before the posted
+        // chord. UIA SetFocus can activate the host; the background pixel
+        // route establishes focus without fronting the window.
+        if let Some(idx) = elem_idx.filter(|_| {
+            delivery.is_background()
+                && (crate::input::is_chromium_target_window(hwnd)
+                    || crate::input::has_chromium_descendant(hwnd))
+        }) {
+            let Some((cx, cy)) = admitted.as_ref().map(|element| element.center) else {
+                return ToolResult::error(format!(
+                    "Element {idx} not in cache for hwnd={hwnd}. Call get_window_state first."
+                ));
+            };
+            let (cx, cy) = match resolve_onscreen_point_with_scroll(
+                &admitted,
+                hwnd,
+                idx,
+                cx,
+                cy,
+                "focusing for key delivery",
+            ) {
+                Ok(point) => point,
+                Err(result) => return result,
+            };
+            let (origin_x, origin_y) = bitmap_to_screen(hwnd, 0, 0);
+            if let Err(error) = focus_by_pixel(
+                &self.state,
+                pid,
+                Some(hwnd),
+                (cx - origin_x) as f64,
+                (cy - origin_y) as f64,
+                false,
+                args.opt_str("session"),
+                args.opt_str("_session_id"),
+                false,
+                true,
+            )
+            .await
+            {
+                return error;
+            }
         }
         // delivery_mode:"foreground" — explicit SendInput swap (the path that
         // unblocks TranslateAccelerator-style apps). A Background call that
