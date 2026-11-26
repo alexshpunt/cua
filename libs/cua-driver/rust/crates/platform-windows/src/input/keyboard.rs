@@ -2954,9 +2954,6 @@ mod busy_target_activation_tests {
                 if stopped.recv_timeout(Duration::from_secs(12)).is_err() {
                     timed_out.store(true, Ordering::SeqCst);
                     STALL_RELEASE.store(true, Ordering::SeqCst);
-                    eprintln!(
-                        "[foreground-change] stall watchdog released target after 12 seconds"
-                    );
                 }
             });
             Self {
@@ -3316,28 +3313,25 @@ mod busy_target_activation_tests {
             );
             let _ = typing_tx.send(result);
         });
-        let started = Instant::now();
-        eprintln!("[foreground-change] waiting for target stall");
         stall.wait_until_blocked();
-        eprintln!(
-            "[foreground-change] target stalled at {:?}; requesting foreground change",
-            started.elapsed()
-        );
-        bring_forward(other.hwnd);
-        eprintln!(
-            "[foreground-change] foreground changed at {:?}; waiting for typing worker",
-            started.elapsed()
+        // Do not attach this test thread to the stalled foreground queue: that
+        // can make SetForegroundWindow wait for the deliberately blocked handler.
+        // A direct request models a user's foreground change without joining
+        // the driver's target queue.
+        let requested = unsafe {
+            windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow(other.hwnd).as_bool()
+        };
+        assert!(
+            requested && wait_for_exact_foreground(other.hwnd, Duration::from_secs(2)),
+            "other window did not become foreground while the target was stalled"
         );
         let result = wait_for_stalled_typing(&stall, typing_rx, typing);
-        eprintln!(
-            "[foreground-change] typing worker completed at {:?}",
-            started.elapsed()
-        );
         let error = result.expect_err("a foreground change must stop typing");
         let turn = error
             .downcast_ref::<ForegroundInputError>()
             .expect("foreground receipt")
             .turn;
+        assert_eq!(turn, TypingTurn::Lost);
         assert!(!restores_previous(turn));
         assert!(error.to_string().contains("foreground_lost"), "{error}");
         stall.assert_before_deadline();
