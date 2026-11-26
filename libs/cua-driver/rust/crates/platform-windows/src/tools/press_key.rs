@@ -185,6 +185,18 @@ impl Tool for PressKeyTool {
             }
         };
 
+        // UIA focus can activate Chromium, while clicking an AX target to focus
+        // it may invoke page handlers. Refuse before either side effect.
+        if delivery.is_background()
+            && elem_idx.is_some()
+            && crate::input::is_chromium_target_window(hwnd)
+        {
+            return crate::input::delivery::background_unavailable_error(
+                hwnd,
+                EventKind::Keystroke,
+            );
+        }
+
         // Classify known background drops before touching UIA focus. Focusing
         // first made an honest Chromium refusal transiently activate the target.
         let event_kind = if mods.is_empty() {
@@ -215,8 +227,7 @@ impl Tool for PressKeyTool {
         // cached center.
         let background_webview_focus = elem_idx.is_some()
             && delivery.is_background()
-            && (crate::input::is_chromium_target_window(hwnd)
-                || crate::input::has_chromium_descendant(hwnd));
+            && crate::input::has_chromium_descendant(hwnd);
         let mut noact = if elem_idx.is_some() && delivery.is_background() {
             Some(crate::input::NoActivateGuard::arm(
                 windows::Win32::Foundation::HWND(hwnd as *mut _),
