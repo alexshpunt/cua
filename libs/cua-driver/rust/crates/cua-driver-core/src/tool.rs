@@ -2682,11 +2682,9 @@ impl ToolRegistry {
                     | crate::desktop_activity::TOOL
             );
         let private_consent_turn = is_existing_profile_prepare(resolved_name, &args);
-        let lane_refusal = if requires_desktop_coordination(
-            resolved_name,
-            &args,
-            tool.has_independent_input_lane(&args),
-        ) {
+        let independent_lane = tool.has_independent_input_lane(&args);
+        let lane_refusal = if requires_desktop_coordination(resolved_name, &args, independent_lane)
+        {
             input_admission.admit(Lane::Desktop).await.err()
         } else {
             None

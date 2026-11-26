@@ -125,13 +125,6 @@ fn apply_msg(
         }
         _ => None,
     };
-    let press = matches!(
-        &msg,
-        OverlayMsg::Cmd(KeyedOverlayCommand {
-            cmd: OverlayCommand::ClickPulse { .. },
-            ..
-        })
-    );
     if let OverlayMsg::Cmd(KeyedOverlayCommand {
         key,
         cmd: OverlayCommand::MoveTo { x, y, .. },
@@ -145,7 +138,7 @@ fn apply_msg(
         events.retain(|pending| &pending.event.cursor_id != key);
     }
     if let Some(key) = outcome.applied_key() {
-        queue_cursor_event(key, &map.cursors[key], before, press, events);
+        queue_cursor_event(key, &map.cursors[key], before, false, events);
     }
     outcome.applied_key().cloned()
 }
@@ -200,10 +193,13 @@ fn tick_cursor(
     dt: f64,
     events: &mut Vec<PendingCursorEvent>,
 ) -> bool {
-    let before = cursor_hook::cursor_hook_enabled()
+    let mut before = cursor_hook::cursor_hook_enabled()
         .then(|| cursor_sample(state))
         .flatten();
-    let arrived = state.tick(dt);
+    let arrived = state.tick_observing(dt, |state, press| {
+        queue_cursor_event(key, state, before, press, events);
+        before = cursor_sample(state);
+    });
     queue_cursor_event(key, state, before, false, events);
     arrived
 }
@@ -612,6 +608,21 @@ impl RenderEntry for RenderState {
     }
 
     fn tick(&mut self, dt: f64) -> bool {
+        self.tick_observing(dt, |_, _| {})
+    }
+    fn needs_frame_tick(&self) -> bool {
+        !self.playback.is_empty() || self.core.needs_frame_tick()
+    }
+    // `tick` (arrival on path end) and `needs_frame_tick` use the shared
+    // defaults. The shared predicate keeps a revealed cursor with resting
+    // motion (the float bob) at the ACTIVE cadence, and parks a reduced-motion
+    // cursor through its constant-alpha idle-hide countdown; that countdown is
+    // advanced by [`RenderState::in_idle_countdown`] at the slow IDLE cadence.
+}
+
+impl RenderState {
+    /// Observe each applied command, not its admission to bounded playback.
+    fn tick_observing(&mut self, dt: f64, mut observe: impl FnMut(&Self, bool)) -> bool {
         self.elapsed_ms += if dt.is_finite() {
             dt.max(0.0) * 1000.0
         } else {
@@ -628,7 +639,6 @@ impl RenderEntry for RenderState {
                     self.playback.remaining(now).clamp(1, 180) as f64;
             }
             match &cmd {
-                // A separate safety lease covers lost releases; queue emptiness says nothing about a real hold.
                 // Native drag/held paths are bounded to 10 seconds and tracking refreshes this lease.
                 OverlayCommand::SetPressed(true) => {
                     self.held_until_ms = Some(self.elapsed_ms + 30_000.0)
@@ -636,8 +646,10 @@ impl RenderEntry for RenderState {
                 OverlayCommand::SetPressed(false) => self.held_until_ms = None,
                 _ => {}
             }
+            let press = matches!(cmd, OverlayCommand::ClickPulse { .. });
             self.core.apply_command_base(cmd, false, false);
             self.core.motion.glide_duration_ms = motion;
+            observe(self, press);
         }
         if self
             .held_until_ms
@@ -649,17 +661,6 @@ impl RenderEntry for RenderState {
         }
         self.core.tick_motion(dt.clamp(0.0, 0.05))
     }
-    fn needs_frame_tick(&self) -> bool {
-        !self.playback.is_empty() || self.core.needs_frame_tick()
-    }
-    // `tick` (arrival on path end) and `needs_frame_tick` use the shared
-    // defaults. The shared predicate keeps a revealed cursor with resting
-    // motion (the float bob) at the ACTIVE cadence, and parks a reduced-motion
-    // cursor through its constant-alpha idle-hide countdown; that countdown is
-    // advanced by [`RenderState::in_idle_countdown`] at the slow IDLE cadence.
-}
-
-impl RenderState {
     /// True while the cursor rests on-screen at full alpha with idle-hide
     /// pending: pixels are static (alpha pinned at 1.0) but `idle_secs` must
     /// keep accruing wall-clock time so the fade still starts on schedule.
@@ -1974,41 +1975,90 @@ mod tests {
         assert_ne!((moved.x, moved.y), (start.0, start.1));
         assert_ne!((moved.x, moved.y), (80.0, 70.0));
 
+        events.clear();
         apply_msg(
             &mut map,
             command(key, OverlayCommand::ClickPulse { x: 80.0, y: 70.0 }),
             &mut events,
         );
-        assert!(events.last().unwrap().event.pressed);
-        let presses = events
-            .iter()
-            .filter(|pending| pending.event.pressed)
-            .count();
         apply_msg(
             &mut map,
             command(key, OverlayCommand::ClickPulse { x: 80.0, y: 70.0 }),
             &mut events,
         );
-        assert_eq!(
-            events
-                .iter()
-                .filter(|pending| pending.event.pressed)
-                .count(),
-            presses + 1
-        );
+        assert!(events.is_empty(), "queued clicks must not publish early");
+        tick_cursor(key, map.cursors.get_mut(key).unwrap(), 0.016, &mut events);
+        assert!(events.iter().all(|pending| !pending.event.pressed));
+        let mut pulse_count = 0;
         for _ in 0..200 {
+            let previous_age = map.cursors[key].core.click_age;
+            events.clear();
             tick_cursor(key, map.cursors.get_mut(key).unwrap(), 0.016, &mut events);
+            let age = map.cursors[key].core.click_age;
+            if age.is_some() && (previous_age.is_none() || age < previous_age) {
+                pulse_count += 1;
+                let press = events.iter().find(|pending| pending.event.pressed).unwrap();
+                let rendered = cursor_sample(&map.cursors[key]).unwrap();
+                assert!((press.event.x - rendered.0).hypot(press.event.y - rendered.1) < 5.0);
+                assert!((press.event.x - start.0).hypot(press.event.y - start.1) > 1.0);
+            }
         }
+        assert_eq!(pulse_count, 2, "each playback pulse reports a press");
         assert!(
-            !events.last().unwrap().event.pressed,
+            !cursor_sample(&map.cursors[key]).unwrap().2,
             "click pulse releases"
         );
 
+        // A second pulse at the same hotspot must publish even when the
+        // first pulse is still pressed and the sampled state did not change.
+        let repeated = "windows-cursor-hook-repeated";
+        apply_msg(
+            &mut map,
+            command(
+                repeated,
+                OverlayCommand::SnapTo {
+                    x: 40.0,
+                    y: 30.0,
+                    heading_radians: Some(0.0),
+                },
+            ),
+            &mut events,
+        );
+        events.clear();
+        for _ in 0..2 {
+            apply_msg(
+                &mut map,
+                command(repeated, OverlayCommand::ClickPulse { x: 40.0, y: 30.0 }),
+                &mut events,
+            );
+        }
+        assert!(events.is_empty());
+        tick_cursor(
+            repeated,
+            map.cursors.get_mut(repeated).unwrap(),
+            0.016,
+            &mut events,
+        );
+        assert_eq!(events.len(), 1);
+        assert!(events[0].event.pressed);
+        let first = (events[0].event.x, events[0].event.y);
+        events.clear();
+        tick_cursor(
+            repeated,
+            map.cursors.get_mut(repeated).unwrap(),
+            0.080,
+            &mut events,
+        );
+        assert_eq!(events.len(), 1);
+        assert!(events[0].event.pressed);
+        assert_eq!((events[0].event.x, events[0].event.y), first);
+        events.clear();
         apply_msg(
             &mut map,
             command(key, OverlayCommand::SetPressed(true)),
             &mut events,
         );
+        tick_cursor(key, map.cursors.get_mut(key).unwrap(), 0.016, &mut events);
         assert!(events.last().unwrap().event.pressed);
         apply_msg(
             &mut map,
@@ -2039,6 +2089,7 @@ mod tests {
             command(key, OverlayCommand::SetPressed(false)),
             &mut events,
         );
+        tick_cursor(key, map.cursors.get_mut(key).unwrap(), 0.016, &mut events);
         assert!(!events.last().unwrap().event.pressed);
         publish_cursor_events(std::mem::take(&mut events));
         assert!(!received.lock().unwrap().is_empty());
@@ -2063,6 +2114,7 @@ mod tests {
             command(key, OverlayCommand::ClickPulse { x: 4.0, y: 5.0 }),
             &mut events,
         );
+        tick_cursor(key, map.cursors.get_mut(key).unwrap(), 0.016, &mut events);
         assert!(!events.is_empty());
         apply_msg(&mut map, OverlayMsg::Remove(key.to_owned()), &mut events);
         assert!(
@@ -2083,6 +2135,12 @@ mod tests {
         apply_msg(
             &mut map,
             command(ending, OverlayCommand::ClickPulse { x: 4.0, y: 5.0 }),
+            &mut events,
+        );
+        tick_cursor(
+            ending,
+            map.cursors.get_mut(ending).unwrap(),
+            0.016,
             &mut events,
         );
         assert_eq!(events.len(), 1);
@@ -2115,6 +2173,12 @@ mod tests {
         apply_msg(
             &mut map,
             command(&retired, OverlayCommand::ClickPulse { x: 4.0, y: 5.0 }),
+            &mut events,
+        );
+        tick_cursor(
+            &retired,
+            map.cursors.get_mut(&retired).unwrap(),
+            0.016,
             &mut events,
         );
         assert_eq!(events.len(), 1);
@@ -2158,6 +2222,12 @@ mod tests {
             command(revived, OverlayCommand::ClickPulse { x: 4.0, y: 5.0 }),
             &mut events,
         );
+        tick_cursor(
+            revived,
+            map.cursors.get_mut(revived).unwrap(),
+            0.016,
+            &mut events,
+        );
         let stale = std::mem::take(&mut events);
         cua_driver_core::session::fire_session_end(revived);
         assert!(cua_driver_core::session::revive_session(revived));
@@ -2174,6 +2244,12 @@ mod tests {
         apply_msg(
             &mut map,
             command(revived, OverlayCommand::ClickPulse { x: 9.0, y: 8.0 }),
+            &mut events,
+        );
+        tick_cursor(
+            revived,
+            map.cursors.get_mut(revived).unwrap(),
+            0.016,
             &mut events,
         );
         assert_eq!(
