@@ -1489,6 +1489,65 @@ fn harness_wpf_press_key_accelerator() {
 
 #[test]
 #[ignore]
+fn harness_wpf_background_px_key_refuses_before_click() {
+    execute_case(
+        native_background_case("wpf", "press_key", Targeting::Px, DriverRoute::PostMessage)
+            .expecting_refusal(vec![RefusalCode::BackgroundUnavailable]),
+        |evidence| {
+            with_named_session("windows-wpf-keyboard-px-refusal", |pid, wid, driver| {
+                *evidence = recording_evidence(driver.recording_dir());
+                let bounds = window_bounds(driver, pid, wid);
+                let before = snapshot(driver, pid, wid);
+                let (x, y) = pixel_center(&before, "btn-increment", bounds);
+                let (text_response, _) = observe_background(driver, pid, wid, |driver| {
+                    driver.call(
+                        "type_text",
+                        serde_json::json!({
+                            "pid": pid as i64, "window_id": wid, "text": "x",
+                            "x": x, "y": y, "delivery_mode": "background"
+                        }),
+                    )
+                });
+                assert!(text_response.is_error());
+                assert_eq!(
+                    text_response.structured()["code"].as_str(),
+                    Some("background_unavailable")
+                );
+                assert!(snapshot(driver, pid, wid).text().contains("counter=0"));
+                let (response, mut passed) = observe_background(driver, pid, wid, |driver| {
+                    driver.call(
+                        "press_key",
+                        serde_json::json!({
+                            "pid": pid as i64, "window_id": wid, "key": "f5",
+                            "x": x, "y": y, "delivery_mode": "background"
+                        }),
+                    )
+                });
+                assert!(
+                    response.is_error(),
+                    "background key unexpectedly succeeded: {}",
+                    response.text()
+                );
+                let code = response.structured()["code"]
+                    .as_str()
+                    .and_then(RefusalCode::from_driver_code)
+                    .expect("background key refusal needs a structured code");
+                let after = snapshot(driver, pid, wid);
+                assert!(
+                    after.text().contains("counter=0"),
+                    "refused key clicked the button: {}",
+                    after.text()
+                );
+                passed.push(OracleKind::FixtureState);
+                Observation::refused(code, passed, response.text(), Evidence::default())
+            })
+            .expect("required WPF session did not start")
+        },
+    );
+}
+
+#[test]
+#[ignore]
 fn harness_wpf_press_key_letter_accelerator() {
     run_foreground_case(
         "press_key",

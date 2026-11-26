@@ -122,46 +122,6 @@ impl Tool for PressKeyTool {
         // Swift requires window_id when element_index is supplied — ports the
         // same validation.
 
-        // px form: pixel-click to focus, then the key goes to the focused element.
-        // Reuses click's translation + delivery_mode; after it, deliver via the
-        // plain background post path (the focus-click already handled fronting if
-        // foreground), so skip the background_unavailable check + foreground swap
-        // below. Mirrors macOS press_key.
-        let px_focus = {
-            let px = args.get("x").and_then(|v| v.as_f64());
-            let py = args.get("y").and_then(|v| v.as_f64());
-            if let (Some(cx), Some(cy)) = (px, py) {
-                if elem_idx.is_some() {
-                    return ToolResult::error(
-                        "Pass either element_token (ax) or x,y (px) to press_key, not both.",
-                    );
-                }
-                let from_zoom = args
-                    .get("from_zoom")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                if let Err(e) = focus_by_pixel(
-                    &self.state,
-                    pid,
-                    hwnd_opt,
-                    cx,
-                    cy,
-                    delivery.is_foreground(),
-                    args.opt_str("session"),
-                    args.opt_str("_session_id"),
-                    from_zoom,
-                    false,
-                )
-                .await
-                {
-                    return e;
-                }
-                true
-            } else {
-                false
-            }
-        };
-
         let hwnd = match hwnd_opt {
             Some(h) => h,
             None => {
@@ -210,6 +170,43 @@ impl Tool for PressKeyTool {
             return crate::input::delivery::background_unavailable_error(hwnd, event_kind);
         }
 
+        // px form: pixel-click to focus, then the key goes to the focused element.
+        // The focus click handles fronting for foreground delivery; known
+        // background refusals have already been checked above.
+        let px_focus = {
+            let px = args.get("x").and_then(|v| v.as_f64());
+            let py = args.get("y").and_then(|v| v.as_f64());
+            if let (Some(cx), Some(cy)) = (px, py) {
+                if elem_idx.is_some() {
+                    return ToolResult::error(
+                        "Pass either element_token (ax) or x,y (px) to press_key, not both.",
+                    );
+                }
+                let from_zoom = args
+                    .get("from_zoom")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if let Err(e) = focus_by_pixel(
+                    &self.state,
+                    pid,
+                    Some(hwnd),
+                    cx,
+                    cy,
+                    delivery.is_foreground(),
+                    args.opt_str("session"),
+                    args.opt_str("_session_id"),
+                    from_zoom,
+                    false,
+                )
+                .await
+                {
+                    return e;
+                }
+                true
+            } else {
+                false
+            }
+        };
         // The px form's focus click already moved the cursor. Otherwise place
         // a named session's cursor so a keyboard-first session stays visible.
         if !px_focus {
