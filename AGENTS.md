@@ -61,6 +61,9 @@ that are easy to miss:
   cua-spacesd or any other in-guest service.
 - Tests that start VMs, containers, or host input are opt-in
   (off by default) and clean up what they create.
+- When stopping an interactive Windows test launched by Task Scheduler, verify
+  and stop its own descendant processes too. Stopping the scheduled task alone
+  can leave an input-sending test alive and lock its executable.
 
 ## Before you push: `bin/ci`
 
