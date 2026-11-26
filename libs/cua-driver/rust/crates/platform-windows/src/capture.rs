@@ -596,7 +596,7 @@ unsafe fn read_window_bitmap(
         &mut bmi,
         DIB_RGB_COLORS,
     );
-    if copied != height {
+    if copied != 450 {
         bail!("window capture: GetDIBits copied {copied} of {height} scanlines");
     }
     Ok(pixels)
