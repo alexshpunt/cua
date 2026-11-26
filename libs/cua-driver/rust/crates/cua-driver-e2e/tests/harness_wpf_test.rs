@@ -1498,7 +1498,7 @@ fn harness_wpf_background_px_key_refuses_before_click() {
                 *evidence = recording_evidence(driver.recording_dir());
                 let bounds = window_bounds(driver, pid, wid);
                 let before = snapshot(driver, pid, wid);
-                let (x, y) = pixel_center(&before, "btn-increment", bounds);
+                let (x, y) = pixel_center(&before, "border-click-target", bounds);
                 let (text_response, _) = observe_background(driver, pid, wid, |driver| {
                     driver.call(
                         "type_text",
@@ -1513,7 +1513,7 @@ fn harness_wpf_background_px_key_refuses_before_click() {
                     text_response.structured()["code"].as_str(),
                     Some("background_unavailable")
                 );
-                assert!(snapshot(driver, pid, wid).text().contains("counter=0"));
+                assert!(snapshot(driver, pid, wid).text().contains("clicks=0"));
                 let (response, mut passed) = observe_background(driver, pid, wid, |driver| {
                     driver.call(
                         "press_key",
@@ -1534,7 +1534,7 @@ fn harness_wpf_background_px_key_refuses_before_click() {
                     .expect("background key refusal needs a structured code");
                 let after = snapshot(driver, pid, wid);
                 assert!(
-                    after.text().contains("counter=0"),
+                    after.text().contains("clicks=0"),
                     "refused key clicked the button: {}",
                     after.text()
                 );
