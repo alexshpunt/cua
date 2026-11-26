@@ -408,6 +408,15 @@ impl Tool for DragTool {
             }
         }
 
+        // Chromium can accept a posted press but lose later drag phases after
+        // pointer capture. Refuse before the press rather than leaving a partial
+        // gesture behind; foreground delivery remains available.
+        if delivery.is_background() && crate::input::is_chromium_target_window(hwnd) {
+            return crate::input::delivery::background_unavailable_error(
+                hwnd,
+                EventKind::MouseMove,
+            );
+        }
         // Synthetic background input cannot guarantee cursor/focus posture.
         // Refuse before input rather than restoring an unread stream by timer.
         if delivery.is_background()
