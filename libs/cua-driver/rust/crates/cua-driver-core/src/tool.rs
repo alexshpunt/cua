@@ -40,6 +40,8 @@ tokio::task_local! {
     static DISPATCH_RUNTIME_SCOPE: String;
     /// The physical desktop action this task dispatches.
     static DESKTOP_LEASE: DesktopLease;
+    /// Per-PID text admission inherited by native workers.
+    static PID_LEASE: Option<Arc<PidLane>>;
 }
 
 /// Return the immutable authorization context bound to the current dispatch.
@@ -128,7 +130,7 @@ impl Lane {
 /// as one once the call's physical action returns.
 #[derive(Default)]
 struct InputAdmission {
-    pid: Option<PidLane>,
+    pid: Option<Arc<PidLane>>,
     desktop: Option<DesktopCall>,
 }
 
@@ -138,7 +140,7 @@ impl InputAdmission {
     /// refuses only behind a worker that outlived its call.
     async fn admit(&mut self, lane: Lane) -> Result<(), ToolResult> {
         match lane {
-            Lane::Pid(pid) => self.pid = Some(PidLane::claim(pid)?),
+            Lane::Pid(pid) => self.pid = Some(Arc::new(PidLane::claim(pid)?)),
             Lane::Desktop => self.desktop = Some(DesktopCall::acquire().await?),
         }
         Ok(())
@@ -343,10 +345,42 @@ impl Drop for DesktopCall {
     }
 }
 
+/// Holds both the process-local desktop lane and the optional shared-process lock.
+pub struct ActionAdmission {
+    _desktop: Option<DesktopLease>,
+    _pid: Option<Arc<PidLane>>,
+    _shared: Option<Arc<crate::input_lock::InputTurn>>,
+}
+
 /// Keep physical input admission alive in a native worker after caller cancellation.
 /// Only the registry can install this lease; tool arguments cannot supply it.
-pub fn retain_desktop_action_admission() -> Option<DesktopLease> {
-    DesktopLease::current()
+pub fn retain_desktop_action_admission() -> Option<ActionAdmission> {
+    let desktop = DesktopLease::current();
+    let pid = PID_LEASE.try_with(Clone::clone).ok().flatten();
+    let shared = crate::input_lock::current();
+    (desktop.is_some() || pid.is_some() || shared.is_some()).then_some(ActionAdmission {
+        _desktop: desktop,
+        _pid: pid,
+        _shared: shared,
+    })
+}
+/// Restore admission task-locals on a blocking thread, including for nested workers.
+pub(crate) fn with_action_admission<T>(
+    admission: Option<ActionAdmission>,
+    action: impl FnOnce() -> T,
+) -> T {
+    let Some(admission) = admission else {
+        return action();
+    };
+    crate::input_lock::sync_scope(admission._shared.clone(), || {
+        PID_LEASE.sync_scope(admission._pid.clone(), || {
+            if let Some(desktop) = admission._desktop.clone() {
+                DESKTOP_LEASE.sync_scope(desktop, action)
+            } else {
+                action()
+            }
+        })
+    })
 }
 
 pub use cua_driver_contract::{CAPABILITY_VERSION, TOOLS_LIST_SCHEMA_VERSION};
@@ -2690,21 +2724,24 @@ impl ToolRegistry {
             None
         };
         // Other agents' driver processes on this desktop wait for the same action to finish.
-        let _shared_input = match input_admission.desktop.as_ref() {
-            Some(_) => match crate::input_lock::acquire().await {
-                Ok(turn) => turn,
-                Err(_) if crate::human_stop::stopped() => return crate::human_stop::refusal(),
-                Err(message) => {
-                    return ToolResult::error(message.clone()).with_structured(serde_json::json!({
-                        "status": "refused",
-                        "effect": "refused",
-                        "code": crate::input_lock::BUSY_CODE,
-                        "refusal": { "code": crate::input_lock::BUSY_CODE, "message": message },
-                    }))
+        let shared_input =
+            if requires_shared_input_lock(tool.def().read_only) && lane_refusal.is_none() {
+                match crate::input_lock::acquire().await {
+                    Ok(turn) => turn,
+                    Err(_) if crate::human_stop::stopped() => return crate::human_stop::refusal(),
+                    Err(message) => return ToolResult::error(message.clone()).with_structured(
+                        serde_json::json!({
+                            "status": "refused",
+                            "effect": "refused",
+                            "code": crate::input_lock::BUSY_CODE,
+                            "refusal": { "code": crate::input_lock::BUSY_CODE, "message": message },
+                        }),
+                    ),
                 }
-            },
-            None => None,
-        };
+            } else {
+                None
+            };
+        let shared_input = shared_input.map(Arc::new);
         // Checked once the action holds its input lanes, so a read that
         // finished while it waited for them is seen.
         let lane_refusal = lane_refusal.or_else(|| {
@@ -2769,11 +2806,18 @@ impl ToolRegistry {
         );
         let mut result =
             crate::recording::scope_dispatch_click_capture(pending_turn.as_ref(), async {
-                match (&input_admission.desktop, lane_refusal) {
-                    (_, Some(refusal)) => refusal,
-                    (Some(call), None) => call.scope(invoke).await,
-                    (None, None) => invoke.await,
-                }
+                crate::input_lock::scope(shared_input.clone(), async {
+                    PID_LEASE
+                        .scope(input_admission.pid.clone(), async {
+                            match (&input_admission.desktop, lane_refusal) {
+                                (_, Some(refusal)) => refusal,
+                                (Some(call), None) => call.scope(invoke).await,
+                                (None, None) => invoke.await,
+                            }
+                        })
+                        .await
+                })
+                .await
             })
             .await;
         match resolved_name {
@@ -3814,6 +3858,11 @@ fn is_physical_desktop_action(tool: &str) -> bool {
                 | "restore_window"
                 | "manage_window"
         )
+}
+
+// Shared desktop users serialize every mutating tool across processes.
+fn requires_shared_input_lock(read_only: bool) -> bool {
+    !read_only
 }
 
 fn requires_desktop_coordination(tool: &str, args: &Value, independent_lane: bool) -> bool {
@@ -7583,6 +7632,65 @@ resources:
         ] {
             assert!(!is_physical_desktop_action(name), "{name}");
         }
+    }
+
+    #[tokio::test]
+    async fn cancelled_background_text_keeps_its_pid_lane_until_native_worker_stops() {
+        let pid = i64::from(std::process::id()) + 1_000_000_000;
+        let lane = Arc::new(super::PidLane::claim(pid).unwrap());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let dispatch = tokio::spawn(super::PID_LEASE.scope(Some(lane), async move {
+            crate::desktop_activity::spawn_blocking(move || {
+                started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                let _ = finished_tx.send(());
+            })
+            .await
+            .unwrap();
+        }));
+        started_rx.await.unwrap();
+        dispatch.abort();
+        assert!(dispatch.await.unwrap_err().is_cancelled());
+        let refusal = super::PidLane::claim(pid).unwrap_err();
+        assert_eq!(
+            refusal.structured_content.unwrap()["refusal"]["code"],
+            "input_busy"
+        );
+        drop(super::PidLane::claim(pid + 1).unwrap());
+        release_tx.send(()).unwrap();
+        finished_rx.await.unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            if let Ok(lane) = super::PidLane::claim(pid) {
+                drop(lane);
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "worker did not release pid lane"
+            );
+            tokio::task::yield_now().await;
+        }
+    }
+
+    #[test]
+    fn shared_lock_covers_both_independent_background_and_foreground_input() {
+        let background = serde_json::json!({"pid":10,"window_id":20,"delivery_mode":"background"});
+        let foreground = serde_json::json!({"pid":10,"window_id":20,"delivery_mode":"foreground"});
+        assert!(!super::requires_desktop_coordination(
+            "click",
+            &background,
+            true
+        ));
+        assert!(super::requires_desktop_coordination(
+            "click",
+            &foreground,
+            true
+        ));
+        assert!(super::requires_shared_input_lock(false));
+        assert!(!super::requires_shared_input_lock(true));
     }
 
     #[test]

@@ -542,7 +542,7 @@ impl Tool for TypeTextTool {
             if !is_chromium_embedder(pid) && !is_webkitgtk_embedder(pid) {
                 if let Some(element) = token.clone() {
                     let text_ax = text.clone();
-                    let written = tokio::task::spawn_blocking(move || {
+                    let written = cua_driver_core::desktop_activity::spawn_blocking(move || {
                         crate::atspi::type_into_token(pid, &element, &text_ax)
                     })
                     .await;
@@ -651,7 +651,7 @@ impl Tool for TypeTextTool {
         }) {
             let text_at = text.clone();
             let target = element.clone();
-            let targeted = tokio::task::spawn_blocking(move || {
+            let targeted = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::atspi::type_into_token(pid, &target, &text_at)
             })
             .await;
@@ -677,7 +677,7 @@ impl Tool for TypeTextTool {
                 return error;
             }
             let text_w = text.clone();
-            let result = tokio::task::spawn_blocking(move || {
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::wayland::inject_type_text(pid, xid, &text_w)
             })
             .await;
@@ -782,7 +782,7 @@ impl Tool for TypeTextTool {
         if let Some(element) = token.clone() {
             let text_at = text.clone();
             let target = element.clone();
-            let targeted = tokio::task::spawn_blocking(move || {
+            let targeted = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::atspi::type_into_token(pid, &target, &text_at)
             })
             .await;
@@ -1092,9 +1092,10 @@ impl Tool for TypeTextTool {
 
         // Try AT-SPI EditableText first (focus-free, works for Qt6/GTK4).
         let text_clone = text.clone();
-        let atspi_result =
-            tokio::task::spawn_blocking(move || crate::atspi::type_into_editable(pid, &text_clone))
-                .await;
+        let atspi_result = cua_driver_core::desktop_activity::spawn_blocking(move || {
+            crate::atspi::type_into_editable(pid, &text_clone)
+        })
+        .await;
 
         match atspi_result {
             Ok(Ok(())) => {

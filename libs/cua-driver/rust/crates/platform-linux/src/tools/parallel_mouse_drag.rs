@@ -85,7 +85,11 @@ async fn parallel_drag_inject(args: &Value) -> ToolResult {
         });
     }
     let n = drags.len();
-    match tokio::task::spawn_blocking(move || crate::wayland::inject_parallel_drags(&drags)).await {
+    match cua_driver_core::desktop_activity::spawn_blocking(move || {
+        crate::wayland::inject_parallel_drags(&drags)
+    })
+    .await
+    {
         Ok(Ok(())) => ToolResult::text(format!(
             "Ran {n} concurrent drags (multi-cursor via cua-compositor)."
         )),

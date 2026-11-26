@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Result};
-use cua_driver_core::tool::DesktopLease;
+use cua_driver_core::tool::{retain_desktop_action_admission, ActionAdmission};
 
 /// One tool call: its deadline, whether its caller stopped waiting, and
 /// the desktop lease of the task that started it.
@@ -33,7 +33,7 @@ pub struct Action {
     /// Held across each admitted send, so [`Action::abandon`] can wait for
     /// one under way after shutting the fenced sockets under `phase`.
     sending: Mutex<()>,
-    _lease: Option<DesktopLease>,
+    _lease: Option<ActionAdmission>,
 }
 
 enum ActionPhase {
@@ -55,7 +55,7 @@ impl Action {
             deadline: Instant::now() + budget,
             phase: Mutex::new(ActionPhase::Active(Vec::new())),
             sending: Mutex::new(()),
-            _lease: DesktopLease::current(),
+            _lease: retain_desktop_action_admission(),
         })
     }
 
@@ -189,7 +189,12 @@ pub async fn spawn_blocking_bounded<T: Send + 'static>(
             f()
         }
     };
-    match tokio::time::timeout(budget, tokio::task::spawn_blocking(worker)).await {
+    match tokio::time::timeout(
+        budget,
+        cua_driver_core::desktop_activity::spawn_blocking(worker),
+    )
+    .await
+    {
         Ok(joined) => joined,
         Err(_elapsed) => {
             action.abandon();

@@ -79,9 +79,10 @@ impl Tool for MoveCursorTool {
             {
                 return refusal;
             }
-            let result =
-                tokio::task::spawn_blocking(move || crate::input::mouse::move_cursor_desktop(x, y))
-                    .await;
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
+                crate::input::mouse::move_cursor_desktop(x, y)
+            })
+            .await;
             let note = tokio::task::spawn_blocking(move || inactive_app_under_point(x, y))
                 .await
                 .ok()
@@ -205,7 +206,7 @@ impl MoveCursorTool {
         })
         .await
         .unwrap_or(false);
-        let ax = tokio::task::spawn_blocking(move || {
+        let ax = cua_driver_core::desktop_activity::spawn_blocking(move || {
             crate::input::hover::reveal_alternate_ui(pid, wid, screen_x, screen_y)
         })
         .await

@@ -111,9 +111,13 @@ fn hyprland_is_only_owned_window(
 fn run_existing_profile_cleanup<T: Send + 'static>(
     cleanup: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, BrowserRefusal> {
+    let admission = cua_driver_core::tool::retain_desktop_action_admission();
     std::thread::Builder::new()
         .name("cua-browser-cleanup".into())
-        .spawn(cleanup)
+        .spawn(move || {
+            let _admission = admission;
+            cleanup()
+        })
         .map_err(|error| {
             BrowserRefusal::new(
                 BrowserRefusalCode::BrowserRouteUnavailable,
@@ -1081,7 +1085,7 @@ impl BrowserPlatform for LinuxBrowserPlatform {
                         format!("listener inspection task failed: {error}"),
                     )
                 })??;
-        let handle = tokio::task::spawn_blocking(move || {
+        let handle = cua_driver_core::desktop_activity::spawn_blocking(move || {
             crate::browser_setup_ui::enable(pid_u32, window_id, descriptor)
         })
         .await
@@ -1208,14 +1212,16 @@ impl BrowserPlatform for LinuxBrowserPlatform {
                 if enabled_remote_debugging
                     && error.code == BrowserRefusalCode::BrowserRequiresSetup =>
             {
-                let closed = tokio::task::spawn_blocking(move || handle.close_for_success())
-                    .await
-                    .map_err(|join_error| {
-                        BrowserRefusal::new(
-                            BrowserRefusalCode::BrowserRouteUnavailable,
-                            format!("could not finish browser setup cleanup: {join_error}"),
-                        )
-                    })??;
+                let closed = cua_driver_core::desktop_activity::spawn_blocking(move || {
+                    handle.close_for_success()
+                })
+                .await
+                .map_err(|join_error| {
+                    BrowserRefusal::new(
+                        BrowserRefusalCode::BrowserRouteUnavailable,
+                        format!("could not finish browser setup cleanup: {join_error}"),
+                    )
+                })??;
                 return Err(BrowserRefusal::new(
                     BrowserRefusalCode::BrowserRequiresSetup,
                     format!(
@@ -1241,14 +1247,15 @@ impl BrowserPlatform for LinuxBrowserPlatform {
                 })));
             }
             Err(error) => {
-                let error = tokio::task::spawn_blocking(move || handle.abort(error))
-                    .await
-                    .map_err(|join_error| {
-                        BrowserRefusal::new(
-                            BrowserRefusalCode::BrowserRouteUnavailable,
-                            format!("could not roll back browser setup: {join_error}"),
-                        )
-                    })?;
+                let error =
+                    cua_driver_core::desktop_activity::spawn_blocking(move || handle.abort(error))
+                        .await
+                        .map_err(|join_error| {
+                            BrowserRefusal::new(
+                                BrowserRefusalCode::BrowserRouteUnavailable,
+                                format!("could not roll back browser setup: {join_error}"),
+                            )
+                        })?;
                 return Err(error);
             }
         };
@@ -1276,7 +1283,7 @@ impl BrowserPlatform for LinuxBrowserPlatform {
                 "the approved browser pid is outside the Linux process-id range",
             )
         })?;
-        tokio::task::spawn_blocking(move || {
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
             crate::browser_setup_ui::commit_pending(pid, request.window_id)
         })
         .await
@@ -1324,7 +1331,7 @@ impl BrowserPlatform for LinuxBrowserPlatform {
         let Ok(pid) = u32::try_from(request.pid) else {
             return error;
         };
-        tokio::task::spawn_blocking(move || {
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
             crate::browser_setup_ui::abort_pending(pid, request.window_id, error)
         })
         .await
@@ -1344,14 +1351,16 @@ impl BrowserPlatform for LinuxBrowserPlatform {
         let Ok(pid) = u32::try_from(pid) else {
             return Ok(false);
         };
-        tokio::task::spawn_blocking(move || crate::browser_consent_ui::dismiss(pid, window_id))
-            .await
-            .unwrap_or_else(|join_error| {
-                Err(BrowserRefusal::new(
-                    BrowserRefusalCode::BrowserRouteUnavailable,
-                    format!("could not close the abandoned browser consent prompt: {join_error}"),
-                ))
-            })
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
+            crate::browser_consent_ui::dismiss(pid, window_id)
+        })
+        .await
+        .unwrap_or_else(|join_error| {
+            Err(BrowserRefusal::new(
+                BrowserRefusalCode::BrowserRouteUnavailable,
+                format!("could not close the abandoned browser consent prompt: {join_error}"),
+            ))
+        })
     }
 
     async fn handle_existing_profile_consent(

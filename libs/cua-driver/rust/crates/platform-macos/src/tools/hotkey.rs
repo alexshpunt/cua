@@ -250,7 +250,7 @@ impl Tool for HotkeyTool {
             let display = raw_keys.join("+");
             super::cursor_tools::position_desktop_keyboard_cursor(&self.state, &args).await;
             let prompt = PromptInput::from_args(&args);
-            let result = tokio::task::spawn_blocking(move || {
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 let modifier_refs: Vec<&str> = modifiers.iter().map(String::as_str).collect();
                 crate::input::keyboard::press_key_global(prompt, &key, &modifier_refs)
             })
@@ -422,8 +422,10 @@ impl Tool for HotkeyTool {
                         }
                     } else if let Some(ptr) = element_ptr {
                         let focused =
-                            tokio::task::spawn_blocking(move || focus_hotkey_element(pid, ptr))
-                                .await;
+                            cua_driver_core::desktop_activity::spawn_blocking(move || {
+                                focus_hotkey_element(pid, ptr)
+                            })
+                            .await;
                         if !matches!(focused, Ok(Ok(()))) {
                             return ToolResult::error(
                                 "hotkey: the requested element did not take focus, so its menu \
@@ -604,7 +606,7 @@ impl Tool for HotkeyTool {
             prior_front,
             "hotkey.CGEvent",
             || async move {
-                tokio::task::spawn_blocking(move || {
+                cua_driver_core::desktop_activity::spawn_blocking(move || {
                     let element_ptr = element_guard.as_ref().map(|guard| guard.as_ptr());
                     let m: Vec<&str> = modifiers.iter().map(String::as_str).collect();
                     match (fg, coordinate_focus, window_id, element_ptr) {

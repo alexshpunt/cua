@@ -3275,7 +3275,10 @@ async fn close_window_background(pid: u32, xid: u64, display: &str) -> ToolResul
         .find(|w| w.xid == xid)
         .map(|w| w.title.clone())
         .unwrap_or_default();
-    let sent = tokio::task::spawn_blocking(move || crate::x11::close_window(xid, pid)).await;
+    let sent = cua_driver_core::desktop_activity::spawn_blocking(move || {
+        crate::x11::close_window(xid, pid)
+    })
+    .await;
     match sent {
         Ok(Ok(())) => {}
         Ok(Err(error)) => {
@@ -3619,7 +3622,7 @@ pub(crate) fn spawn_isolated_hyprland(
     )
     .map_err(|refusal| isolated_hyprland_refusal(refusal.message()))?;
     let (guard, cancellation) = crate::wayland::hyprland_input::ActionCancellation::invocation();
-    let dispatch = tokio::task::spawn_blocking(move || {
+    let dispatch = cua_driver_core::desktop_activity::spawn_blocking(move || {
         let _lifecycle = lifecycle;
         work(cancellation)
     });
@@ -3743,7 +3746,11 @@ pub(crate) async fn focus_hyprland_foreground(
         if activation.is_error == Some(true) {
             return Err(activation);
         }
-        match tokio::task::spawn_blocking(move || crate::atspi::focus_token(pid, &element)).await {
+        match cua_driver_core::desktop_activity::spawn_blocking(move || {
+            crate::atspi::focus_token(pid, &element)
+        })
+        .await
+        {
             Ok(Ok(true)) => {}
             _ => return Err(foreground_hyprland_refusal("AT-SPI child focus failed")),
         }
@@ -5037,8 +5044,10 @@ pub(crate) async fn focus_nested_inject_target(
 ) -> Result<(), ToolResult> {
     if let Some(element) = element {
         let index = element.index;
-        return match tokio::task::spawn_blocking(move || crate::atspi::focus_token(pid, &element))
-            .await
+        return match cua_driver_core::desktop_activity::spawn_blocking(move || {
+            crate::atspi::focus_token(pid, &element)
+        })
+        .await
         {
             Ok(Ok(true)) => Ok(()),
             Ok(Ok(false)) => Err(ToolResult::error(format!(
@@ -5051,7 +5060,7 @@ pub(crate) async fn focus_nested_inject_target(
     }
     if let Some(pixel) = pixel {
         let (x, y) = nested_inject_focus_point(state, args, pid, window_id, pixel)?;
-        return match tokio::task::spawn_blocking(move || {
+        return match cua_driver_core::desktop_activity::spawn_blocking(move || {
             crate::wayland::inject_click(pid, window_id, x, y, 1, 1)
         })
         .await

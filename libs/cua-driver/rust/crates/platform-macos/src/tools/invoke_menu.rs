@@ -601,7 +601,7 @@ async fn run_admitted<T: Send + 'static>(
     let admission = PressAdmission::default();
     let _cancel = CancelOnDrop(admission.clone());
     let lane = cua_driver_core::tool::DesktopLease::current();
-    tokio::task::spawn_blocking(move || {
+    cua_driver_core::desktop_activity::spawn_blocking(move || {
         let _held = (mutation, lane);
         work(&admission)
     })
@@ -1046,7 +1046,7 @@ impl Tool for InvokeMenuTool {
             return run_in_background(pid, window_id, path, MenuRequest::Path).await;
         }
 
-        let outcome = tokio::task::spawn_blocking(move || {
+        let outcome = cua_driver_core::desktop_activity::spawn_blocking(move || {
             let prior_frontmost = live_frontmost_app().or_else(crate::apps::frontmost_pid);
             let prior_frontmost_window = prior_frontmost.and_then(|prior| {
                 crate::ax::bindings::focused_window_id_of_pid(prior).map(|window| window.own)

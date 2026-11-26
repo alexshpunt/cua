@@ -502,7 +502,7 @@ pub(super) async fn restore_user_focus_after_background_pixel(
             previous_pid,
         );
         if key_moved && apps::frontmost_pid() == Some(previous_pid) {
-            let _ = tokio::task::spawn_blocking(move || {
+            let _ = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::input::skylight::restore_focus_after_without_raise(
                     previous_pid,
                     prior_key_wid,
@@ -718,23 +718,24 @@ impl ClickTool {
             let btn = button.clone();
             let desktop_modifiers: Vec<String> = args.str_array("modifier");
             let prompt = PromptInput::from_args(&args);
-            let result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-                // Desktop scope is explicitly foreground and vision-driven: post
-                // at the global HID tap so WindowServer delivers to the window
-                // actually visible at this point. PID-posting here would silently
-                // turn the foreground contract back into background delivery.
-                let modifier_refs: Vec<&str> =
-                    desktop_modifiers.iter().map(String::as_str).collect();
-                crate::input::mouse::click_at_xy_desktop_with_modifiers(
-                    prompt,
-                    sx,
-                    sy,
-                    count,
-                    &btn,
-                    &modifier_refs,
-                )
-            })
-            .await;
+            let result =
+                cua_driver_core::desktop_activity::spawn_blocking(move || -> anyhow::Result<()> {
+                    // Desktop scope is explicitly foreground and vision-driven: post
+                    // at the global HID tap so WindowServer delivers to the window
+                    // actually visible at this point. PID-posting here would silently
+                    // turn the foreground contract back into background delivery.
+                    let modifier_refs: Vec<&str> =
+                        desktop_modifiers.iter().map(String::as_str).collect();
+                    crate::input::mouse::click_at_xy_desktop_with_modifiers(
+                        prompt,
+                        sx,
+                        sy,
+                        count,
+                        &btn,
+                        &modifier_refs,
+                    )
+                })
+                .await;
             let button_label = match button.as_str() {
                 "right" => "right-click",
                 "middle" => "middle-click",
@@ -1007,7 +1008,7 @@ impl ClickTool {
                 let foreground = delivery_mode.is_foreground();
                 let middle_guard = element_guard.clone();
                 let prompt = PromptInput::from_args(&args);
-                let result = tokio::task::spawn_blocking(move || {
+                let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                     let m: Vec<&str> = mods_owned.iter().map(String::as_str).collect();
                     // AppKit hit-tests the window-local stamp, so an unrouted
                     // post never reaches the control (CUA-3797). Same as the
@@ -1185,7 +1186,7 @@ impl ClickTool {
                 prior_front,
                 "click.AXPress",
                 || async move {
-                    tokio::task::spawn_blocking(move || {
+                    cua_driver_core::desktop_activity::spawn_blocking(move || {
                         let element_ptr = element_guard.as_ptr();
                         if foreground {
                             let mut outcome = None;
@@ -1578,7 +1579,7 @@ impl ClickTool {
                     && modifiers.is_empty()
             }) {
                 let focus_only = action == "focus";
-                let ax_result = tokio::task::spawn_blocking(move || unsafe {
+                let ax_result = cua_driver_core::desktop_activity::spawn_blocking(move || unsafe {
                     let Some(element) = element_at_screen_position(pid, screen_x, screen_y) else {
                         return Ok::<bool, anyhow::Error>(false);
                     };
@@ -1713,10 +1714,12 @@ impl ClickTool {
             let _key_focus = if fg {
                 None
             } else {
-                tokio::task::spawn_blocking(move || crate::key_focus_guard::protect(pid))
-                    .await
-                    .ok()
-                    .flatten()
+                cua_driver_core::desktop_activity::spawn_blocking(move || {
+                    crate::key_focus_guard::protect(pid)
+                })
+                .await
+                .ok()
+                .flatten()
             };
 
             // The user's key window, read before the click, so the restore
@@ -1746,7 +1749,7 @@ impl ClickTool {
                 == PixelActivationPolicy::AllowTargetWithoutRaise
             {
                 let wid = window_id.expect("activation policy requires window_id");
-                match tokio::task::spawn_blocking(move || {
+                match cua_driver_core::desktop_activity::spawn_blocking(move || {
                     crate::input::mouse::prepare_background_pixel_click(pid, wid)
                 })
                 .await
@@ -1796,7 +1799,7 @@ impl ClickTool {
                 prior_front,
                 "click.pixel",
                 || async move {
-                    tokio::task::spawn_blocking(move || {
+                    cua_driver_core::desktop_activity::spawn_blocking(move || {
                         let do_click = move || -> anyhow::Result<()> {
                             let m: Vec<&str> = mods_owned.iter().map(String::as_str).collect();
                             if let (PixelClickRoute::BackgroundAppKitActivated, Some(wid)) =
@@ -2095,7 +2098,7 @@ async fn wait_for_web_focus(
     cap: std::time::Duration,
 ) {
     let cap = cap.max(FOCUS_REQUEST_FLOOR);
-    let _ = tokio::task::spawn_blocking(move || {
+    let _ = cua_driver_core::desktop_activity::spawn_blocking(move || {
         let el = element.as_ptr() as AXUIElementRef;
         let start = std::time::Instant::now();
         let mut attempts = 0u32;

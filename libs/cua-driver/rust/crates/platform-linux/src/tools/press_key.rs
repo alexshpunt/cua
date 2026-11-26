@@ -321,13 +321,13 @@ impl Tool for PressKeyTool {
             let result = match press_key_chord(&mods, &key) {
                 None => {
                     let key_w = key.clone();
-                    tokio::task::spawn_blocking(move || {
+                    cua_driver_core::desktop_activity::spawn_blocking(move || {
                         crate::wayland::inject_press_key(pid, xid, &key_w)
                     })
                     .await
                 }
                 Some(chord) => {
-                    tokio::task::spawn_blocking(move || {
+                    cua_driver_core::desktop_activity::spawn_blocking(move || {
                         crate::wayland::inject_hotkey(pid, xid, &chord)
                     })
                     .await

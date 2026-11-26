@@ -114,10 +114,12 @@ where
     // (popup, select, context menu) while it is in the background.
     let _key_focus = match target_pid {
         Some(tp) if prior_frontmost != Some(tp) => {
-            tokio::task::spawn_blocking(move || crate::key_focus_guard::protect(tp))
-                .await
-                .ok()
-                .flatten()
+            cua_driver_core::desktop_activity::spawn_blocking(move || {
+                crate::key_focus_guard::protect(tp)
+            })
+            .await
+            .ok()
+            .flatten()
         }
         _ => None,
     };

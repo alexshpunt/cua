@@ -257,7 +257,7 @@ impl Tool for SetValueTool {
             prior_front,
             "set_value.AXValue",
             || async move {
-                tokio::task::spawn_blocking(move || {
+                cua_driver_core::desktop_activity::spawn_blocking(move || {
                     set_value_blocking(
                         element_guard.as_ptr(),
                         element_index,
@@ -381,7 +381,7 @@ async fn calc_set_value(
         prior_front,
         "set_value.calc_cell",
         || async move {
-            tokio::task::spawn_blocking(move || {
+            cua_driver_core::desktop_activity::spawn_blocking(move || {
                 super::calc_cell::go_to_and_type(pid, &typed_address, text.as_deref())?;
                 Ok::<_, anyhow::Error>(text.map(|text| unsafe {
                     super::calc_cell::read_back(element_guard.as_ptr() as AXUIElementRef, &text)

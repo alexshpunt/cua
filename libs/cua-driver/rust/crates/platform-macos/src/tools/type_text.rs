@@ -170,7 +170,7 @@ impl Tool for TypeTextTool {
             }
             super::cursor_tools::position_desktop_keyboard_cursor(&self.state, &args).await;
             let prompt = PromptInput::from_args(&args);
-            let result = tokio::task::spawn_blocking(move || {
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::input::keyboard::type_text_global(prompt, &text, delay_ms)
             })
             .await;
@@ -404,7 +404,7 @@ impl Tool for TypeTextTool {
             prior_front,
             "type_text.AXSelectedText",
             || async move {
-                tokio::task::spawn_blocking(move || {
+                cua_driver_core::desktop_activity::spawn_blocking(move || {
                     let _native_guard = native_guard;
                     type_text_blocking(
                         pid,

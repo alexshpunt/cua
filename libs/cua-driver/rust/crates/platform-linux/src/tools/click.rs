@@ -1355,7 +1355,7 @@ impl Tool for ClickTool {
                 let guard_pid = (!delivery.is_foreground()).then_some(pid);
                 let ax_result = match tokio::time::timeout(
                     ELEMENT_AX_BUDGET,
-                    tokio::task::spawn_blocking(move || {
+                    cua_driver_core::desktop_activity::spawn_blocking(move || {
                         // Background: an AT-SPI action can open a menu (GTK/VCL
                         // grab the keyboard and activate the toplevel) or map a
                         // dialog mutter then focuses. Snapshot, act, restore.
@@ -1782,7 +1782,7 @@ impl Tool for ClickTool {
                 );
             }
             if button == 1 && count == 1 {
-                let semantic = tokio::task::spawn_blocking(move || {
+                let semantic = cua_driver_core::desktop_activity::spawn_blocking(move || {
                     crate::atspi::perform_action_at_screen_point(pid, xid, output_x, output_y)
                 })
                 .await;

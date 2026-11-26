@@ -462,7 +462,7 @@ async fn consent_action<T: Send + 'static>(
         // outliving the attempt it serves.
         let bound =
             crate::input::action::Action::new(deadline.saturating_duration_since(Instant::now()));
-        tokio::task::spawn_blocking(move || {
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
             let _bound = crate::input::action::bind(bound);
             check_deadline(deadline)?;
             operation().map_err(|error| {

@@ -157,7 +157,7 @@ impl Tool for DoubleClickTool {
                 prior_front,
                 "double_click.ax",
                 || async move {
-                    tokio::task::spawn_blocking(move || {
+                    cua_driver_core::desktop_activity::spawn_blocking(move || {
                         let act = || {
                             ax_double_click(
                                 pid,

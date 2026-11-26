@@ -2389,18 +2389,19 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         // transient identity-reproof failure must not make an old exact-pid
         // listener appear newly created after the approved setup action.
         let listeners_before = unfiltered_loopback_ports_for_exact_pid(pid_u32).await?;
-        let handle =
-            tokio::task::spawn_blocking(move || crate::browser_setup_ui::enable(hwnd, descriptor))
-                .await
-                .map_err(|error| {
-                    BrowserRefusal::new(
-                        BrowserRefusalCode::BrowserRouteUnavailable,
-                        format!(
-                            "could not inspect {}'s remote-debugging setup UI: {error}",
-                            descriptor.product_name
-                        ),
-                    )
-                })??;
+        let handle = cua_driver_core::desktop_activity::spawn_blocking(move || {
+            crate::browser_setup_ui::enable(hwnd, descriptor)
+        })
+        .await
+        .map_err(|error| {
+            BrowserRefusal::new(
+                BrowserRefusalCode::BrowserRouteUnavailable,
+                format!(
+                    "could not inspect {}'s remote-debugging setup UI: {error}",
+                    descriptor.product_name
+                ),
+            )
+        })??;
         let opened_setup_page = handle.opened_setup_page;
         let enabled_remote_debugging = handle.enabled_remote_debugging;
         let setup_was_already_enabled = !enabled_remote_debugging;
@@ -2514,14 +2515,15 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         let endpoint = match endpoint_result {
             Ok(endpoint) => endpoint,
             Err(error) => {
-                let error = tokio::task::spawn_blocking(move || handle.abort(error))
-                    .await
-                    .map_err(|join_error| {
-                        BrowserRefusal::new(
-                            BrowserRefusalCode::BrowserRouteUnavailable,
-                            format!("could not roll back browser setup: {join_error}"),
-                        )
-                    })?;
+                let error =
+                    cua_driver_core::desktop_activity::spawn_blocking(move || handle.abort(error))
+                        .await
+                        .map_err(|join_error| {
+                            BrowserRefusal::new(
+                                BrowserRefusalCode::BrowserRouteUnavailable,
+                                format!("could not roll back browser setup: {join_error}"),
+                            )
+                        })?;
                 return Err(error);
             }
         };
@@ -2543,7 +2545,7 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         &self,
         request: ExistingProfileSetupRequest,
     ) -> Result<bool, BrowserRefusal> {
-        tokio::task::spawn_blocking(move || {
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
             crate::browser_setup_ui::commit_pending(request.window_id)
         })
         .await
@@ -2585,7 +2587,7 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         request: ExistingProfileSetupRequest,
         error: BrowserRefusal,
     ) -> BrowserRefusal {
-        tokio::task::spawn_blocking(move || {
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
             crate::browser_setup_ui::abort_pending(request.window_id, error)
         })
         .await
@@ -2605,14 +2607,16 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         let Ok(pid) = u32::try_from(pid) else {
             return Ok(false);
         };
-        tokio::task::spawn_blocking(move || crate::browser_consent_ui::dismiss(pid, window_id))
-            .await
-            .unwrap_or_else(|join_error| {
-                Err(BrowserRefusal::new(
-                    BrowserRefusalCode::BrowserRouteUnavailable,
-                    format!("could not close the abandoned browser consent prompt: {join_error}"),
-                ))
-            })
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
+            crate::browser_consent_ui::dismiss(pid, window_id)
+        })
+        .await
+        .unwrap_or_else(|join_error| {
+            Err(BrowserRefusal::new(
+                BrowserRefusalCode::BrowserRouteUnavailable,
+                format!("could not close the abandoned browser consent prompt: {join_error}"),
+            ))
+        })
     }
 
     async fn handle_existing_profile_consent(

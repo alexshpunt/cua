@@ -171,7 +171,7 @@ impl Tool for InvokeMenuTool {
         }
 
         if !crate::wayland::is_wayland() && !delivery.is_foreground() {
-            let outcome = tokio::task::spawn_blocking(move || {
+            let outcome = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::input::focus_guard::guarded(Some(pid), || {
                     crate::atspi::native::invoke_menu_path_in(
                         pid,
@@ -216,7 +216,7 @@ impl Tool for InvokeMenuTool {
         }
 
         let activation = if crate::wayland::is_wayland() {
-            let result = tokio::task::spawn_blocking(move || {
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::wayland::activate_window(window_id, Some(pid))
             })
             .await;
@@ -232,7 +232,7 @@ impl Tool for InvokeMenuTool {
                 }
             }
         } else {
-            match tokio::task::spawn_blocking(move || {
+            match cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::input::x11_activate_window_persistent(window_id)
             })
             .await
@@ -249,7 +249,7 @@ impl Tool for InvokeMenuTool {
             }
         };
 
-        let outcome = tokio::task::spawn_blocking(move || {
+        let outcome = cua_driver_core::desktop_activity::spawn_blocking(move || {
             let result = crate::atspi::native::invoke_menu_path_in(
                 pid,
                 window_id,

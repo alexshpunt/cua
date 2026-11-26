@@ -517,7 +517,7 @@ impl Tool for BringToFrontTool {
         // poll all block; keep them off the async worker. The worker keeps the
         // desktop lease, so a cancelled call cannot hand the lane on early.
         let lease = DesktopLease::current();
-        tokio::task::spawn_blocking(move || {
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
             let _lease = lease;
             Self::activate_blocking(pid, window_id)
         })

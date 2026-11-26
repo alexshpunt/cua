@@ -301,7 +301,7 @@ impl Tool for PressKeyTool {
             let key_for_input = key.clone();
             super::cursor_tools::position_desktop_keyboard_cursor(&self.state, &args).await;
             let prompt = PromptInput::from_args(&args);
-            let result = tokio::task::spawn_blocking(move || {
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 let modifier_refs: Vec<&str> = modifiers.iter().map(String::as_str).collect();
                 crate::input::keyboard::press_key_global(prompt, &key_for_input, &modifier_refs)
             })
@@ -482,7 +482,7 @@ impl Tool for PressKeyTool {
             prior_front,
             "press_key.CGEvent",
             || async move {
-                tokio::task::spawn_blocking(move || {
+                cua_driver_core::desktop_activity::spawn_blocking(move || {
                     let pre_focus_ptr = pre_focus_guard.as_ref().map(|guard| guard.as_ptr());
                     let m: Vec<&str> = modifiers.iter().map(String::as_str).collect();
                     // Foreground rung: keep the exact target frontmost through a genuine

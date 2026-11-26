@@ -149,7 +149,7 @@ impl Tool for RightClickTool {
 
             // The context menu steals key focus from the user's app when the
             // target is in the background; the guard hands it back.
-            let result = tokio::task::spawn_blocking(move || {
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 let _key_focus = crate::key_focus_guard::protect(pid);
                 ax_show_menu(element_guard.as_ptr(), idx, pid, wid)
             })
@@ -263,48 +263,49 @@ impl Tool for RightClickTool {
             Err(refusal) => return refusal,
         };
         let prompt = cua_driver_core::security_prompt::PromptInput::from_args(&args);
-        let result = tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-            let _key_focus = (!fg)
-                .then(|| crate::key_focus_guard::protect(pid))
-                .flatten();
-            let do_it = move || -> anyhow::Result<()> {
-                let m: Vec<&str> = modifiers.iter().map(String::as_str).collect();
-                if route == super::pixel_route::PixelClickRoute::ForegroundHid {
-                    // Warp the hardware pointer and post at the HID tap; see
-                    // `pixel_route` for the cross-platform foreground contract.
-                    return crate::input::mouse::click_at_xy_desktop_with_modifiers(
-                        prompt, screen_x, screen_y, 1, "right", &m,
-                    );
+        let result =
+            cua_driver_core::desktop_activity::spawn_blocking(move || -> anyhow::Result<()> {
+                let _key_focus = (!fg)
+                    .then(|| crate::key_focus_guard::protect(pid))
+                    .flatten();
+                let do_it = move || -> anyhow::Result<()> {
+                    let m: Vec<&str> = modifiers.iter().map(String::as_str).collect();
+                    if route == super::pixel_route::PixelClickRoute::ForegroundHid {
+                        // Warp the hardware pointer and post at the HID tap; see
+                        // `pixel_route` for the cross-platform foreground contract.
+                        return crate::input::mouse::click_at_xy_desktop_with_modifiers(
+                            prompt, screen_x, screen_y, 1, "right", &m,
+                        );
+                    }
+                    if let Some(wid) = window_id {
+                        crate::input::mouse::right_click_at_xy_with_window_local(
+                            pid,
+                            screen_x,
+                            screen_y,
+                            win_local_x,
+                            win_local_y,
+                            wid,
+                            &m,
+                        )
+                    } else {
+                        crate::input::mouse::right_click_at_xy(pid, screen_x, screen_y, &m)
+                    }
+                };
+                // Foreground rung: front the exact window → HID right-click →
+                // restore the prior frontmost. No input is sent unless the exact
+                // window is proven focused.
+                match (route, window_id) {
+                    (super::pixel_route::PixelClickRoute::ForegroundHid, Some(wid)) => {
+                        crate::input::skylight::with_foreground_hid_activation(
+                            pid as libc::pid_t,
+                            wid,
+                            do_it,
+                        )
+                    }
+                    _ => do_it(),
                 }
-                if let Some(wid) = window_id {
-                    crate::input::mouse::right_click_at_xy_with_window_local(
-                        pid,
-                        screen_x,
-                        screen_y,
-                        win_local_x,
-                        win_local_y,
-                        wid,
-                        &m,
-                    )
-                } else {
-                    crate::input::mouse::right_click_at_xy(pid, screen_x, screen_y, &m)
-                }
-            };
-            // Foreground rung: front the exact window → HID right-click →
-            // restore the prior frontmost. No input is sent unless the exact
-            // window is proven focused.
-            match (route, window_id) {
-                (super::pixel_route::PixelClickRoute::ForegroundHid, Some(wid)) => {
-                    crate::input::skylight::with_foreground_hid_activation(
-                        pid as libc::pid_t,
-                        wid,
-                        do_it,
-                    )
-                }
-                _ => do_it(),
-            }
-        })
-        .await;
+            })
+            .await;
         match result {
             Ok(Ok(())) => ToolResult::text(format!(
                 "Right-clicked{mod_suffix} at ({screen_x:.1}, {screen_y:.1}) ({}).",
