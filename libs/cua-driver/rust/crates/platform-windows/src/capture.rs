@@ -566,6 +566,42 @@ unsafe fn screenshot_via_screen_region(hwnd: HWND) -> Result<(Vec<u8>, i32, i32,
     Ok((pixels, w, h, geometry))
 }
 
+// The bitmap must be deselected from its DC before calling GetDIBits.
+unsafe fn read_window_bitmap(
+    dc: windows::Win32::Graphics::Gdi::HDC,
+    bitmap: windows::Win32::Graphics::Gdi::HBITMAP,
+    width: i32,
+    height: i32,
+) -> Result<Vec<u8>> {
+    let mut bmi = BITMAPINFO {
+        bmiHeader: BITMAPINFOHEADER {
+            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
+            biWidth: width,
+            biHeight: -height,
+            biPlanes: 1,
+            biBitCount: 32,
+            biCompression: BI_RGB.0,
+            biSizeImage: (width * height * 4) as u32,
+            ..Default::default()
+        },
+        bmiColors: [RGBQUAD::default(); 1],
+    };
+    let mut pixels = vec![0u8; (width * height) as usize * 4];
+    let copied = GetDIBits(
+        dc,
+        bitmap,
+        0,
+        height as u32,
+        Some(pixels.as_mut_ptr() as *mut _),
+        &mut bmi,
+        DIB_RGB_COLORS,
+    );
+    if copied != height {
+        bail!("window capture: GetDIBits copied {copied} of {height} scanlines");
+    }
+    Ok(pixels)
+}
+
 /// Capture a window by HWND, returning raw PNG bytes.
 pub fn screenshot_window_bytes(hwnd: u64) -> Result<Vec<u8>> {
     let (bytes, occluded) = screenshot_window_bytes_with_occlusion(hwnd)?;
@@ -885,40 +921,12 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
         hr.ok().map(|_| r)
     };
 
-    let mut bmi = BITMAPINFO {
-        bmiHeader: BITMAPINFOHEADER {
-            biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: buf_w,
-            biHeight: -buf_h,
-            biPlanes: 1,
-            biBitCount: 32,
-            biCompression: BI_RGB.0,
-            biSizeImage: (buf_w * buf_h * 4) as u32,
-            ..Default::default()
-        },
-        bmiColors: [RGBQUAD::default(); 1],
-    };
-
-    let pixel_count = (buf_w * buf_h) as usize;
-    let mut pixels = vec![0u8; pixel_count * 4];
     SelectObject(mem_dc, old_bitmap);
-    let ok = GetDIBits(
-        mem_dc,
-        bitmap,
-        0,
-        buf_h as u32,
-        Some(pixels.as_mut_ptr() as *mut _),
-        &mut bmi,
-        DIB_RGB_COLORS,
-    );
-
+    let pixels_result = read_window_bitmap(mem_dc, bitmap, buf_w, buf_h);
     let _ = DeleteObject(bitmap.into());
     let _ = DeleteDC(mem_dc);
     ReleaseDC(Some(hwnd), screen_dc);
-
-    if ok != buf_h {
-        bail!("window capture: GetDIBits copied {ok} of {buf_h} scanlines");
-    }
+    let mut pixels = pixels_result?;
     // From here on the bitmap is the physical frame. The BitBlt fallback
     // copied physical screen pixels, so for it only the extra buffer goes.
     let (painted_w, painted_h) = painted
@@ -1187,6 +1195,38 @@ pub fn png_dimensions_pub(data: &[u8]) -> Result<(u32, u32)> {
 #[cfg(test)]
 mod wgc_validation_tests {
     use super::{monitors_cover, normalize_wgc_frame, validate_wgc_frame, FrameGeometry};
+
+    #[test]
+    fn virtualized_window_bitmap_copies_every_scanline() {
+        use windows::Win32::Graphics::Gdi::{
+            CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, PatBlt,
+            SelectObject, WHITENESS,
+        };
+
+        // A system-aware 150% window on a 100% monitor paints a bitmap
+        // taller than its 450-pixel physical frame.
+        let frame = FrameGeometry::from_bounds((0, 0, 630, 450)).unwrap();
+        let (width, height) = frame.painted_size(144, 96).unwrap();
+        let (width, height) = (width as i32, height as i32);
+        assert_eq!((width, height), (945, 675));
+        unsafe {
+            let dc = CreateCompatibleDC(None);
+            assert!(!dc.is_invalid());
+            let bitmap = CreateCompatibleBitmap(dc, width, height);
+            assert!(!bitmap.is_invalid());
+            let old = SelectObject(dc, bitmap.into());
+            assert!(!old.is_invalid());
+            let painted = PatBlt(dc, 0, 0, width, height, WHITENESS).as_bool();
+            SelectObject(dc, old);
+            let result = super::read_window_bitmap(dc, bitmap, width, height);
+            let _ = DeleteObject(bitmap.into());
+            let _ = DeleteDC(dc);
+            assert!(painted);
+            let pixels = result.expect("copy the entire virtualized bitmap");
+            assert_eq!(pixels.len(), 945 * 675 * 4);
+            assert_eq!(&pixels[pixels.len() - 4..pixels.len() - 1], &[255; 3]);
+        }
+    }
 
     #[test]
     fn screen_region_must_lie_on_real_monitors() {
