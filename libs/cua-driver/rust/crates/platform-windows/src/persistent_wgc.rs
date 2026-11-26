@@ -274,9 +274,11 @@ mod tests {
     struct IdleFixture;
     impl Backend for IdleFixture {
         fn read(&mut self, dimension: u32, control: &Control) -> Result<Frame> {
-            while dimension == 999 {
-                control.check()?;
-                thread::park_timeout(Duration::from_millis(1));
+            if dimension == 999 {
+                loop {
+                    control.check()?;
+                    thread::park_timeout(Duration::from_millis(1));
+                }
             }
             Ok(Frame {
                 png: vec![1],
@@ -333,9 +335,11 @@ mod tests {
     }
     impl Backend for Fixture {
         fn read(&mut self, dimension: u32, control: &Control) -> Result<Frame> {
-            while dimension == 999 {
-                control.check()?;
-                thread::yield_now();
+            if dimension == 999 {
+                loop {
+                    control.check()?;
+                    thread::yield_now();
+                }
             }
             Ok(Frame {
                 png: vec![1],

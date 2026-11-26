@@ -72,12 +72,15 @@ pub(crate) fn round_action_point(x: f64, y: f64) -> anyhow::Result<(i32, i32)> {
     Ok((round(x)?, round(y)?))
 }
 
+type WgcCaptures = HashMap<(String, u32, u64), (CaptureId, CaptureBinding)>;
+type CapturedFrameSizes = HashMap<u64, ((i32, i32), (u32, u32))>;
+
 pub(crate) struct WindowsCaptureBridge {
     service: Arc<CaptureService>,
     // Only metadata is retained; PNG ownership/expiry remains in CaptureService.
-    wgc: Mutex<HashMap<(String, u32, u64), (CaptureId, CaptureBinding)>>,
+    wgc: Mutex<WgcCaptures>,
     /// Per window: visible frame size at its latest default-route capture and that capture's native size.
-    frames: Mutex<HashMap<u64, ((i32, i32), (u32, u32))>>,
+    frames: Mutex<CapturedFrameSizes>,
 }
 
 impl WindowsCaptureBridge {

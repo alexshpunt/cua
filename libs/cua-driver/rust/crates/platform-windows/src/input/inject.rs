@@ -305,7 +305,6 @@ impl std::error::Error for StrokeInterrupted {}
 
 /// Refuse legacy background synthetic clicks before any desktop mutation.
 /// Use a semantic UIA route, a supported fixed-HWND post, or explicit foreground input.
-
 pub fn inject_click_screen(
     _target: u64,
     _sx: i32,
@@ -563,7 +562,6 @@ mod task_view_desktop_tests {
 
 /// Refuse legacy background synthetic drags before any desktop mutation.
 /// Foreground timeline pen input is a separate, explicit delivery route.
-
 pub fn inject_drag_screen(
     _target: u64,
     _sx0: i32,

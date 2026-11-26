@@ -129,14 +129,19 @@ impl Marker {
             window_id,
             property,
         };
-        unsafe { SetPropW(marker.hwnd(), marker.key(), Some(HANDLE(1usize as *mut _))) }.map_err(
-            |error| {
-                failure(
-                    "window_state_unavailable",
-                    format!("Cannot retain exact window lifetime: {error}"),
-                )
-            },
-        )?;
+        unsafe {
+            SetPropW(
+                marker.hwnd(),
+                marker.key(),
+                Some(HANDLE(std::ptr::without_provenance_mut(1))),
+            )
+        }
+        .map_err(|error| {
+            failure(
+                "window_state_unavailable",
+                format!("Cannot retain exact window lifetime: {error}"),
+            )
+        })?;
         if !marker.is_current() {
             return Err(failure(
                 "window_state_expired",

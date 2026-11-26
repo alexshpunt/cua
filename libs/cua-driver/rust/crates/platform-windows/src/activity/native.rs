@@ -347,9 +347,10 @@ pub(super) fn run(rx: Receiver<()>) {
             .map(|key| settings(key).frame_ms())
             .min()
             .unwrap_or(if preparing.is_some() { 16 } else { 250 });
-        match rx.recv_timeout(Duration::from_millis(interval)) {
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
-            _ => {}
+        if let Err(std::sync::mpsc::RecvTimeoutError::Disconnected) =
+            rx.recv_timeout(Duration::from_millis(interval))
+        {
+            return;
         }
         unsafe {
             let mut message = MSG::default();

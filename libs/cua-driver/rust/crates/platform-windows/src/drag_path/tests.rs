@@ -69,22 +69,14 @@ fn malformed_or_conflicting_requests_refuse_before_native_input() {
 fn invalid_scaling_cannot_saturate_into_a_different_native_point() {
     for ratio in [0.0, -1.0, f64::INFINITY, f64::NAN] {
         assert_eq!(
-            Request::parse(&request())
-                .unwrap()
-                .into_path(ratio)
-                .err()
-                .map(|s| s),
+            Request::parse(&request()).unwrap().into_path(ratio).err(),
             Some("invalid_path_scale")
         );
     }
     let mut args = request();
     args["to_x"] = json!(1e100);
     assert_eq!(
-        Request::parse(&args)
-            .unwrap()
-            .into_path(2.0)
-            .err()
-            .map(|s| s),
+        Request::parse(&args).unwrap().into_path(2.0).err(),
         Some("invalid_path_point")
     );
 }
