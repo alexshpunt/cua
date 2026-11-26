@@ -2414,7 +2414,9 @@ fn harness_wpf_activation_unlock_permits_focus_return() {
         .expect("rest the pointer on the human canvas");
         // Let the human receiver read this process's own input before the driver acts.
         std::thread::sleep(Duration::from_millis(300));
-        let human_before = wait_pointer_receiver(&human_path, pointer_oracle_time_ms(), |_| true);
+        let human_before = wait_pointer_receiver(&human_path, pointer_oracle_time_ms(), |state| {
+            state["moves"].as_u64().is_some_and(|moves| moves > 0)
+        });
 
         driver.start_behavior_recording();
         let started_ms = pointer_oracle_time_ms();
@@ -2429,17 +2431,69 @@ fn harness_wpf_activation_unlock_permits_focus_return() {
         assert!(!response.is_error(), "click failed: {}", response.text());
         let target_state =
             wait_pointer_receiver(&target_path, started_ms, |state| state["up"] == 1);
-        let human_state = wait_pointer_receiver(&human_path, started_ms, |_| true);
+        let human_state = wait_pointer_receiver(&human_path, pointer_oracle_time_ms(), |state| {
+            state["events"].as_array().is_some_and(|events| {
+                events.iter().any(|event| {
+                    event["kind"] == "activated"
+                        && event["utc_ms"]
+                            .as_u64()
+                            .is_some_and(|time| time >= started_ms)
+                })
+            })
+        });
         assert_eq!(target_state["down"], 1, "target state: {target_state}");
         assert_eq!(human_state["down"], 0, "click DOWN leaked: {human_state}");
         assert_eq!(human_state["up"], 0, "click UP leaked: {human_state}");
-        assert_eq!(
-            human_state["moves"], human_before["moves"],
-            "the unlock moved the pointer over the human's window: {human_state}"
-        );
-        let keys: Vec<_> = human_state["events"]
+        let events = human_state["events"]
             .as_array()
-            .expect("human event journal")
+            .expect("human event journal");
+        let deactivated = events
+            .iter()
+            .position(|event| {
+                event["kind"] == "deactivated"
+                    && event["utc_ms"]
+                        .as_u64()
+                        .is_some_and(|time| time >= started_ms)
+            })
+            .expect("human window was not deactivated by the target activation");
+        let unlock_moves: Vec<_> = events[..deactivated]
+            .iter()
+            .filter(|event| {
+                event["kind"] == "move"
+                    && event["utc_ms"]
+                        .as_u64()
+                        .is_some_and(|time| time >= started_ms)
+            })
+            .collect();
+        assert!(
+            unlock_moves.is_empty(),
+            "the unlock sent pointer movement to the human: {unlock_moves:?}"
+        );
+        // Windows recalculates the cursor when windows change Z order, which can
+        // generate WM_MOUSEMOVE at the *same* position when focus returns. It is
+        // not physical movement; reject any movement to a different position.
+        let baseline_move = human_before["events"]
+            .as_array()
+            .expect("human baseline event journal")
+            .iter()
+            .rev()
+            .find(|event| event["kind"] == "move")
+            .expect("human did not observe the baseline cursor position");
+        let baseline_xy = (
+            baseline_move["x"].as_f64().expect("baseline pointer x"),
+            baseline_move["y"].as_f64().expect("baseline pointer y"),
+        );
+        for event in events[deactivated..]
+            .iter()
+            .filter(|event| event["kind"] == "move")
+        {
+            assert_eq!(
+                (event["x"].as_f64(), event["y"].as_f64()),
+                (Some(baseline_xy.0), Some(baseline_xy.1)),
+                "pointer moved over the human after activation: {event}"
+            );
+        }
+        let keys: Vec<_> = events
             .iter()
             .filter(|event| {
                 event["kind"] == "keyboard"
