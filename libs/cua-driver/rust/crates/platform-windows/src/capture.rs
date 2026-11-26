@@ -916,8 +916,8 @@ unsafe fn screenshot_window_bytes_with_occlusion_unsafe<T>(
     let _ = DeleteDC(mem_dc);
     ReleaseDC(Some(hwnd), screen_dc);
 
-    if ok != h {
-        bail!("window capture: GetDIBits copied {ok} of {h} scanlines");
+    if ok != buf_h {
+        bail!("window capture: GetDIBits copied {ok} of {buf_h} scanlines");
     }
     // From here on the bitmap is the physical frame. The BitBlt fallback
     // copied physical screen pixels, so for it only the extra buffer goes.
