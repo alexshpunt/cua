@@ -1588,8 +1588,17 @@ pub fn send_wheel_synthesized(sx: i32, sy: i32, ticks: i32, horizontal: bool) ->
     Ok(())
 }
 
-/// Return the current foreground window for desktop-scope keyboard and drag
-/// operations, which intentionally target whatever the user can currently see.
+/// Resolve the top-level window at a desktop point before moving the cursor overlay.
+pub(crate) fn window_at_screen_point(x: i32, y: i32) -> Result<u64> {
+    use windows::Win32::UI::WindowsAndMessaging::WindowFromPoint;
+    let target = unsafe { WindowFromPoint(POINT { x, y }) };
+    if target.0.is_null() {
+        bail!("No window under screen point ({x},{y}).");
+    }
+    let root = unsafe { GetAncestor(target, GA_ROOT) };
+    Ok(if root.0.is_null() { target } else { root }.0 as u64)
+}
+
 pub fn foreground_window() -> Result<u64> {
     let hwnd = unsafe { GetForegroundWindow() };
     if hwnd.0.is_null() {

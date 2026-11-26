@@ -338,23 +338,10 @@ impl Tool for ClickTool {
             // Resolve the application window before moving the agent cursor.
             // WindowFromPoint can return a transparent layered overlay, and the
             // cursor overlay is about to occupy this exact screen point.
-            let root = unsafe {
-                use windows::Win32::Foundation::POINT;
-                use windows::Win32::UI::WindowsAndMessaging::{
-                    GetAncestor, WindowFromPoint, GA_ROOT,
-                };
-                let target = WindowFromPoint(POINT { x: sx, y: sy });
-                if target.0.is_null() {
-                    return ToolResult::error(format!("No window under screen point ({sx},{sy})."));
-                }
-                let root = GetAncestor(target, GA_ROOT);
-                if root.0.is_null() {
-                    target
-                } else {
-                    root
-                }
+            let hwnd_u = match crate::input::mouse::window_at_screen_point(sx, sy) {
+                Ok(hwnd) => hwnd,
+                Err(error) => return ToolResult::error(error.to_string()),
             };
-            let hwnd_u = root.0 as u64;
 
             // Animate the agent cursor to the screen point, then click.
             overlay_glide_to(&cursor_key, sx as f64, sy as f64).await;

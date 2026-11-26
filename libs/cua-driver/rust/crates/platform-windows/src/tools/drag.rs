@@ -227,7 +227,7 @@ impl Tool for DragTool {
             let steps = input.steps.unwrap_or(20) as usize;
             let button = input.button.unwrap_or(ClickButton::Left).as_str();
             let modifiers = input.modifier.unwrap_or_default();
-            let hwnd = match crate::input::mouse::foreground_window() {
+            let hwnd = match crate::input::mouse::window_at_screen_point(from_x, from_y) {
                 Ok(hwnd) => hwnd,
                 Err(error) => return ToolResult::error(error.to_string()),
             };
