@@ -1588,25 +1588,8 @@ impl InputQueueAttachment {
         }
     }
 
-    /// Diagnostic for a stall: how many times this thread had to answer a
-    /// message sent to it while attached, and whether the target thread
-    /// answers a WM_NULL within 200 ms.
+    /// Gather stall diagnostics without sending messages to the attached queue.
     fn stall_detail(&self, target: HWND) -> String {
-        use windows::Win32::UI::WindowsAndMessaging::{
-            SendMessageTimeoutW, SMTO_ABORTIFHUNG, WM_NULL,
-        };
-        let responsive = unsafe {
-            SendMessageTimeoutW(
-                target,
-                WM_NULL,
-                WPARAM(0),
-                LPARAM(0),
-                SMTO_ABORTIFHUNG,
-                200,
-                None,
-            )
-        }
-        .0 != 0;
         let (active, focus) = gui_thread_active_and_focus(target).unwrap_or_default();
         let sent = if self.sent_log.is_some() {
             SentMessageLog::summary()
@@ -1616,17 +1599,12 @@ impl InputQueueAttachment {
         format!(
             "Driver thread ({apartment}) answered {} sent-message batch(es) [{sent}] and \
              retrieved {} message(s) of its own ({} of them input meant for the target) while \
-             attached; target thread {} WM_NULL within 200 ms; its queue's active HWND {:?}, \
+             attached; target queue's active HWND {:?}, \
              focus HWND {:?}, caption {}; driver queue status 0x{:08x} before attach, \
              0x{:08x} attached, 0x{:08x} now.",
             self.serviced.get(),
             self.pumped.get(),
             self.misrouted_input.get(),
-            if responsive {
-                "answered"
-            } else {
-                "did not answer"
-            },
             active.0,
             focus.0,
             if caption_active(target) {
@@ -2958,14 +2936,31 @@ mod busy_target_activation_tests {
     static STALL_ENTERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     static STALL_RELEASE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-    struct CharStall;
+    struct CharStall {
+        stop: mpsc::Sender<()>,
+        watchdog: Option<std::thread::JoinHandle<()>>,
+        expired: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    }
     impl CharStall {
         fn arm() -> Self {
             use std::sync::atomic::Ordering;
             STALL_ENTERED.store(false, Ordering::SeqCst);
             STALL_RELEASE.store(false, Ordering::SeqCst);
             STALL_AFTER_FIRST_CHAR.store(true, Ordering::SeqCst);
-            Self
+            let (stop, stopped) = mpsc::channel();
+            let expired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let timed_out = expired.clone();
+            let watchdog = std::thread::spawn(move || {
+                if stopped.recv_timeout(Duration::from_secs(12)).is_err() {
+                    timed_out.store(true, Ordering::SeqCst);
+                    STALL_RELEASE.store(true, Ordering::SeqCst);
+                }
+            });
+            Self {
+                stop,
+                watchdog: Some(watchdog),
+                expired,
+            }
         }
         fn wait_until_blocked(&self) {
             use std::sync::atomic::Ordering;
@@ -2981,13 +2976,44 @@ mod busy_target_activation_tests {
         fn release(&self) {
             use std::sync::atomic::Ordering;
             STALL_RELEASE.store(true, Ordering::SeqCst);
+            let _ = self.stop.send(());
+        }
+        fn assert_before_deadline(&self) {
+            use std::sync::atomic::Ordering;
+            assert!(
+                !self.expired.load(Ordering::SeqCst),
+                "stalled fixture exceeded its deadline"
+            );
         }
     }
     impl Drop for CharStall {
         fn drop(&mut self) {
             use std::sync::atomic::Ordering;
             STALL_AFTER_FIRST_CHAR.store(false, Ordering::SeqCst);
-            STALL_RELEASE.store(true, Ordering::SeqCst);
+            self.release();
+            if let Some(watchdog) = self.watchdog.take() {
+                watchdog.join().expect("stall watchdog panicked");
+            }
+        }
+    }
+
+    fn wait_for_stalled_typing(
+        stall: &CharStall,
+        receiver: mpsc::Receiver<Result<TypingTurn>>,
+        thread: std::thread::JoinHandle<()>,
+    ) -> Result<TypingTurn> {
+        match receiver.recv_timeout(Duration::from_secs(5)) {
+            Ok(result) => {
+                thread.join().expect("typing thread panicked");
+                result
+            }
+            Err(error) => {
+                stall.release();
+                if receiver.recv_timeout(Duration::from_secs(3)).is_ok() {
+                    thread.join().expect("typing thread panicked");
+                }
+                panic!("typing did not finish while the target was stalled: {error}");
+            }
         }
     }
 
@@ -3219,21 +3245,41 @@ mod busy_target_activation_tests {
         let target_id = target.hwnd.0 as usize as u64;
         let text = "a".repeat(80);
         let sent = text.clone();
+        let (typing_tx, typing_rx) = mpsc::channel();
         let typing = std::thread::spawn(move || {
-            send_text_synthesized_paced_after_focus(
+            let result = send_text_synthesized_paced_after_focus(
                 target_id,
                 &sent,
                 0,
                 TypingTurn::NotSent,
                 || Ok(TypingTurn::NotSent),
-            )
+            );
+            let _ = typing_tx.send(result);
         });
         stall.wait_until_blocked();
-        let result = typing.join().expect("typing thread");
+        let result = wait_for_stalled_typing(&stall, typing_rx, typing);
         let error = result
             .expect_err("a stalled reader must stop typing")
             .to_string();
         assert!(error.contains("text_delivery_stalled"), "{error}");
+        // The diagnostic runs while attached to the stalled target's queue.
+        // It must not send a synchronous message to that queue: Windows does
+        // not honor SendMessageTimeout's deadline for a shared input queue.
+        let (diagnostic_tx, diagnostic_rx) = mpsc::channel();
+        let diagnostic = std::thread::spawn(move || {
+            let hwnd = HWND(target_id as *mut _);
+            let attachment = InputQueueAttachment::attach(hwnd).expect("attach diagnostic reader");
+            let _ = attachment.stall_detail(hwnd);
+            diagnostic_tx.send(()).expect("diagnostic receipt");
+        });
+        let diagnostic_done = diagnostic_rx.recv_timeout(Duration::from_secs(3));
+        if diagnostic_done.is_err() {
+            stall.release();
+            let _ = diagnostic_rx.recv_timeout(Duration::from_secs(3));
+        }
+        assert!(diagnostic_done.is_ok(), "attached stall diagnostic blocked");
+        diagnostic.join().expect("diagnostic thread");
+        stall.assert_before_deadline();
         stall.release();
         let deadline = Instant::now() + Duration::from_secs(1);
         while Instant::now() < deadline {
@@ -3256,18 +3302,20 @@ mod busy_target_activation_tests {
         TYPED.lock().unwrap().clear();
         let stall = CharStall::arm();
         let target_id = target.hwnd.0 as usize as u64;
+        let (typing_tx, typing_rx) = mpsc::channel();
         let typing = std::thread::spawn(move || {
-            send_text_synthesized_paced_after_focus(
+            let result = send_text_synthesized_paced_after_focus(
                 target_id,
                 &"a".repeat(80),
                 0,
                 TypingTurn::NotSent,
                 || Ok(TypingTurn::NotSent),
-            )
+            );
+            let _ = typing_tx.send(result);
         });
         stall.wait_until_blocked();
         bring_forward(other.hwnd);
-        let result = typing.join().expect("typing thread");
+        let result = wait_for_stalled_typing(&stall, typing_rx, typing);
         let error = result.expect_err("a foreground change must stop typing");
         let turn = error
             .downcast_ref::<ForegroundInputError>()
@@ -3275,6 +3323,7 @@ mod busy_target_activation_tests {
             .turn;
         assert!(!restores_previous(turn));
         assert!(error.to_string().contains("foreground_lost"), "{error}");
+        stall.assert_before_deadline();
         stall.release();
         let deadline = Instant::now() + Duration::from_secs(1);
         while Instant::now() < deadline {
