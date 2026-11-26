@@ -129,7 +129,7 @@ impl Marker {
             window_id,
             property,
         };
-        unsafe { SetPropW(marker.hwnd(), marker.key(), HANDLE(1usize as *mut _)) }.map_err(
+        unsafe { SetPropW(marker.hwnd(), marker.key(), Some(HANDLE(1usize as *mut _))) }.map_err(
             |error| {
                 failure(
                     "window_state_unavailable",

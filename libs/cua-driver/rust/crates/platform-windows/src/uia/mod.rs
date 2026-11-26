@@ -18,7 +18,7 @@ use windows::Win32::Foundation::{RPC_E_CHANGED_MODE, TRUE};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
-use windows::Win32::System::Variant::{VARIANT, VT_BOOL, VT_BSTR, VT_I4};
+use windows::Win32::System::Variant::{VARIANT, VT_BOOL, VT_BSTR, VT_I4, VT_R8};
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationCacheRequest, IUIAutomationElement,
     IUIAutomationElementArray, IUIAutomationExpandCollapsePattern, IUIAutomationInvokePattern,
@@ -1037,8 +1037,7 @@ fn read_cached_i32(
 ) -> Option<i32> {
     unsafe {
         let variant = element.GetCachedPropertyValue(property_id).ok()?;
-        let raw = variant.as_raw();
-        (raw.Anonymous.Anonymous.vt == 3/* VT_I4 */).then(|| raw.Anonymous.Anonymous.Anonymous.lVal)
+        (variant.vt() == VT_I4).then(|| variant.Anonymous.Anonymous.Anonymous.lVal)
     }
 }
 
@@ -1048,9 +1047,7 @@ fn read_cached_f64(
 ) -> Option<f64> {
     unsafe {
         let variant = element.GetCachedPropertyValue(property_id).ok()?;
-        let raw = variant.as_raw();
-        (raw.Anonymous.Anonymous.vt == 5/* VT_R8 */)
-            .then(|| raw.Anonymous.Anonymous.Anonymous.dblVal)
+        (variant.vt() == VT_R8).then(|| variant.Anonymous.Anonymous.Anonymous.dblVal)
     }
 }
 

@@ -23,7 +23,7 @@ use serde_json::{json, Value};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -314,7 +314,7 @@ impl Backend for NativeBackend {
                 unsafe {
                     SetWindowPos(
                         hwnd,
-                        HWND::default(),
+                        None,
                         adjusted.0,
                         adjusted.1,
                         adjusted.2,

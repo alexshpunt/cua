@@ -33,7 +33,6 @@
 
 #![allow(non_snake_case, non_upper_case_globals)]
 
-use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Instant;
@@ -43,8 +42,8 @@ use cua_driver_core::cursor_hook::{self, CursorHookEvent};
 #[cfg(target_os = "windows")]
 use cursor_overlay::SurfaceFit;
 use cursor_overlay::{
-    CursorConfig, CursorKey, KeyedOverlayCommand, MotionConfig, OverlayCommand, OverlayMsg,
-    RenderEntry, RenderStateCore, ScreenFrame, SurfaceGeometry, ZOrderEnforcer,
+    CursorConfig, CursorKey, KeyedOverlayCommand, MotionConfig, MsgOutcome, OverlayCommand,
+    OverlayMsg, RenderEntry, RenderStateCore, ScreenFrame, SurfaceGeometry, ZOrderEnforcer,
 };
 
 // ── Global channel ────────────────────────────────────────────────────────
@@ -1064,7 +1063,7 @@ impl WinSurface {
         let dc = GetDC(None);
         let result = UpdateLayeredWindow(
             hwnd,
-            dc,
+            Some(dc),
             Some(&POINT {
                 x: self.virt_x,
                 y: self.virt_y,
@@ -1073,7 +1072,7 @@ impl WinSurface {
                 cx: self.w,
                 cy: self.h,
             }),
-            HDC(self.hdc_mem as *mut _),
+            Some(HDC(self.hdc_mem as *mut _)),
             Some(&POINT { x: 0, y: 0 }),
             COLORREF(0),
             Some(&BLENDFUNCTION {

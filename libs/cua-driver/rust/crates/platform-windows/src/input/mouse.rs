@@ -479,7 +479,7 @@ pub fn post_wheel_screen(root: u64, sx: i32, sy: i32, delta_x: i32, delta_y: i32
         for _ in 0..notches.unsigned_abs() {
             let delta = (step * notches.signum()) as i16 as u16 as usize;
             unsafe {
-                PostMessageW(target, message, WPARAM(delta << 16), lparam)?;
+                PostMessageW(Some(target), message, WPARAM(delta << 16), lparam)?;
             }
             sleep(Duration::from_millis(10));
         }
@@ -1312,10 +1312,14 @@ pub fn send_drag_synthesized(
         bail!("SendInput did not insert the drag's button press");
     }
     if !witness.await_button(true) {
-        let _ = send_unconfirmed_input(
-            &[button_input(up_flag)],
-            std::mem::size_of::<INPUT>() as i32,
-        );
+        // SAFETY: the slice contains one initialized INPUT and the size is the
+        // exact size of that type. This best-effort release cannot confirm receipt.
+        let _ = unsafe {
+            send_unconfirmed_input(
+                &[button_input(up_flag)],
+                std::mem::size_of::<INPUT>() as i32,
+            )
+        };
         let _ = release_modifiers();
         bail!("The established drag reader did not confirm the button press; owned releases were attempted.");
     }

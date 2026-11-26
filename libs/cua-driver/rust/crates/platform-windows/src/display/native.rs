@@ -6,8 +6,8 @@
 use super::{DisplayReadError, DisplayTopology};
 use anyhow::{bail, Result};
 use cua_driver_contract::{DisplayBounds, DisplayInfo};
-use windows::core::PCWSTR;
-use windows::Win32::Foundation::{BOOL, LPARAM, RECT};
+use windows::core::{BOOL, PCWSTR};
+use windows::Win32::Foundation::{LPARAM, RECT};
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayDevicesW, EnumDisplayMonitors, GetMonitorInfoW, DISPLAY_DEVICEW, HDC, HMONITOR,
     MONITORINFOEXW,
@@ -123,7 +123,7 @@ fn current() -> Result<DisplayTopology> {
     };
     let success = unsafe {
         EnumDisplayMonitors(
-            HDC::default(),
+            None,
             None,
             Some(collect),
             LPARAM(&mut collected as *mut Collected as isize),

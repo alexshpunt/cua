@@ -266,7 +266,7 @@ fn descendant_of_class(parent: HWND, matches: fn(&str) -> bool) -> Option<HWND> 
     };
     unsafe {
         let _ = EnumChildWindows(
-            parent,
+            Some(parent),
             Some(visit),
             LPARAM(&mut search as *mut Search as isize),
         );
@@ -350,7 +350,7 @@ fn content_window(root: HWND) -> Option<HWND> {
         };
         unsafe {
             let _ = EnumChildWindows(
-                current,
+                Some(current),
                 Some(visit),
                 LPARAM(&mut search as *mut Children as isize),
             );
@@ -374,8 +374,8 @@ fn wake_chromium_keyboard(root: HWND) {
     }
     const WA_ACTIVE: usize = 1;
     unsafe {
-        let _ = PostMessageW(root, WM_ACTIVATE, WPARAM(WA_ACTIVE), LPARAM(0));
-        let _ = PostMessageW(root, WM_SETFOCUS, WPARAM(0), LPARAM(0));
+        let _ = PostMessageW(Some(root), WM_ACTIVATE, WPARAM(WA_ACTIVE), LPARAM(0));
+        let _ = PostMessageW(Some(root), WM_SETFOCUS, WPARAM(0), LPARAM(0));
     }
 }
 
@@ -406,7 +406,7 @@ fn cancel_background_menu_loop(target: HWND) -> Result<()> {
         info.hwndMenuOwner
     };
     unsafe {
-        let _ = PostMessageW(owner, WM_CANCELMODE, WPARAM(0), LPARAM(0));
+        let _ = PostMessageW(Some(owner), WM_CANCELMODE, WPARAM(0), LPARAM(0));
     }
     bail!(
         "{BACKGROUND_MENU_LOOP}: the key opened a Win32 menu, which stops the app while it is in \

@@ -14,7 +14,7 @@ use std::{
 };
 use windows::{
     core::{IInspectable, Interface},
-    Foundation::{EventRegistrationToken, TypedEventHandler},
+    Foundation::TypedEventHandler,
     Graphics::{
         Capture::{
             Direct3D11CaptureFrame, Direct3D11CaptureFramePool, GraphicsCaptureItem,
@@ -154,7 +154,7 @@ impl Target {
             "target_process_exited"
         );
         ensure!(
-            unsafe { IsWindow(self.hwnd) }.as_bool(),
+            unsafe { IsWindow(Some(self.hwnd)) }.as_bool(),
             "target_window_closed"
         );
         let mut owner = 0;
@@ -199,8 +199,8 @@ struct Capture {
     pool: Direct3D11CaptureFramePool,
     session: GraphicsCaptureSession,
     closed: Arc<AtomicBool>,
-    closed_token: Option<EventRegistrationToken>,
-    arrived_token: Option<EventRegistrationToken>,
+    closed_token: Option<i64>,
+    arrived_token: Option<i64>,
     arrived: mpsc::Receiver<i64>,
     device: ID3D11Device,
     context: ID3D11DeviceContext,

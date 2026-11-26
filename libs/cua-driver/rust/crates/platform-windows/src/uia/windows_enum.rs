@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Cua AI, Inc.
 
-//! Bounded UI Automation calls: the process-wide single-flight gate, the
-//! desktop health probe, point/accelerator invocation and the pointer-shape
-//! hit-test. Window listing does not use UIA (see `crate::win32::windows`).
+//! Bounded UI Automation calls: window enumeration, the process-wide
+//! single-flight gate, desktop health probe, point/accelerator invocation,
+//! and pointer-shape hit-testing.
 
 // We pattern-match against `UIA_*ControlTypeId` constants from the `windows`
 // crate, which use mixed case we can't rename. The lint's suggested rewrite
@@ -20,7 +20,10 @@ use cua_driver_core::single_flight::SingleFlight;
 
 use anyhow::{bail, Context};
 use windows::core::Interface;
-use windows::Win32::Foundation::HWND;
+use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Graphics::Dwm::{
+    DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
+};
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
@@ -34,12 +37,20 @@ use windows::Win32::UI::Accessibility::{
     UIA_TabItemControlTypeId, UIA_TogglePatternId, UIA_TreeItemControlTypeId, UIA_CONTROLTYPE_ID,
     UIA_PROPERTY_ID,
 };
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetAncestor, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+    IsIconic, IsWindow, IsWindowVisible, GA_ROOT,
+};
+
+use crate::win32::windows::WindowInfo;
 
 /// HRESULT for "COM already initialized in another mode on this thread."
 /// Returned by `CoInitializeEx` when something else (a previous call in the
 /// same task, or a library on the same OS thread) picked a different
 /// apartment. Safe to ignore — COM is up either way.
 const RPC_E_CHANGED_MODE: i32 = -2147417850; // 0x80010106
+/// Bound desktop enumeration when a provider is unresponsive.
+const DESKTOP_CALL_TIMEOUT: Duration = Duration::from_secs(2);
 /// Subtree scans: keep the pre-existing interactive operation budget.
 const SUBTREE_OP_TIMEOUT: Duration = Duration::from_secs(4);
 /// Health probes can tolerate the same budget without delaying window listing.
@@ -194,6 +205,71 @@ fn get_uia() -> Option<IUIAutomation> {
             tracing::warn!(target: "uia_windows_enum", "CoCreateInstance(CUIAutomation) failed: {e}");
             None
         }
+    }
+}
+
+/// Enumerate top-level windows visible to UI Automation.
+///
+/// Returns one `WindowInfo` per non-offscreen child of the UIA desktop root
+/// whose `NativeWindowHandle` is non-null and resolves to a window with a
+/// non-empty title. Windows whose HWND is zero (pure UIA virtual elements,
+/// rare) are skipped because the rest of the driver pipeline keys off HWND.
+///
+/// Returns an empty vec on any UIA failure — callers should treat UIA as a
+/// best-effort source and union with `EnumWindows`.
+pub fn enumerate_top_level_windows() -> Vec<WindowInfo> {
+    run_uia_with_deadline(
+        "desktop enumeration",
+        DESKTOP_CALL_TIMEOUT,
+        "Win32-only window list",
+        enumerate_top_level_windows_unbounded,
+    )
+    .unwrap_or_default()
+}
+
+fn enumerate_top_level_windows_unbounded() -> Vec<WindowInfo> {
+    // Keep this first so COM interfaces drop before CoUninitialize.
+    let _com = ComInit::new();
+    let uia = match get_uia() {
+        Some(u) => u,
+        None => return Vec::new(),
+    };
+
+    unsafe {
+        let root = match uia.GetRootElement() {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::debug!(target: "uia_windows_enum", "GetRootElement failed: {e}");
+                return Vec::new();
+            }
+        };
+        let condition = match uia.CreateTrueCondition() {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::debug!(target: "uia_windows_enum", "CreateTrueCondition failed: {e}");
+                return Vec::new();
+            }
+        };
+        let children = match root.FindAll(TreeScope_Children, &condition) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::debug!(target: "uia_windows_enum", "FindAll(Children) failed: {e}");
+                return Vec::new();
+            }
+        };
+
+        let count = children.Length().unwrap_or(0);
+        let mut out: Vec<WindowInfo> = Vec::with_capacity(count as usize);
+        for i in 0..count {
+            let elem = match children.GetElement(i) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            if let Some(info) = window_info_from_uia_element(&elem) {
+                out.push(info);
+            }
+        }
+        out
     }
 }
 
@@ -839,7 +915,7 @@ unsafe fn window_info_from_uia_element(elem: &IUIAutomationElement) -> Option<Wi
         .ok()
         .is_some_and(rect_is_valid);
 
-    if !IsWindow(hwnd).as_bool() {
+    if !IsWindow(Some(hwnd)).as_bool() {
         return None;
     }
 
@@ -883,7 +959,7 @@ unsafe fn window_info_from_uia_element(elem: &IUIAutomationElement) -> Option<Wi
         // or reused HWND cannot be accepted as the original UIA window.
         let mut pid_after = 0u32;
         let thread_after = GetWindowThreadProcessId(hwnd, Some(&mut pid_after));
-        if !IsWindow(hwnd).as_bool()
+        if !IsWindow(Some(hwnd)).as_bool()
             || elem.CurrentNativeWindowHandle().ok() != Some(hwnd)
             || elem
                 .CurrentProcessId()

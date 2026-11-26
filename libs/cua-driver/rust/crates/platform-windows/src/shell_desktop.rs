@@ -116,7 +116,7 @@ impl Query {
 fn same_window(hwnd: HWND, pid: u32) -> bool {
     let mut owner = 0;
     unsafe {
-        IsWindow(hwnd).as_bool()
+        IsWindow(Some(hwnd)).as_bool()
             && GetWindowThreadProcessId(hwnd, Some(&mut owner)) != 0
             && owner == pid
     }

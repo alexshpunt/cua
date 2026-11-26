@@ -353,7 +353,7 @@ fn window_owner_matches(pid: u32, window_id: u64) -> anyhow::Result<bool> {
     use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
     let hwnd = HWND(window_id as usize as *mut std::ffi::c_void);
     anyhow::ensure!(
-        unsafe { IsWindow(hwnd).as_bool() },
+        unsafe { IsWindow(Some(hwnd)).as_bool() },
         "native window was replaced"
     );
     let mut owner = 0_u32;

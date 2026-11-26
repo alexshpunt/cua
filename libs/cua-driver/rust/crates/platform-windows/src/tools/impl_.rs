@@ -737,8 +737,7 @@ fn background_window_input(tool: &str, args: &Value) -> bool {
     };
     BACKGROUND_WINDOW_INPUT_TOOLS.contains(&tool)
         && args.get("scope").and_then(Value::as_str) != Some("desktop")
-        && crate::input::delivery::DeliveryMode::from_args(args)
-            == crate::input::delivery::DeliveryMode::Background
+        && crate::input::delivery::DeliveryMode::from_args(args).is_background()
         && exact("pid")
         && exact("window_id")
 }
@@ -1779,6 +1778,31 @@ mod drag_capture_id_tests;
 mod semantic_admission_tests;
 #[cfg(test)]
 mod uia_only_tests;
+
+#[cfg(test)]
+mod background_window_input_tests {
+    use super::background_window_input;
+    use serde_json::json;
+
+    #[test]
+    fn only_exact_background_window_actions_use_independent_lane() {
+        for mode in [None, Some("background")] {
+            let mut args = json!({"pid": 42, "window_id": 7});
+            if let Some(mode) = mode {
+                args["delivery_mode"] = json!(mode);
+            }
+            assert!(background_window_input("click", &args));
+            assert!(!background_window_input("get_window_state", &args));
+            args["scope"] = json!("desktop");
+            assert!(!background_window_input("click", &args));
+        }
+        assert!(!background_window_input(
+            "click",
+            &json!({"pid": 42, "window_id": 7, "delivery_mode": "foreground"}),
+        ));
+        assert!(!background_window_input("click", &json!({"pid": 42})));
+    }
+}
 
 #[cfg(test)]
 mod cursor_key_resolution_tests {

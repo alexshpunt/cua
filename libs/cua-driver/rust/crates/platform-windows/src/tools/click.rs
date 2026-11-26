@@ -529,7 +529,7 @@ impl Tool for ClickTool {
                 .as_ref()
                 .map(|element| (element.kind, element.msaa_role))
             {
-                if delivery == DeliveryMode::Background {
+                if delivery.is_background() {
                     return crate::input::delivery::background_pointer_unavailable_error(
                         hwnd,
                         EventKind::MouseClick,

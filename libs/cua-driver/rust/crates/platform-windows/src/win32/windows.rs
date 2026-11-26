@@ -3,22 +3,10 @@
 
 //! Enumerate top-level windows on Windows.
 //!
-//! Window listing uses Win32 calls only. None of them sends a message to a
-//! window in another process, so a hung or slow app cannot stall it. UI
-//! Automation's desktop `FindAll` does: it asks every top-level window's
-//! provider, so each call waited on the slowest app (up to its 2 s deadline
-//! when one was hung, #4906).
-//!
-//! 1. **`EnumWindows`**, whose iteration order is the window manager's
-//!    z-order (top-to-bottom), so the list index doubles as a z_index.
-//! 2. **`FindWindowExW` walk**, appended after, for the immersive shell
-//!    windows `EnumWindows` skips (an open Start menu or Search flyout).
-//!    Only uncloaked, non-minimized ones are kept, since a closed flyout
-//!    stays visible and titled but cloaked.
-//!
-//! Both sources require a visible window with a non-empty title. Minimized
-//! `EnumWindows` windows remain addressable and are reported as off-screen
-//! so callers can restore them explicitly.
+//! Win32 enumeration retains its z-order and immersive-shell coverage. UIA
+//! contributes additional HWNDs after the native entries, without reordering
+//! them. A bounded single-flight UIA worker falls back to the native list if
+//! a provider is slow or unavailable.
 
 use std::collections::HashSet;
 use std::sync::Mutex;
@@ -53,16 +41,35 @@ struct EnumState {
     windows: Vec<WindowInfo>,
 }
 
-/// List top-level visible windows in z-order, front first. If `filter_pid`
+/// List native windows in z-order, then UIA-only windows. If `filter_pid`
 /// is Some, only that process's windows.
 pub fn list_windows(filter_pid: Option<u32>) -> Vec<WindowInfo> {
-    let mut windows = merge_top_level_windows(
+    let win32_windows = merge_top_level_windows(
         enumerate_via_enum_windows(),
         top_level_handles(),
         immersive_window_info,
     );
+    merge_uia_windows(
+        win32_windows,
+        crate::uia::windows_enum::enumerate_top_level_windows(),
+        filter_pid,
+    )
+}
+
+/// Keep native z-order, then append UIA-only HWNDs without duplicates.
+fn merge_uia_windows(
+    mut windows: Vec<WindowInfo>,
+    uia_windows: Vec<WindowInfo>,
+    filter_pid: Option<u32>,
+) -> Vec<WindowInfo> {
+    let mut seen: HashSet<u64> = windows.iter().map(|window| window.hwnd).collect();
+    windows.extend(
+        uia_windows
+            .into_iter()
+            .filter(|window| seen.insert(window.hwnd)),
+    );
     if let Some(pid) = filter_pid {
-        windows.retain(|w| w.pid == pid);
+        windows.retain(|window| window.pid == pid);
     }
     windows
 }
@@ -165,6 +172,30 @@ fn lookup_window_for_pid_with(
         Some(window) if window.pid == pid => PidWindowLookup::Found(window),
         Some(window) => PidWindowLookup::OtherPid(window.pid),
         None => PidWindowLookup::Missing,
+    }
+}
+
+/// List `pid`'s top-level windows, consulting UIA only when Win32 finds none.
+///
+/// Polling callers (e.g. `launch_app` waiting for a first window) otherwise
+/// pay the UIA desktop-enumeration deadline on every attempt even when
+/// `EnumWindows` already sees the window (#4416).
+pub(crate) fn list_windows_win32_first(pid: u32) -> Vec<WindowInfo> {
+    win32_first_with(
+        || list_windows_via_win32(Some(pid)),
+        || list_windows(Some(pid)),
+    )
+}
+
+fn win32_first_with(
+    win32: impl FnOnce() -> Vec<WindowInfo>,
+    full: impl FnOnce() -> Vec<WindowInfo>,
+) -> Vec<WindowInfo> {
+    let windows = win32();
+    if windows.is_empty() {
+        full()
+    } else {
+        windows
     }
 }
 
@@ -996,8 +1027,8 @@ pub(crate) fn hosted_app_pid(host_pid: u32, frame_hwnd: u64) -> Option<u32> {
 mod upstream_exact_window_tests {
     use super::{
         chain_reaches_target, exact_window_from_probe, lookup_window_for_pid_with,
-        merge_top_level_windows, post_action_foreground_allowed, target_dismissed, PidWindowLookup,
-        PostActionForegroundRelation, WindowInfo,
+        merge_top_level_windows, merge_uia_windows, post_action_foreground_allowed,
+        target_dismissed, PidWindowLookup, PostActionForegroundRelation, WindowInfo,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -1049,6 +1080,21 @@ mod upstream_exact_window_tests {
 
         let missing = lookup_window_for_pid_with(42, 0x1234, |_, _| None, Vec::new);
         assert!(matches!(missing, PidWindowLookup::Missing));
+    }
+
+    #[test]
+    fn uia_only_windows_follow_native_order_and_filter_after_deduplication() {
+        let native = vec![window(1, 0x30), window(2, 0x10)];
+        let uia = vec![window(9, 0x30), window(1, 0x20), window(1, 0x20)];
+        let merged = merge_uia_windows(native.clone(), uia.clone(), None);
+        let order: Vec<_> = merged.iter().map(|w| (w.hwnd, w.pid)).collect();
+        assert_eq!(order, [(0x30, 1), (0x10, 2), (0x20, 1)]);
+
+        let filtered = merge_uia_windows(native, uia, Some(9));
+        assert!(
+            filtered.is_empty(),
+            "a duplicate must not replace native ownership"
+        );
     }
 
     #[test]
