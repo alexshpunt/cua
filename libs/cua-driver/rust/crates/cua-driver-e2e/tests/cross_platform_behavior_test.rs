@@ -1831,14 +1831,11 @@ fn shared_case_with_native_hyprland(
         Vec::new()
     } else if cfg!(target_os = "windows") && delivery_kind == Delivery::Background {
         match (spec.name, action, targeting) {
-            ("electron", "right_click" | "double_click" | "drag", _) => {
-                vec![RefusalCode::BackgroundUnavailable]
-            }
-            (
-                "electron",
-                "type_text" | "type_submit" | "press_key" | "hotkey" | "scroll" | "editor_save",
-                _,
-            ) => {
+            // Right/double clicks and PX text/key actions have fixture, focus,
+            // occlusion and input-leak witnesses in this Electron harness.
+            ("electron", "drag", _) => vec![RefusalCode::BackgroundUnavailable],
+            ("electron", "type_text" | "type_submit" | "press_key", Targeting::Ax)
+            | ("electron", "hotkey" | "scroll" | "editor_save", _) => {
                 vec![RefusalCode::BackgroundUnavailable]
             }
             ("tauri", "hotkey", _) | ("tauri", "scroll", Targeting::Px) => {
