@@ -23,8 +23,9 @@
 
 use std::ptr::null_mut;
 
-use windows::core::{Interface, VARIANT};
+use windows::core::Interface;
 use windows::Win32::Foundation::HWND;
+use windows::Win32::System::Variant::{VARIANT, VT_I4};
 use windows::Win32::UI::Accessibility::{AccessibleObjectFromWindow, IAccessible};
 
 use crate::uia::{UiaNode, UiaTreeResult};
@@ -196,6 +197,7 @@ unsafe fn walk(
                 actions: actions.clone(),
                 enabled: None,
                 selected: None,
+                is_password: None,
                 element_ptr: ptr,
                 center_x,
                 center_y,
@@ -218,6 +220,7 @@ unsafe fn walk(
                 actions: Vec::new(),
                 enabled: None,
                 selected: None,
+                is_password: None,
                 element_ptr: ptr,
                 center_x: 0,
                 center_y: 0,
@@ -283,11 +286,8 @@ unsafe fn walk(
 /// Extract i32 from a VARIANT — accRole returns VT_I4 in practice (sometimes
 /// VT_BSTR for custom roles, which we map to 0 = unknown).
 unsafe fn variant_to_i32(v: &VARIANT) -> Option<i32> {
-    let raw = v.as_raw();
-    let vt = raw.Anonymous.Anonymous.vt;
-    if vt == 3 {
-        // VT_I4
-        Some(raw.Anonymous.Anonymous.Anonymous.lVal)
+    if v.vt() == VT_I4 {
+        Some(v.Anonymous.Anonymous.Anonymous.lVal)
     } else {
         None
     }

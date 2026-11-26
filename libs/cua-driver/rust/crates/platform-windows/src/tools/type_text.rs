@@ -275,7 +275,7 @@ impl Tool for TypeTextTool {
         // Refuse known background drops before the final WM_CHAR path. Posted
         // WM_CHAR reaches WPF's keyboard focus element and Chromium's top-level
         // window (LPT-1846).
-        if delivery == DeliveryMode::Background
+        if delivery.is_background()
             && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::TextInput)
         {
             return crate::input::delivery::background_unavailable_error(

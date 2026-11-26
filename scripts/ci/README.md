@@ -450,11 +450,11 @@ In the fork, `E2E: Cua Driver release gate` (`.github/workflows/e2e-cua-driver-r
 | --- | --- | --- | --- |
 | Push to `main` | The pushed commits touch a gated path (`.github/scripts/cua_driver_e2e_gate_paths.py`). Runs queue; a burst of merges leaves one pending run for the newest commit | full | A failure opens or updates the issue below |
 | Nightly, 06:00 UTC | Default branch HEAD | full | Same. The first fully clean full run closes the issue |
-| Pull request | The `e2e-gate` label is present, or the PR touches the cursor overlay, focus, background input or browser routing paths. Release Please PRs skip the lanes unless labelled | quick | The quick lanes run on the PR merge commit. |
+| Pull request | The `e2e-gate` label is present, or the PR touches a driver crate, test app, build input, fixture or the gate itself; docs are excluded. Release Please PRs skip the lanes unless labelled | quick | The quick lanes run on the PR merge commit. |
 | Other pull requests | Everything else | none | The lanes are skipped and `E2E gate / result` passes at once. |
 
 A failed full run or a flaky case opens or updates one issue named for the branch, "Cua Driver release gate failing on <branch> (nightly)". A break the quick lane could not see is already on the branch when the full run finds it, so it is **fixed forward** with a new PR.
 
 **Retry once.** Inside each lane a failed case is rerun once (`lib/e2e-retry-once.sh`, and `Invoke-CargoTest` in the Windows runner). A pass on the retry is flaky: it is listed under "Flaky cases" in the job summary and in the tracking issue, and does not fail the gate. Two failures are a real failure. The first attempt's rows, videos and log are kept under `retried-attempts/` in the lane artifact.
 
-**Required check.** Branch protection cannot require a check by path, so the workflow always runs and `E2E gate / result` is the one check to require on `main`. It is green when the lanes are not needed. A repository admin has to add it under Settings, Branches. Until then the gate is advisory on pull requests; the label, path and release-PR triggers still run the quick lanes.
+**Required check.** Branch protection cannot require a check by path, so the workflow always runs and `E2E gate / result` is the one check to require on `main`. It is green when the lanes are not needed. A repository admin has to add it under Settings, Branches. Until then the gate is advisory on pull requests; the label, path and release-PR triggers still run the quick lanes. The hosted macOS quick lanes take about 40 to 45 minutes (`shared`, Electron and WKWebView) and 45 minutes (`native`) in parallel, so a gated PR waits roughly 45 to 50 minutes.

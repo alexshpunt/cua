@@ -18,8 +18,8 @@ name: "E2E: Cua Driver release gate"
 #          the full run after merge.
 #
 # A PR gets the quick lane when the `e2e-gate` label is present or it touches the
-# gated paths (.github/scripts/cua_driver_e2e_gate_paths.py: cursor overlay,
-# focus, background input, browser routing, the harness). release-please PRs
+# gated paths (.github/scripts/cua_driver_e2e_gate_paths.py: driver crates,
+# test apps, build inputs, fixtures and this gate; docs are excluded). release-please PRs
 # skip the lanes unless labelled. Otherwise the lanes are skipped and
 # `E2E gate / result` passes at once, so that one check can be required on every
 # PR (see scripts/ci/README.md).

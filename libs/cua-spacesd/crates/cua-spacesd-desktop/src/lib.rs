@@ -46,6 +46,7 @@ pub mod codec_encoder;
 mod driver_input;
 #[cfg(target_os = "linux")]
 mod encoded_capture;
+pub mod encoder_probe;
 pub mod grpc;
 mod h264_limits;
 #[cfg(target_os = "linux")]
@@ -2796,7 +2797,7 @@ mod own_window_tests {
                 height: 100.0,
             },
             layer: 0,
-            z_index: 0,
+            z_index: Some(0),
             is_on_screen: true,
             current_space_id: None,
             on_current_space: None,

@@ -45,6 +45,7 @@ impl Tool for RightClickTool {
                 required with `x`, `y`; an `element_token` carries its own pid. \
                 `modifier` holds keys during the click: real keys in the foreground, the \
                 target thread's key state in the background.".into(),
+
             input_schema: json!({"type":"object","required":[],"properties":{
                 "session": cua_driver_core::tool_schema::session_schema(),
                 "pid":{"type":"integer","description":"Target process ID. Optional with element_token (the token carries the pid)."},
@@ -84,6 +85,7 @@ impl Tool for RightClickTool {
         // Held keys (ctrl, shift, alt, win): real keys in the foreground, the target
         // thread's key state in the background.
         let modifiers: Vec<String> = args.str_array("modifier");
+
         // Port Swift's full validation set.
         let has_xy = x.is_some() && y.is_some();
         let partial_xy = x.is_some() != y.is_some();
@@ -167,7 +169,7 @@ impl Tool for RightClickTool {
             // island ignores posted WM_RBUTTON (measured: RightTapped never
             // fired), and the pen-barrel injector click-activates the frame.
             // Return the structured error (retry with delivery_mode:foreground).
-            if delivery == DeliveryMode::Background {
+            if delivery.is_background() {
                 if let Some(r) =
                     winui3_background_gesture(&admitted, pid, hwnd, Some(idx), 1, "right").await
                 {
@@ -178,7 +180,7 @@ impl Tool for RightClickTool {
             if (cx, cy) != recorded_center {
                 crate::recording_hooks::capture_dispatch_click_target(hwnd, pid, cx, cy);
             }
-            if delivery == DeliveryMode::Background
+            if delivery.is_background()
                 && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseClick)
             {
                 return crate::input::delivery::background_pointer_unavailable_error(
@@ -263,7 +265,7 @@ impl Tool for RightClickTool {
             // delivery_mode:"background" on WinUI3: right-click can't land while
             // holding the contract (no UIA right-click, posted WM_RBUTTON
             // ignored, pen-barrel injector steals foreground) → structured error.
-            if delivery == DeliveryMode::Background {
+            if delivery.is_background() {
                 if let Some(r) =
                     winui3_background_gesture(&admitted, pid, hwnd, None, 1, "right").await
                 {
@@ -271,7 +273,7 @@ impl Tool for RightClickTool {
                 }
             }
             // Refuse unsupported synthetic background input before insertion.
-            if delivery == DeliveryMode::Background
+            if delivery.is_background()
                 && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseClick)
             {
                 return crate::input::delivery::background_pointer_unavailable_error(

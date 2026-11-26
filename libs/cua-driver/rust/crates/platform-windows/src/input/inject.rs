@@ -292,8 +292,20 @@ fn on_current_task_view_desktop(root: HWND) -> bool {
     }
 }
 
+#[derive(Debug)]
+pub struct StrokeInterrupted(pub(crate) String);
+
+impl std::fmt::Display for StrokeInterrupted {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for StrokeInterrupted {}
+
 /// Refuse legacy background synthetic clicks before any desktop mutation.
 /// Use a semantic UIA route, a supported fixed-HWND post, or explicit foreground input.
+
 pub fn inject_click_screen(
     _target: u64,
     _sx: i32,
@@ -493,7 +505,7 @@ mod task_view_desktop_tests {
                 200,
                 None,
                 None,
-                instance,
+                Some(instance.into()),
                 None,
             )
             .expect("create window");
@@ -542,7 +554,7 @@ mod task_view_desktop_tests {
             drop(guard);
 
             DestroyWindow(hwnd).expect("destroy window");
-            UnregisterClassW(class.lpszClassName, instance).expect("unregister class");
+            UnregisterClassW(class.lpszClassName, Some(instance.into())).expect("unregister class");
             assert_eq!(landed, other, "the guard took the window off its desktop");
             assert_ne!(armed, 0, "on the user's desktop the guard still applies");
         }
@@ -551,6 +563,7 @@ mod task_view_desktop_tests {
 
 /// Refuse legacy background synthetic drags before any desktop mutation.
 /// Foreground timeline pen input is a separate, explicit delivery route.
+
 pub fn inject_drag_screen(
     _target: u64,
     _sx0: i32,

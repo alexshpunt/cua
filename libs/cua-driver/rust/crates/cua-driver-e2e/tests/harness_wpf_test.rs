@@ -1278,6 +1278,125 @@ fn harness_wpf_right_click() {
             vec![OracleKind::Cursor, OracleKind::Focus]
         },
     );
+    for targeting in [Targeting::Ax, Targeting::Px] {
+        run_foreground_case(
+            "right_click",
+            targeting,
+            DriverRoute::WindowsSendInput,
+            Vec::new(),
+            |pid, wid, driver| {
+                focus_harness(driver, pid, wid);
+                for (click_count, modifiers, expected) in
+                    [(1, vec!["shift"], "Shift"), (2, Vec::new(), "None")]
+                {
+                    let snap = snapshot(driver, pid, wid);
+                    assert!(!snap.is_error(), "snapshot failed: {}", snap.text());
+                    let mut args = serde_json::json!({
+                        "pid": pid as i64, "window_id": wid, "modifier": modifiers
+                    });
+                    if targeting == Targeting::Ax {
+                        args["element_token"] =
+                            serde_json::json!(element_token_by_id(&snap, "border-click-target"));
+                    } else {
+                        let (x, y) = pixel_center(
+                            &snap,
+                            "border-click-target",
+                            window_bounds(driver, pid, wid),
+                        );
+                        args["x"] = serde_json::json!(x);
+                        args["y"] = serde_json::json!(y);
+                    }
+
+                    if click_count == 1 {
+                        let refused = driver.call("right_click", args.clone());
+                        assert_eq!(
+                            refused.structured()["code"],
+                            "background_unavailable",
+                            "background modified right-click returned the wrong refusal: {}",
+                            refused.text()
+                        );
+                        assert!(refused.is_error());
+                        let after_refusal = snapshot(driver, pid, wid);
+                        assert!(
+                            after_refusal.text().contains("last_action=none"),
+                            "refused right-click reached the fixture: {}",
+                            after_refusal.text()
+                        );
+                        // The readback replaces the snapshot, so renew the token.
+                        if targeting == Targeting::Ax {
+                            args["element_token"] = serde_json::json!(element_token_by_id(
+                                &after_refusal,
+                                "border-click-target"
+                            ));
+                        }
+                    }
+                    let mut window_rect = RECT::default();
+                    unsafe {
+                        GetWindowRect(HWND(wid as *mut _), &mut window_rect)
+                            .expect("read harness bounds");
+                        SetCursorPos(window_rect.left + 10, window_rect.top + 10)
+                            .expect("place cursor away from right-click target");
+                    }
+                    let mut cursor_before = POINT::default();
+                    unsafe { GetCursorPos(&mut cursor_before) }.expect("read cursor before click");
+                    args["delivery_mode"] = serde_json::json!("foreground");
+                    let response = driver.call("right_click", args);
+                    assert!(
+                        !response.is_error(),
+                        "foreground right-click failed: {}",
+                        response.text()
+                    );
+                    let mut cursor_after = POINT::default();
+                    unsafe { GetCursorPos(&mut cursor_after) }.expect("read cursor after click");
+                    let idx = ax::element_index_by_id(snap.text(), "border-click-target")
+                        .expect("border-click-target not in snapshot");
+                    let frame = &snap.structured()["elements"]
+                        .as_array()
+                        .expect("structured elements")
+                        .iter()
+                        .find(|element| element["element_index"].as_u64() == Some(idx))
+                        .expect("right-click target frame")["frame"];
+                    let click_x = frame["x"].as_f64().unwrap() + frame["w"].as_f64().unwrap() / 2.0;
+                    let click_y = frame["y"].as_f64().unwrap() + frame["h"].as_f64().unwrap() / 2.0;
+                    assert!(
+                        (f64::from(cursor_before.x) - click_x).abs() > 2.0
+                            || (f64::from(cursor_before.y) - click_y).abs() > 2.0,
+                        "cursor must start away from the injected point"
+                    );
+                    // No receiver-read witness covers this sequence; the fork keeps
+                    // the unconfirmed target posture instead of restoring the cursor.
+                    assert!(
+                        (f64::from(cursor_after.x) - click_x).abs() <= 1.0
+                            && (f64::from(cursor_after.y) - click_y).abs() <= 1.0,
+                        "unconfirmed right click moved off its target: ({}, {}) vs ({click_x}, {click_y})",
+                        cursor_after.x, cursor_after.y
+                    );
+                    assert_eq!(
+                        unsafe { GetForegroundWindow() }.0 as usize as u64,
+                        wid,
+                        "unconfirmed right click returned foreground away from its target"
+                    );
+                    let expected = format!(
+                        "last_action=right_click modifiers={expected} right_clicks={click_count}"
+                    );
+                    let deadline = Instant::now() + Duration::from_secs(3);
+                    loop {
+                        let post = snapshot(driver, pid, wid);
+                        if post.text().contains(&expected) {
+                            break;
+                        }
+                        assert!(
+                            Instant::now() < deadline,
+                            "right-click did not preserve/release modifiers: expected {expected:?}, got {}",
+                            post.text()
+                        );
+                        std::thread::sleep(Duration::from_millis(50));
+                    }
+                }
+                Vec::new()
+            },
+        );
+    }
 }
 
 #[test]

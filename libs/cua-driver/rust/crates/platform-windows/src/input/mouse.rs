@@ -259,11 +259,11 @@ fn post_click_on(
         let suspended = SuspendedThread::suspend(hwnd).map_err(unavailable)?;
         let posted = unsafe {
             // WM_MOUSEMOVE first so hover state is correct before the click.
-            PostMessageW(hwnd, WM_MOUSEMOVE, wup, lparam)
+            PostMessageW(Some(hwnd), WM_MOUSEMOVE, wup, lparam)
                 // Win32 controls do not infer a double-click from two posted DOWN
                 // messages. The second press must use WM_*BUTTONDBLCLK.
-                .and_then(|()| PostMessageW(hwnd, press_msg, wdown, lparam))
-                .and_then(|()| PostMessageW(hwnd, up_msg, wup, lparam))
+                .and_then(|()| PostMessageW(Some(hwnd), press_msg, wdown, lparam))
+                .and_then(|()| PostMessageW(Some(hwnd), up_msg, wup, lparam))
         };
         if let Some(suspended) = suspended {
             suspended.resume().map_err(unavailable)?;
@@ -322,7 +322,7 @@ pub fn post_drag(
     };
 
     unsafe {
-        PostMessageW(root, down_msg, wparam, make_lparam(from_x, from_y))?;
+        PostMessageW(Some(root), down_msg, wparam, make_lparam(from_x, from_y))?;
     }
     sleep(Duration::from_millis(CLICK_DELAY_MS));
 
@@ -331,7 +331,7 @@ pub fn post_drag(
         let ix = from_x + ((to_x - from_x) as f64 * t).round() as i32;
         let iy = from_y + ((to_y - from_y) as f64 * t).round() as i32;
         unsafe {
-            PostMessageW(root, WM_MOUSEMOVE, wparam, make_lparam(ix, iy))?;
+            PostMessageW(Some(root), WM_MOUSEMOVE, wparam, make_lparam(ix, iy))?;
         }
         if step_delay_ms > 0 {
             sleep(Duration::from_millis(step_delay_ms));
@@ -339,7 +339,7 @@ pub fn post_drag(
     }
 
     unsafe {
-        PostMessageW(root, up_msg, WPARAM(0), make_lparam(to_x, to_y))?;
+        PostMessageW(Some(root), up_msg, WPARAM(0), make_lparam(to_x, to_y))?;
     }
     Ok(())
 }
@@ -414,8 +414,18 @@ pub fn post_drag_screen(
     let _noact = crate::input::NoActivateGuard::arm(target);
     unsafe {
         // Pre-drag MOUSEMOVE (no buttons down yet) then DOWN at from.
-        PostMessageW(target, WM_MOUSEMOVE, wfree, make_lparam(c_from.x, c_from.y))?;
-        PostMessageW(target, down_msg, wparam, make_lparam(c_from.x, c_from.y))?;
+        PostMessageW(
+            Some(target),
+            WM_MOUSEMOVE,
+            wfree,
+            make_lparam(c_from.x, c_from.y),
+        )?;
+        PostMessageW(
+            Some(target),
+            down_msg,
+            wparam,
+            make_lparam(c_from.x, c_from.y),
+        )?;
     }
     sleep(Duration::from_millis(CLICK_DELAY_MS));
     for i in 1..=steps {
@@ -423,14 +433,14 @@ pub fn post_drag_screen(
         let ix = c_from.x + ((c_to.x - c_from.x) as f64 * t).round() as i32;
         let iy = c_from.y + ((c_to.y - c_from.y) as f64 * t).round() as i32;
         unsafe {
-            PostMessageW(target, WM_MOUSEMOVE, wparam, make_lparam(ix, iy))?;
+            PostMessageW(Some(target), WM_MOUSEMOVE, wparam, make_lparam(ix, iy))?;
         }
         if step_delay_ms > 0 {
             sleep(Duration::from_millis(step_delay_ms));
         }
     }
     unsafe {
-        PostMessageW(target, up_msg, wfree, make_lparam(c_to.x, c_to.y))?;
+        PostMessageW(Some(target), up_msg, wfree, make_lparam(c_to.x, c_to.y))?;
     }
     if let Some(keys) = held.as_mut() {
         keys.posted(steps + 3);
@@ -560,7 +570,8 @@ pub fn is_chromium_target_window(hwnd: u64) -> bool {
 /// surfaces support some UIA/top-level background routes that direct Chromium
 /// frames do not, so delivery policy needs to distinguish the two shapes.
 pub fn has_chromium_descendant(hwnd: u64) -> bool {
-    use windows::Win32::Foundation::{BOOL, FALSE, LPARAM, TRUE};
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{FALSE, LPARAM, TRUE};
     use windows::Win32::UI::WindowsAndMessaging::{EnumChildWindows, GetClassNameW};
 
     if hwnd == 0 {
@@ -586,7 +597,7 @@ pub fn has_chromium_descendant(hwnd: u64) -> bool {
     let mut scan = Scan { found: false };
     unsafe {
         let _ = EnumChildWindows(
-            HWND(hwnd as *mut _),
+            Some(HWND(hwnd as *mut _)),
             Some(child_cb),
             LPARAM(&mut scan as *mut Scan as isize),
         );
@@ -702,10 +713,16 @@ struct ClickWitness {
     button: u16,
     modifiers: Vec<u16>,
     inserted: bool,
+    target: crate::win32::ForegroundTarget,
 }
 
 impl ClickWitness {
-    fn start(enabled: bool, button: &str, modifiers: Vec<u16>) -> Self {
+    fn start(
+        enabled: bool,
+        target: crate::win32::ForegroundTarget,
+        button: &str,
+        modifiers: Vec<u16>,
+    ) -> Self {
         use windows::Win32::UI::Input::KeyboardAndMouse::{VK_LBUTTON, VK_MBUTTON, VK_RBUTTON};
         use windows::Win32::UI::WindowsAndMessaging::SM_SWAPBUTTON;
         // With swapped buttons, the physical left button is the logical right one.
@@ -721,12 +738,22 @@ impl ClickWitness {
             button,
             modifiers,
             inserted: false,
+            target,
         };
         if !enabled {
             return witness;
         }
-        witness.attachment =
-            crate::input::keyboard::InputQueueAttachment::attach(unsafe { GetForegroundWindow() });
+        let foreground = unsafe { GetForegroundWindow() };
+        // Attaching to an input queue before the target thread processes
+        // activation can prevent that same activation from being delivered.
+        if !crate::input::keyboard::wait_for_thread_activation(
+            foreground,
+            Duration::from_millis(500),
+        ) || unsafe { GetForegroundWindow() } != foreground
+        {
+            return witness;
+        }
+        witness.attachment = crate::input::keyboard::InputQueueAttachment::attach(foreground);
         // A button or key that is already down cannot show this click's press.
         let all_up = crate::input::keyboard::keyboard_state().is_some_and(|state| {
             std::iter::once(witness.button)
@@ -739,49 +766,67 @@ impl ClickWitness {
         witness
     }
 
-    /// Insert events; without a working witness they are unconfirmed input.
-    fn insert(&mut self, events: &[INPUT]) -> u32 {
+    /// Refuse any new press or movement after another window takes the
+    /// foreground. Owned releases remain allowed so inputs cannot stay held.
+    fn insert(&mut self, events: &[INPUT], release: bool) -> u32 {
+        let actual = unsafe { GetForegroundWindow() }.0 as usize as u64;
+        if !release && !crate::win32::foreground_matches_target_or_owned_window(self.target, actual)
+        {
+            self.give_up();
+            return 0;
+        }
         let size = std::mem::size_of::<INPUT>() as i32;
         if self.attachment.is_none() {
-            return unsafe { send_unconfirmed_input(events, size) };
+            let sent = unsafe { send_unconfirmed_input(events, size) };
+            self.inserted |= sent > 0;
+            return sent;
         }
         let sent = unsafe { crate::input::send_desktop_input(events, size) };
         self.inserted |= sent > 0;
         sent
     }
 
-    fn await_keys(&mut self, keys: &[u16], down: bool) {
+    /// Returns false only when an established witness loses its reader or
+    /// times out; no subsequent press should follow an unacknowledged phase.
+    fn await_keys(&mut self, keys: &[u16], down: bool) -> bool {
         if self.attachment.is_none() || keys.is_empty() {
-            return;
+            return true;
         }
         let deadline = Instant::now() + CLICK_READ_TIMEOUT;
         loop {
-            crate::input::keyboard::service_own_messages();
+            let attachment = self.attachment.as_ref().expect("checked above");
+            attachment.idle(Duration::ZERO);
+            let foreground = unsafe { GetForegroundWindow() };
+            if !attachment.matches_foreground(foreground) || !attachment.has_no_misrouted_input() {
+                self.give_up();
+                return false;
+            }
             if let Some(state) = crate::input::keyboard::keyboard_state() {
                 if keys
                     .iter()
                     .all(|key| (state[*key as usize] & 0x80 != 0) == down)
                 {
-                    return;
+                    return true;
                 }
             }
             if Instant::now() >= deadline {
                 self.give_up();
-                return;
+                return false;
             }
             sleep(Duration::from_millis(1));
         }
     }
 
-    fn await_button(&mut self, down: bool) {
+    fn await_button(&mut self, down: bool) -> bool {
         let button = [self.button];
-        self.await_keys(&button, down);
+        self.await_keys(&button, down)
     }
 
-    fn await_modifiers(&mut self, down: bool) {
+    fn await_modifiers(&mut self, down: bool) -> bool {
         let modifiers = std::mem::take(&mut self.modifiers);
-        self.await_keys(&modifiers, down);
+        let observed = self.await_keys(&modifiers, down);
         self.modifiers = modifiers;
+        observed
     }
 
     /// The witness lost sight of the click: what it inserted is unconfirmed from now on.
@@ -928,6 +973,7 @@ fn send_click_synthesized_mods_impl(
         // While every phase is seen, the inserted click is read and the foreground can go back.
         let mut witness = ClickWitness::start(
             occluded.is_none(),
+            foreground_target,
             button,
             modifiers
                 .iter()
@@ -941,10 +987,10 @@ fn send_click_synthesized_mods_impl(
         let mut sent_ok = true;
         let mut held_modifiers = 0;
         if occluded.is_none() && !mod_downs.is_empty() {
-            let sent = witness.insert(&mod_downs);
+            let sent = witness.insert(&mod_downs, false);
             held_modifiers = sent as usize;
             sent_ok = held_modifiers == mod_downs.len();
-            witness.await_modifiers(true);
+            sent_ok &= witness.await_modifiers(true);
             sleep(Duration::from_millis(5));
         }
 
@@ -967,7 +1013,7 @@ fn send_click_synthesized_mods_impl(
                 if index > 0 {
                     sleep(Duration::from_millis(if index == 1 { 30 } else { 15 }));
                 }
-                let inserted = witness.insert(std::slice::from_ref(event));
+                let inserted = witness.insert(std::slice::from_ref(event), index == 2);
                 sent += inserted;
                 if inserted == 0 {
                     break;
@@ -975,13 +1021,30 @@ fn send_click_synthesized_mods_impl(
                 if index == 1 {
                     crate::desktop_activity::note_pointer_arrival(sx, sy);
                     button_held = true;
-                    witness.await_button(true);
+                    if !witness.await_button(true) {
+                        sent_ok = false;
+                        break;
+                    }
                 } else if index == 2 {
                     button_held = false;
-                    witness.await_button(false);
+                    if !witness.await_button(false) {
+                        // A completed click may close its target and hand focus
+                        // to another window in the same app. It is successful
+                        // but unobservable and may not restore the old focus.
+                        let actual = GetForegroundWindow().0 as usize as u64;
+                        if i + 1 != count
+                            || !crate::win32::foreground_after_target_closed(
+                                foreground_target,
+                                actual,
+                            )
+                        {
+                            sent_ok = false;
+                        }
+                        break;
+                    }
                 }
             }
-            if sent != 3 {
+            if sent != 3 || !sent_ok {
                 sent_ok = false;
                 break;
             }
@@ -996,7 +1059,7 @@ fn send_click_synthesized_mods_impl(
         }
         sent_ok &= crate::input::keyboard::release_inserted_keys(&mod_downs, held_modifiers);
         if held_modifiers > 0 {
-            witness.await_modifiers(false);
+            sent_ok &= witness.await_modifiers(false);
         }
         let read = witness.finish();
 
@@ -1006,10 +1069,13 @@ fn send_click_synthesized_mods_impl(
         if let Some(occluded) = occluded {
             return Err(occluded.into());
         }
+
         if !sent_ok {
             bail!(
-                "SendInput inserted fewer modifier or mouse events than expected for the \
-                 foreground click."
+                "Foreground click stopped because the target lost foreground, input was not \
+                 fully inserted, or the established reader did not confirm a phase. Some input \
+                 may already have been delivered; owned releases were attempted. Inspect the \
+                 target before retrying."
             );
         }
         let snapshot = foreground_target;
@@ -1195,9 +1261,14 @@ pub fn send_drag_synthesized(
     }
     // Only the press point matters: the window that takes the press captures the moves.
     crate::input::occlusion::check_point(target.0 as usize as u64, sx_from, sy_from)?;
+    let foreground_target = crate::win32::capture_foreground_target(target.0 as usize as u64)
+        .ok_or_else(|| {
+            anyhow!("foreground_unavailable: exact drag target disappeared before input")
+        })?;
     // Input is read in order, so a release seen read means every move before it was read.
     let mut witness = ClickWitness::start(
         true,
+        foreground_target,
         button,
         modifiers
             .iter()
@@ -1208,10 +1279,12 @@ pub fn send_drag_synthesized(
             })
             .collect(),
     );
-    let send = |witness: &mut ClickWitness, input: INPUT| witness.insert(&[input]) == 1;
+    let send = |witness: &mut ClickWitness, input: INPUT, release: bool| {
+        witness.insert(&[input], release) == 1
+    };
     // Hold the modifiers before the press.
     if !mod_downs.is_empty() {
-        let sent = witness.insert(&mod_downs);
+        let sent = witness.insert(&mod_downs, false);
         if sent as usize != mod_downs.len() {
             let _ = crate::input::keyboard::release_inserted_keys(&mod_downs, sent as usize);
             witness.give_up();
@@ -1220,22 +1293,32 @@ pub fn send_drag_synthesized(
                 mod_downs.len()
             );
         }
-        witness.await_modifiers(true);
+        if !witness.await_modifiers(true) {
+            let _ = release_modifiers();
+            bail!("The established drag reader did not confirm modifier presses; no mouse input was sent.");
+        }
         sleep(Duration::from_millis(5));
     }
     let (nfx, nfy) = norm(sx_from, sy_from);
-    if !send(&mut witness, make_input(nfx, nfy, MOUSEEVENTF_MOVE)) {
+    if !send(&mut witness, make_input(nfx, nfy, MOUSEEVENTF_MOVE), false) {
         let _ = release_modifiers();
         witness.give_up();
         bail!("SendInput did not insert the drag's first move; no button was pressed");
     }
     sleep(Duration::from_millis(30));
-    if !send(&mut witness, button_input(down_flag)) {
+    if !send(&mut witness, button_input(down_flag), false) {
         let _ = release_modifiers();
         witness.give_up();
         bail!("SendInput did not insert the drag's button press");
     }
-    witness.await_button(true);
+    if !witness.await_button(true) {
+        let _ = send_unconfirmed_input(
+            &[button_input(up_flag)],
+            std::mem::size_of::<INPUT>() as i32,
+        );
+        let _ = release_modifiers();
+        bail!("The established drag reader did not confirm the button press; owned releases were attempted.");
+    }
     sleep(Duration::from_millis(30));
     let mut moves_ok = true;
     let mut cursor_at = (sx_from, sy_from);
@@ -1244,7 +1327,7 @@ pub fn send_drag_synthesized(
         let x = sx_from + ((sx_to - sx_from) as f64 * t).round() as i32;
         let y = sy_from + ((sy_to - sy_from) as f64 * t).round() as i32;
         let (nx, ny) = norm(x, y);
-        if !send(&mut witness, make_input(nx, ny, MOUSEEVENTF_MOVE)) {
+        if !send(&mut witness, make_input(nx, ny, MOUSEEVENTF_MOVE), false) {
             moves_ok = false;
             break;
         }
@@ -1254,19 +1337,16 @@ pub fn send_drag_synthesized(
         }
     }
     // Always release, even after a failed move, so no button stays held.
-    let released =
-        send(&mut witness, button_input(up_flag)) || send(&mut witness, button_input(up_flag));
-    if released {
-        witness.await_button(false);
-    }
+    let released = send(&mut witness, button_input(up_flag), true)
+        || send(&mut witness, button_input(up_flag), true);
+    let release_observed = !released || witness.await_button(false);
     // A target that samples live key state while handling the release still
     // sees the modifiers held; release them after the settle.
     sleep(Duration::from_millis(40));
     let modifiers_released = release_modifiers();
-    if modifiers_released && !mod_downs.is_empty() {
-        witness.await_modifiers(false);
-    }
-    if !released || !modifiers_released || !moves_ok {
+    let modifiers_observed =
+        !modifiers_released || mod_downs.is_empty() || witness.await_modifiers(false);
+    if !released || !modifiers_released || !moves_ok || !release_observed || !modifiers_observed {
         witness.give_up();
     }
     let read = witness.finish();
@@ -1284,7 +1364,13 @@ pub fn send_drag_synthesized(
         );
     }
     if !moves_ok {
-        bail!("SendInput inserted fewer drag moves than expected; the button was released.");
+        bail!(
+            "The drag stopped after input began because the target lost foreground or a move \
+               was not inserted. The button was released; inspect the target before retrying."
+        );
+    }
+    if !release_observed || !modifiers_observed {
+        bail!("The established drag reader did not confirm an inserted release; inspect the target before retrying.");
     }
     Ok(read)
 }
@@ -1493,27 +1579,47 @@ mod nc_hit_tests {
 #[cfg(test)]
 mod wheel_tests {
     use super::{post_click_on, posted_press_message, wheel_mouse_data};
-    use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
     use std::sync::{mpsc, Arc};
     use std::thread::JoinHandle;
     use std::time::{Duration, Instant};
     use windows::core::{w, HSTRING, PCWSTR};
-    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+    use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+    use windows::Win32::Graphics::Gdi::ScreenToClient;
     use windows::Win32::System::LibraryLoader::GetModuleHandleW;
     use windows::Win32::UI::Controls::WM_MOUSELEAVE;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        TrackMouseEvent, TME_LEAVE, TRACKMOUSEEVENT,
+    };
     use windows::Win32::UI::WindowsAndMessaging::{
-        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetWindowLongPtrW,
-        PeekMessageW, PostMessageW, RegisterClassW, SetWindowLongPtrW, UnregisterClassW,
+        CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos,
+        GetWindowLongPtrW, PeekMessageW, RegisterClassW, SetWindowLongPtrW, UnregisterClassW,
         CS_DBLCLKS, GWLP_USERDATA, MSG, PM_REMOVE, WINDOW_EX_STYLE, WM_LBUTTONDBLCLK,
         WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WNDCLASSW, WS_POPUP,
     };
 
     const TRACE_CAPACITY: usize = 1024;
     const PUMP_TIMEOUT: Duration = Duration::from_secs(10);
+    // The receiver is a hidden 100x100 window far off every monitor, so the
+    // real cursor is never over it. Its button is the centre square.
+    const ORIGIN: i32 = -32000;
+    const SIZE: i32 = 100;
+    const BUTTON: std::ops::Range<i32> = 40..60;
+    const ON_BUTTON: i32 = 50;
 
+    /// Receiver state shaped after SDL 2's Win32 window procedure (#5071):
+    /// the pointer position comes only from `WM_MOUSEMOVE` and
+    /// `WM_MOUSELEAVE`, and a click completes on a release over the button
+    /// that a press over the button started. Atomics only, so the window
+    /// procedure neither allocates nor locks while its thread is suspended.
     struct MouseTrace {
         len: AtomicUsize,
         messages: [AtomicU32; TRACE_CAPACITY],
+        x: AtomicI32,
+        y: AtomicI32,
+        tracked: AtomicBool,
+        pressed: AtomicBool,
+        clicks: AtomicUsize,
     }
 
     impl MouseTrace {
@@ -1521,7 +1627,35 @@ mod wheel_tests {
             Arc::new(Self {
                 len: AtomicUsize::new(0),
                 messages: std::array::from_fn(|_| AtomicU32::new(0)),
+                x: AtomicI32::new(-1),
+                y: AtomicI32::new(-1),
+                tracked: AtomicBool::new(false),
+                pressed: AtomicBool::new(false),
+                clicks: AtomicUsize::new(0),
             })
+        }
+
+        fn on_button(&self) -> bool {
+            BUTTON.contains(&self.x.load(Ordering::Acquire))
+                && BUTTON.contains(&self.y.load(Ordering::Acquire))
+        }
+
+        fn move_to(&self, x: i32, y: i32) {
+            self.x.store(x, Ordering::Release);
+            self.y.store(y, Ordering::Release);
+            if !self.on_button() {
+                self.pressed.store(false, Ordering::Release);
+            }
+        }
+
+        fn press(&self) {
+            self.pressed.store(self.on_button(), Ordering::Release);
+        }
+
+        fn release(&self) {
+            if self.pressed.swap(false, Ordering::AcqRel) && self.on_button() {
+                self.clicks.fetch_add(1, Ordering::AcqRel);
+            }
         }
 
         fn record(&self, msg: u32) {
@@ -1544,24 +1678,48 @@ mod wheel_tests {
         }
     }
 
-    unsafe extern "system" fn leave_on_move_window_proc(
+    /// Like SDL, the first move while untracked asks Windows for a leave.
+    /// The cursor is not over the window, so Windows posts `WM_MOUSELEAVE`
+    /// at once. The leave moves the pointer to the real cursor clamped to the
+    /// window, which is off the button and cancels a pending press.
+    unsafe extern "system" fn sdl_like_window_proc(
         hwnd: HWND,
         msg: u32,
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
         let trace = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *const MouseTrace;
-        if let Some(trace) = trace.as_ref() {
-            if matches!(
-                msg,
-                WM_MOUSEMOVE | WM_LBUTTONDOWN | WM_LBUTTONDBLCLK | WM_LBUTTONUP | WM_MOUSELEAVE
-            ) {
-                trace.record(msg);
+        let Some(trace) = trace.as_ref() else {
+            return DefWindowProcW(hwnd, msg, wparam, lparam);
+        };
+        match msg {
+            WM_MOUSEMOVE => {
+                if !trace.tracked.load(Ordering::Acquire) {
+                    let mut track = TRACKMOUSEEVENT {
+                        cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                        dwFlags: TME_LEAVE,
+                        hwndTrack: hwnd,
+                        dwHoverTime: 0,
+                    };
+                    let tracked = TrackMouseEvent(&mut track).is_ok();
+                    trace.tracked.store(tracked, Ordering::Release);
+                }
+                let x = (lparam.0 & 0xFFFF) as i16 as i32;
+                let y = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+                trace.move_to(x, y);
             }
+            WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => trace.press(),
+            WM_LBUTTONUP => trace.release(),
+            WM_MOUSELEAVE => {
+                let mut cursor = POINT::default();
+                let _ = GetCursorPos(&mut cursor);
+                let _ = ScreenToClient(hwnd, &mut cursor);
+                trace.move_to(cursor.x.clamp(0, SIZE - 1), cursor.y.clamp(0, SIZE - 1));
+                trace.tracked.store(false, Ordering::Release);
+            }
+            _ => return DefWindowProcW(hwnd, msg, wparam, lparam),
         }
-        if msg == WM_MOUSEMOVE {
-            let _ = PostMessageW(hwnd, WM_MOUSELEAVE, WPARAM(0), LPARAM(0));
-        }
+        trace.record(msg);
         DefWindowProcW(hwnd, msg, wparam, lparam)
     }
 
@@ -1586,7 +1744,7 @@ mod wheel_tests {
                 let class_name = HSTRING::from(class_name);
                 let class = WNDCLASSW {
                     style: CS_DBLCLKS,
-                    lpfnWndProc: Some(leave_on_move_window_proc),
+                    lpfnWndProc: Some(sdl_like_window_proc),
                     hInstance: instance.into(),
                     lpszClassName: PCWSTR(class_name.as_ptr()),
                     ..Default::default()
@@ -1597,16 +1755,16 @@ mod wheel_tests {
                     class.lpszClassName,
                     w!(""),
                     WS_POPUP,
-                    0,
-                    0,
-                    100,
-                    100,
+                    ORIGIN,
+                    ORIGIN,
+                    SIZE,
+                    SIZE,
                     None,
                     None,
-                    instance,
+                    Some(instance.into()),
                     None,
                 )
-                .expect("create leave-on-move window");
+                .expect("create SDL-like window");
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, Arc::as_ptr(&pump_trace) as isize);
                 hwnd_tx.send(hwnd.0 as isize).expect("send window handle");
                 let mut msg = MSG::default();
@@ -1618,13 +1776,11 @@ mod wheel_tests {
                     }
                 }
                 let _ = DestroyWindow(hwnd);
-                let _ = UnregisterClassW(class.lpszClassName, instance);
+                let _ = UnregisterClassW(class.lpszClassName, Some(instance.into()));
                 drop(pump_trace);
                 let _ = stopped_tx.send(());
             });
-            let hwnd = hwnd_rx
-                .recv_timeout(PUMP_TIMEOUT)
-                .expect("leave-on-move window");
+            let hwnd = hwnd_rx.recv_timeout(PUMP_TIMEOUT).expect("SDL-like window");
             Self {
                 hwnd: HWND(hwnd as *mut _),
                 trace,
@@ -1634,7 +1790,7 @@ mod wheel_tests {
             }
         }
 
-        fn finish(mut self, expected: usize) -> Vec<u32> {
+        fn finish(mut self, expected: usize) -> (Vec<u32>, usize) {
             let deadline = Instant::now() + PUMP_TIMEOUT;
             while self.trace.len.load(Ordering::Acquire) < expected {
                 assert!(
@@ -1649,7 +1805,10 @@ mod wheel_tests {
                 .expect("pump thread stopped in time");
             let pump = self.pump.take().expect("pump thread");
             pump.join().expect("pump thread panicked");
-            self.trace.snapshot()
+            (
+                self.trace.snapshot(),
+                self.trace.clicks.load(Ordering::Acquire),
+            )
         }
     }
 
@@ -1665,11 +1824,42 @@ mod wheel_tests {
     }
 
     #[test]
+    #[ignore = "requires a Win32 window and interactive desktop"]
+    fn foreground_loss_refuses_new_mouse_input_even_without_a_witness() {
+        use super::{ClickWitness, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_MOVE, MOUSEINPUT};
+        use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+
+        // This window is hidden and cannot be foreground. The first attempted
+        // move must be refused before SendInput, even with no queue attachment.
+        let window = PumpedWindow::spawn("CuaMouseForegroundLoss");
+        let target = crate::win32::capture_foreground_target(window.hwnd.0 as usize as u64)
+            .expect("live target identity");
+        let actual = unsafe { GetForegroundWindow() }.0 as usize as u64;
+        assert!(!crate::win32::foreground_matches_target_or_owned_window(
+            target, actual
+        ));
+        let mut witness = ClickWitness::start(false, target, "left", Vec::new());
+        let movement = INPUT {
+            r#type: INPUT_MOUSE,
+            Anonymous: INPUT_0 {
+                mi: MOUSEINPUT {
+                    dx: 1,
+                    dwFlags: MOUSEEVENTF_MOVE,
+                    ..Default::default()
+                },
+            },
+        };
+        assert_eq!(witness.insert(&[movement], false), 0);
+        assert!(!witness.inserted);
+    }
+
+    #[test]
+    #[ignore = "requires Win32 window and a message-pump thread"]
     fn posted_click_is_delivered_when_calling_thread_cannot_be_paused() {
         unsafe {
             let instance = GetModuleHandleW(None).expect("module handle");
             let class = WNDCLASSW {
-                lpfnWndProc: Some(leave_on_move_window_proc),
+                lpfnWndProc: Some(sdl_like_window_proc),
                 hInstance: instance.into(),
                 lpszClassName: w!("CuaPostedClickCallingThread"),
                 ..Default::default()
@@ -1680,40 +1870,43 @@ mod wheel_tests {
                 class.lpszClassName,
                 w!(""),
                 WS_POPUP,
-                0,
-                0,
-                100,
-                100,
+                ORIGIN,
+                ORIGIN,
+                SIZE,
+                SIZE,
                 None,
                 None,
-                instance,
+                Some(instance.into()),
                 None,
             )
             .expect("create window");
             let trace = MouseTrace::new();
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, Arc::as_ptr(&trace) as isize);
             assert!(super::SuspendedThread::suspend(hwnd).unwrap().is_none());
-            post_click_on(hwnd, 5, 5, 1, "left", &[]).expect("post without pause");
+            post_click_on(hwnd, ON_BUTTON, ON_BUTTON, 1, "left", &[]).expect("post without pause");
+
             let mut msg = MSG::default();
-            while PeekMessageW(&mut msg, hwnd, 0, 0, PM_REMOVE).as_bool() {
+            while PeekMessageW(&mut msg, Some(hwnd), 0, 0, PM_REMOVE).as_bool() {
                 DispatchMessageW(&msg);
             }
             assert_eq!(
                 trace.snapshot(),
                 [WM_MOUSEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSELEAVE]
             );
+            assert_eq!(trace.clicks.load(Ordering::Acquire), 1);
             DestroyWindow(hwnd).expect("destroy window");
-            UnregisterClassW(class.lpszClassName, instance).expect("unregister class");
+            UnregisterClassW(class.lpszClassName, Some(instance.into())).expect("unregister class");
         }
     }
 
     #[test]
-    fn posted_click_release_is_queued_before_the_leave_its_move_triggers() {
-        let window = PumpedWindow::spawn("CuaPostedClickLeaveOnMoveRace");
+    #[ignore = "requires Win32 window and a message-pump thread"]
+    fn posted_click_completes_before_the_leave_its_move_triggers() {
+        let window = PumpedWindow::spawn("CuaPostedClickSdlLeave");
         for _ in 0..200 {
-            post_click_on(window.hwnd, 5, 5, 1, "left", &[]).expect("post click");
+            post_click_on(window.hwnd, ON_BUTTON, ON_BUTTON, 1, "left", &[]).expect("post click");
         }
-        let trace = window.finish(200 * 4);
+        let (trace, clicks) = window.finish(200 * 4);
 
         for (click, messages) in trace.chunks(4).enumerate() {
             assert_eq!(
@@ -1723,20 +1916,23 @@ mod wheel_tests {
             );
         }
         assert_eq!(trace.len(), 200 * 4);
+        assert_eq!(clicks, 200);
     }
 
     #[test]
+    #[ignore = "requires Win32 window and a message-pump thread"]
     fn posted_double_click_queues_move_press_release_per_click() {
-        let window = PumpedWindow::spawn("CuaPostedClickLeaveOnMoveDouble");
-        post_click_on(window.hwnd, 5, 5, 2, "left", &[]).expect("post double click");
-        let clicks: Vec<u32> = window
-            .finish(2 * 4)
+        let window = PumpedWindow::spawn("CuaPostedClickSdlDouble");
+        post_click_on(window.hwnd, ON_BUTTON, ON_BUTTON, 2, "left", &[])
+            .expect("post double click");
+        let (trace, clicks) = window.finish(2 * 4);
+        let messages: Vec<u32> = trace
             .into_iter()
             .filter(|&msg| msg != WM_MOUSELEAVE)
             .collect();
 
         assert_eq!(
-            clicks,
+            messages,
             [
                 WM_MOUSEMOVE,
                 WM_LBUTTONDOWN,
@@ -1746,6 +1942,7 @@ mod wheel_tests {
                 WM_LBUTTONUP
             ]
         );
+        assert_eq!(clicks, 2);
     }
 
     #[test]

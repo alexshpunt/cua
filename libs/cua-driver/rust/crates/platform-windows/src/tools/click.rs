@@ -386,8 +386,13 @@ impl Tool for ClickTool {
                         3 => "triple-click",
                         _ => "click",
                     };
+                    let note = if crate::win32::window_closed_or_hidden(hwnd_u) {
+                        " The window closed or hid."
+                    } else {
+                        ""
+                    };
                     ToolResult::text(format!(
-                        "✅ Sent {click_word} via SendInput at screen ({sx},{sy}) on HWND 0x{hwnd_u:x} (desktop scope)."
+                        "✅ Sent {click_word} via SendInput at screen ({sx},{sy}) on HWND 0x{hwnd_u:x} (desktop scope).{note}"
                     ))
                     // SendInput dispatched but is not driver-verifiable (no read-back).
                     .with_structured(json!({ "path": "pixel", "verified": false, "effect": "unverifiable" }))
@@ -800,9 +805,7 @@ impl Tool for ClickTool {
             // left falls through to the UIA Invoke path below (already drives
             // WinUI3). Double-left lands via a double UIA Invoke; right/middle
             // can't both land and hold the contract → structured error.
-            if delivery == DeliveryMode::Background
-                && (count > 1 || btn == "right" || btn == "middle")
-            {
+            if delivery.is_background() && (count > 1 || btn == "right" || btn == "middle") {
                 if let Some(r) =
                     winui3_background_gesture(&admitted, pid, hwnd, Some(idx), count, &btn).await
                 {
@@ -814,7 +817,7 @@ impl Tool for ClickTool {
             // changing foreground, z-order, or the real cursor. Keep AX for
             // target resolution and post every click shape: right, double and
             // modifier clicks land too (LPT-1846).
-            if delivery == DeliveryMode::Background
+            if delivery.is_background()
                 && !uia_only
                 && crate::input::is_chromium_target_window(hwnd)
             {
@@ -883,8 +886,9 @@ impl Tool for ClickTool {
                 let mut failed_calls = Vec::new();
                 // Direct Chromium Invoke can report a false success. Its old
                 // synthetic fallback cannot guarantee background posture.
-                if delivery == DeliveryMode::Background
+                if delivery.is_background()
                     && !uia_only
+
                     && crate::input::is_chromium_target_window(hwnd)
                 {
                     return Ok(BackgroundElementClick::UnsupportedPointer { failed_calls });
@@ -987,7 +991,8 @@ impl Tool for ClickTool {
                 if uia_only {
                     return Ok(BackgroundElementClick::NoPattern { failed_calls });
                 }
-                if delivery == DeliveryMode::Background
+                if delivery.is_background()
+
                     && crate::input::delivery::would_be_silently_dropped(
                         hwnd,
                         EventKind::MouseClick,
@@ -1067,6 +1072,7 @@ impl Tool for ClickTool {
                 Ok(Err(error)) => {
                     crate::input::delivery::posted_input_error(hwnd, EventKind::MouseClick, error)
                 }
+
                 Err(error) => ToolResult::error(format!("Task error: {error}")),
             }
         } else if let (Some(mut px), Some(mut py)) = (x, y) {
@@ -1179,9 +1185,7 @@ impl Tool for ClickTool {
             // path, no element_token → no cached element to UIA-Invoke): these
             // can't both land and hold the contract on WinUI3 (posted input is
             // ignored, the pen injector steals foreground) → structured error.
-            if delivery == DeliveryMode::Background
-                && (count > 1 || btn == "right" || btn == "middle")
-            {
+            if delivery.is_background() && (count > 1 || btn == "right" || btn == "middle") {
                 if let Some(r) =
                     winui3_background_gesture(&admitted, pid, hwnd, None, count, &btn).await
                 {
@@ -1191,8 +1195,7 @@ impl Tool for ClickTool {
             // Match the AX-addressed Chromium route above: the point remains
             // PX-resolved, but transport uses the background-safe posted
             // message path proven against the fully occluded fixture.
-            if delivery == DeliveryMode::Background && crate::input::is_chromium_target_window(hwnd)
-            {
+            if delivery.is_background() && crate::input::is_chromium_target_window(hwnd) {
                 let mods = modifiers.clone();
                 let posted = cua_driver_core::desktop_activity::spawn_blocking({
                     let admitted = admitted.clone();
@@ -1243,7 +1246,7 @@ impl Tool for ClickTool {
 
             // UIA completed with a miss or was not applicable. Drop-prone
             // surfaces have no supported background pointer fallback.
-            if delivery == DeliveryMode::Background
+            if delivery.is_background()
                 && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseClick)
             {
                 return crate::input::delivery::background_pointer_unavailable_error(
