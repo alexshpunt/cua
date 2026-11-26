@@ -9,7 +9,8 @@
 //! a provider is slow or unavailable.
 
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use windows::core::BOOL;
 use windows::core::PCWSTR;
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, TRUE};
@@ -19,7 +20,7 @@ use windows::Win32::Graphics::Dwm::{
 use windows::Win32::UI::WindowsAndMessaging::{
     EnumChildWindows, EnumWindows, FindWindowExW, GetAncestor, GetClassNameW, GetDesktopWindow,
     GetWindow, GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-    IsIconic, IsWindow, IsWindowVisible, GA_PARENT, GW_OWNER,
+    IsIconic, IsWindow, IsWindowVisible, GA_PARENT, GA_ROOT, GW_OWNER,
 };
 
 #[derive(Debug, Clone)]
@@ -51,9 +52,100 @@ pub fn list_windows(filter_pid: Option<u32>) -> Vec<WindowInfo> {
     );
     merge_uia_windows(
         win32_windows,
-        crate::uia::windows_enum::enumerate_top_level_windows(),
+        cached_uia_windows()
+            .into_iter()
+            .filter_map(revalidate_uia_window)
+            .collect(),
         filter_pid,
     )
+}
+
+// The listing path never waits for UIA. A fresh result can supplement later
+// calls; the first call and stale results fall back to Win32 alone.
+const UIA_REFRESH_INTERVAL: Duration = Duration::from_millis(500);
+const UIA_SNAPSHOT_MAX_AGE: Duration = Duration::from_secs(2);
+
+#[derive(Default)]
+struct UiaWindowCache {
+    last_started: Option<Instant>,
+    snapshot: Option<(Instant, Vec<WindowInfo>)>,
+    in_flight: bool,
+}
+
+fn cached_uia_windows() -> Vec<WindowInfo> {
+    static CACHE: OnceLock<Arc<Mutex<UiaWindowCache>>> = OnceLock::new();
+    request_uia_windows(
+        CACHE.get_or_init(|| Arc::new(Mutex::new(UiaWindowCache::default()))),
+        crate::uia::windows_enum::enumerate_top_level_windows,
+    )
+}
+
+fn request_uia_windows(
+    cache: &Arc<Mutex<UiaWindowCache>>,
+    enumerate: impl FnOnce() -> Vec<WindowInfo> + Send + 'static,
+) -> Vec<WindowInfo> {
+    let now = Instant::now();
+    // A concurrent refresh must never make listing wait on a UIA provider.
+    let Ok(mut state) = cache.try_lock() else {
+        return Vec::new();
+    };
+    let snapshot = state
+        .snapshot
+        .as_ref()
+        .filter(|(started, _)| now.saturating_duration_since(*started) <= UIA_SNAPSHOT_MAX_AGE)
+        .map(|(_, windows)| windows.clone())
+        .unwrap_or_default();
+    let due = state
+        .last_started
+        .is_none_or(|started| now.saturating_duration_since(started) >= UIA_REFRESH_INTERVAL);
+    if !state.in_flight && due {
+        state.in_flight = true;
+        state.last_started = Some(now);
+        let worker_cache = Arc::clone(cache);
+        if std::thread::Builder::new()
+            .name("cua-uia-window-cache".into())
+            .spawn(move || {
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(enumerate));
+                if let Ok(mut state) = worker_cache.lock() {
+                    state.in_flight = false;
+                    // A failed refresh must not resurrect an earlier snapshot.
+                    state.snapshot = result.ok().map(|windows| (now, windows));
+                }
+            })
+            .is_err()
+        {
+            state.in_flight = false;
+            state.snapshot = None;
+        }
+    }
+    snapshot
+}
+
+/// Re-read identity and mutable properties before exposing a cached UIA HWND.
+fn revalidate_uia_window(window: WindowInfo) -> Option<WindowInfo> {
+    let hwnd = HWND(window.hwnd as *mut _);
+    if unsafe { GetAncestor(hwnd, GA_ROOT) } != hwnd
+        || unsafe { IsIconic(hwnd) }.as_bool()
+        || window_is_cloaked(hwnd)
+    {
+        return None;
+    }
+    let current = window_info_by_handle(window.hwnd)?;
+    let owner_after = window_owner_pid(window.hwnd);
+    validate_uia_snapshot(window, current, owner_after)
+}
+
+fn validate_uia_snapshot(
+    snapshot: WindowInfo,
+    current: WindowInfo,
+    owner_after: Option<u32>,
+) -> Option<WindowInfo> {
+    (current.hwnd == snapshot.hwnd
+        && current.pid == snapshot.pid
+        && current.width > 0
+        && current.height > 0
+        && owner_after == Some(snapshot.pid))
+    .then_some(current)
 }
 
 /// Keep native z-order, then append UIA-only HWNDs without duplicates.
@@ -177,9 +269,9 @@ fn lookup_window_for_pid_with(
 
 /// List `pid`'s top-level windows, consulting UIA only when Win32 finds none.
 ///
-/// Polling callers (e.g. `launch_app` waiting for a first window) otherwise
-/// pay the UIA desktop-enumeration deadline on every attempt even when
-/// `EnumWindows` already sees the window (#4416).
+/// Polling callers (e.g. `launch_app` waiting for a first window) use the
+/// native fast path without starting a UIA refresh when it already finds one.
+/// A UIA-only window may appear on a later poll after the refresh completes.
 pub(crate) fn list_windows_win32_first(pid: u32) -> Vec<WindowInfo> {
     win32_first_with(
         || list_windows_via_win32(Some(pid)),
@@ -1080,6 +1172,63 @@ mod upstream_exact_window_tests {
 
         let missing = lookup_window_for_pid_with(42, 0x1234, |_, _| None, Vec::new);
         assert!(matches!(missing, PidWindowLookup::Missing));
+    }
+
+    #[test]
+    fn uia_cache_never_waits_for_a_stalled_provider_and_serves_completed_results() {
+        use super::{request_uia_windows, UiaWindowCache};
+        use std::sync::{mpsc, Arc, Mutex};
+        use std::time::{Duration, Instant};
+
+        let cache = Arc::new(Mutex::new(UiaWindowCache::default()));
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let before = Instant::now();
+        assert!(request_uia_windows(&cache, move || {
+            started_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+            vec![window(1, 0x30)]
+        })
+        .is_empty());
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(request_uia_windows(&cache, || panic!("duplicate refresh")).is_empty());
+        assert!(before.elapsed() < Duration::from_secs(1));
+        release_tx.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(1);
+        loop {
+            let complete = cache.lock().unwrap().snapshot.is_some();
+            if complete {
+                break;
+            }
+            assert!(Instant::now() < deadline, "cache worker did not finish");
+            std::thread::yield_now();
+        }
+        let result = request_uia_windows(&cache, Vec::new);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].hwnd, 0x30);
+    }
+
+    #[test]
+    fn uia_cache_rejects_expired_snapshot_and_changed_window_identity() {
+        use super::{
+            request_uia_windows, validate_uia_snapshot, UiaWindowCache, UIA_SNAPSHOT_MAX_AGE,
+        };
+        use std::sync::{Arc, Mutex};
+        use std::time::{Duration, Instant};
+
+        let cache = Arc::new(Mutex::new(UiaWindowCache {
+            last_started: Some(Instant::now()),
+            snapshot: Some((
+                Instant::now() - UIA_SNAPSHOT_MAX_AGE - Duration::from_millis(1),
+                vec![window(1, 0x30)],
+            )),
+            in_flight: true,
+        }));
+        assert!(request_uia_windows(&cache, || panic!("duplicate refresh")).is_empty());
+        assert!(validate_uia_snapshot(window(1, 0x30), window(2, 0x30), Some(2)).is_none());
+        assert!(validate_uia_snapshot(window(1, 0x30), window(1, 0x40), Some(1)).is_none());
+        assert!(validate_uia_snapshot(window(1, 0x30), window(1, 0x30), Some(2)).is_none());
+        assert!(validate_uia_snapshot(window(1, 0x30), window(1, 0x30), Some(1)).is_some());
     }
 
     #[test]

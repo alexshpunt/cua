@@ -129,7 +129,7 @@ fn window_label(hwnd: HWND) -> String {
 
 fn foreign_foreground_error(actual: HWND, detail: &str) -> anyhow::Error {
     anyhow::anyhow!(
-        "foreign window holds the foreground: {label}; {detail} Nothing was retried; the \
+        "foreground_lost: foreign window holds the foreground: {label}; {detail} Nothing was retried; the \
          foreground owner must be closed or dismissed before the rest can be sent.",
         label = window_label(actual),
     )
@@ -965,12 +965,22 @@ pub(crate) fn send_text_synthesized_paced_after_focus(
                          retried; inspect the target before sending the rest.",
                         total = events.len()
                     ),
-                    UnitRead::Stalled => bail!(
-                        "text_delivery_stalled: Windows did not confirm progress for text units \
-                         {first}..{last} of {n} within 2000 ms; {k} earlier units were inserted. \
-                         Those units may still appear in the target. Nothing was retried; inspect \
-                         the target before sending the rest."
-                    ),
+                    UnitRead::Stalled => {
+                        let actual = unsafe { GetForegroundWindow() };
+                        if !foreground_matches_target_or_owned_window(ft, actual.0 as usize as u64)
+                        {
+                            *turn = TypingTurn::Lost;
+                            return Err(foreign_foreground_error(actual, &format!(
+                                "Text units {first}..{last} of {n} were inserted and may still appear in another window; {k} earlier units were inserted."
+                            )));
+                        }
+                        bail!(
+                            "text_delivery_stalled: Windows did not confirm progress for text units \
+                             {first}..{last} of {n} within 2000 ms; {k} earlier units were inserted. \
+                             Those units may still appear in the target. Nothing was retried; inspect \
+                             the target before sending the rest."
+                        );
+                    }
                 }
                 if delay_ms > 0 && last < n {
                     sleep(Duration::from_millis(delay_ms));
@@ -1747,12 +1757,13 @@ impl InputQueueAttachment {
                 && target.is_same_live_window(foreground.0 as usize as u64);
             if !matches_target && !closed_successor && !hidden_target {
                 return Err(ForegroundInputError {
-                    error: anyhow::anyhow!(
-                        "foreground_lost: stopped before another key phase \
-                         (target={target:?}, actual={foreground:?}, \
-                         prefix_inserted={prefix_inserted}, \
-                         receiver_thread_unchanged={}, closed_successor={closed_successor})",
-                        self.matches_foreground(foreground)
+                    error: foreign_foreground_error(
+                        foreground,
+                        if prefix_inserted {
+                            "Input was already inserted and may still appear in another window."
+                        } else {
+                            "No input was inserted in this key phase."
+                        },
                     ),
                     turn: TypingTurn::Lost,
                 }
@@ -3257,10 +3268,13 @@ mod busy_target_activation_tests {
         stall.wait_until_blocked();
         bring_forward(other.hwnd);
         let result = typing.join().expect("typing thread");
-        let error = result
-            .expect_err("a foreground change must stop typing")
-            .to_string();
-        assert!(error.contains("foreground_lost"), "{error}");
+        let error = result.expect_err("a foreground change must stop typing");
+        let turn = error
+            .downcast_ref::<ForegroundInputError>()
+            .expect("foreground receipt")
+            .turn;
+        assert!(!restores_previous(turn));
+        assert!(error.to_string().contains("foreground_lost"), "{error}");
         stall.release();
         let deadline = Instant::now() + Duration::from_secs(1);
         while Instant::now() < deadline {

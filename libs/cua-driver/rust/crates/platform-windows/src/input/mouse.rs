@@ -850,6 +850,42 @@ impl ClickWitness {
     }
 }
 
+/// A completed final click may dismiss a window without an owner. This
+/// observes a transition, not whether the input was read.
+fn completed_click_dismissed(
+    final_click: bool,
+    target_closed: bool,
+    accepted_after_click: bool,
+) -> bool {
+    final_click && target_closed && accepted_after_click
+}
+
+fn final_click_dismissed(
+    target: crate::win32::ForegroundTarget,
+    target_hwnd: u64,
+    actual: u64,
+    final_click: bool,
+) -> bool {
+    completed_click_dismissed(
+        final_click,
+        crate::win32::window_closed_or_hidden(target_hwnd),
+        crate::win32::foreground_after_click_matches(target, actual),
+    )
+}
+
+#[cfg(test)]
+mod completed_click_dismissed_tests {
+    use super::completed_click_dismissed;
+
+    #[test]
+    fn only_a_completed_final_click_can_accept_a_dismissed_target() {
+        assert!(completed_click_dismissed(true, true, true));
+        assert!(!completed_click_dismissed(false, true, true));
+        assert!(!completed_click_dismissed(true, false, true));
+        assert!(!completed_click_dismissed(true, true, false));
+    }
+}
+
 fn send_click_synthesized_mods_impl(
     target: u64,
     sx: i32,
@@ -1032,11 +1068,19 @@ fn send_click_synthesized_mods_impl(
                         // to another window in the same app. It is successful
                         // but unobservable and may not restore the old focus.
                         let actual = GetForegroundWindow().0 as usize as u64;
-                        if i + 1 != count
+                        if !final_click_dismissed(
+                            foreground_target,
+                            target.0 as usize as u64,
+                            actual,
+                            i + 1 == count,
+                        ) && (i + 1 != count
+                            || (crate::win32::window_owner_pid(target.0 as usize as u64).is_some()
+                                && !foreground_target
+                                    .is_same_live_window(target.0 as usize as u64))
                             || !crate::win32::foreground_after_target_closed(
                                 foreground_target,
                                 actual,
-                            )
+                            ))
                         {
                             sent_ok = false;
                         }
@@ -1085,7 +1129,17 @@ fn send_click_synthesized_mods_impl(
         let deadline = Instant::now() + Duration::from_millis(300);
         loop {
             let actual = GetForegroundWindow().0 as usize as u64;
-            if crate::win32::foreground_after_target_closed(snapshot, actual) {
+            if final_click_dismissed(snapshot, target.0 as usize as u64, actual, true) {
+                crate::focus_return::note_unconfirmed_input();
+                return Ok(ClickReceipt {
+                    after: (actual != 0).then_some(actual),
+                    read: crate::typing_turn::TypingTurn::Unobservable,
+                });
+            }
+            if (crate::win32::window_owner_pid(target.0 as usize as u64).is_none()
+                || snapshot.is_same_live_window(target.0 as usize as u64))
+                && crate::win32::foreground_after_target_closed(snapshot, actual)
+            {
                 // A successor window never supplies a restoration receipt.
                 if read == crate::typing_turn::TypingTurn::Drained {
                     crate::focus_return::note_unconfirmed_input();

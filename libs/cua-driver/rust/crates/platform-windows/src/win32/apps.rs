@@ -193,7 +193,7 @@ mod tests {
 }
 
 #[cfg(test)]
-mod tests {
+mod package_identity_tests {
     use super::*;
 
     #[test]

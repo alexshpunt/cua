@@ -484,6 +484,8 @@ fn walker_node(element_index: Option<usize>, element_ptr: usize) -> crate::uia::
         depth: 0,
         parent_element_index: None,
         in_web_content: false,
+        actionable: false,
+        states: Default::default(),
     }
 }
 
