@@ -23,7 +23,8 @@ name: "CD: Image omarchy"
 # ghcr.io/trycua/windows:2022).
 #
 # Publishing runs on omarchy-image-v* tags, on workflow_dispatch with
-# publish=true, and on the daily schedule. Pull requests build and gate only.
+# publish=true, and on the daily schedule. This fork does not gate pull requests
+# on Omarchy.
 #
 # Daily schedule: Omarchy edge (pkgs.omarchy.org/edge) moves almost every day
 # (its package database showed builds on 20 of the 45 days before
@@ -40,17 +41,8 @@ name: "CD: Image omarchy"
 on:
   push:
     tags: ["omarchy-image-v*"]
-  pull_request:
-    paths:
-      - "libs/images/omarchy/**"
-      - "libs/images/common/**"
-      - "libs/images/linux/files/**"
-      - "libs/images/linux/fixtures/**"
-      - "libs/cua/crates/cua-cli/src/image_build.rs"
-      - "libs/cua/crates/cua-cli/src/image_release.rs"
-      - "libs/cua/crates/cua-image/src/publish.rs"
-      - "tests/e2e/omarchy/**"
-      - ".github/workflows/cd-image-omarchy.yml"
+  # This fork certifies Windows for pull requests. Omarchy remains available
+  # through manual, scheduled, and release runs.
   schedule:
     # Daily 05:23 UTC: tracks the Omarchy edge channel (see above).
     - cron: "23 5 * * *"
