@@ -313,7 +313,7 @@ impl Tool for LaunchAppTool {
                 .into_iter()
                 .map(|w| w.xid)
                 .collect();
-        let result = tokio::task::spawn_blocking(
+        let result = cua_driver_core::desktop_activity::spawn_blocking(
             move || -> anyhow::Result<(String, Option<u32>, String)> {
                 // Open URLs via xdg-open.
                 if !urls.is_empty() {

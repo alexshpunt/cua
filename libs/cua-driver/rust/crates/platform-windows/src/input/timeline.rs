@@ -378,42 +378,6 @@ fn frame_pressure(flags: POINTER_FLAGS, pressure: u32) -> u32 {
     }
 }
 
-#[cfg(test)]
-mod pen_frame_tests {
-    use super::frame_pressure;
-    use windows::Win32::UI::Input::Pointer::{
-        POINTER_FLAG_DOWN, POINTER_FLAG_INCONTACT, POINTER_FLAG_INRANGE, POINTER_FLAG_UP,
-        POINTER_FLAG_UPDATE,
-    };
-
-    #[test]
-    fn only_frames_in_contact_carry_pressure() {
-        assert_eq!(
-            frame_pressure(
-                POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
-                77
-            ),
-            77
-        );
-        assert_eq!(
-            frame_pressure(
-                POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
-                77
-            ),
-            77
-        );
-        assert_eq!(
-            frame_pressure(POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE, 77),
-            0
-        );
-        assert_eq!(
-            frame_pressure(POINTER_FLAG_UP | POINTER_FLAG_INRANGE, 512),
-            0
-        );
-        assert_eq!(frame_pressure(POINTER_FLAG_UPDATE, 512), 0);
-    }
-}
-
 /// The screen point of the program's first press when only absolute moves come
 /// before it, so it can be checked before anything is sent. Keys, wheels or
 /// relative moves first may change what the press reaches; then the press is
@@ -520,4 +484,39 @@ pub(crate) fn send_timeline(
     drop(native);
     report.elapsed_ms = started.elapsed().as_millis() as u64;
     Ok((report, completion))
+}
+#[cfg(test)]
+mod pen_frame_tests {
+    use super::frame_pressure;
+    use windows::Win32::UI::Input::Pointer::{
+        POINTER_FLAG_DOWN, POINTER_FLAG_INCONTACT, POINTER_FLAG_INRANGE, POINTER_FLAG_UP,
+        POINTER_FLAG_UPDATE,
+    };
+
+    #[test]
+    fn only_frames_in_contact_carry_pressure() {
+        assert_eq!(
+            frame_pressure(
+                POINTER_FLAG_DOWN | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                77
+            ),
+            77
+        );
+        assert_eq!(
+            frame_pressure(
+                POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE | POINTER_FLAG_INCONTACT,
+                77
+            ),
+            77
+        );
+        assert_eq!(
+            frame_pressure(POINTER_FLAG_UPDATE | POINTER_FLAG_INRANGE, 77),
+            0
+        );
+        assert_eq!(
+            frame_pressure(POINTER_FLAG_UP | POINTER_FLAG_INRANGE, 512),
+            0
+        );
+        assert_eq!(frame_pressure(POINTER_FLAG_UPDATE, 512), 0);
+    }
 }

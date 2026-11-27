@@ -72,12 +72,15 @@ pub(crate) fn round_action_point(x: f64, y: f64) -> anyhow::Result<(i32, i32)> {
     Ok((round(x)?, round(y)?))
 }
 
+type WgcCaptures = HashMap<(String, u32, u64), (CaptureId, CaptureBinding)>;
+type CapturedFrameSizes = HashMap<u64, ((i32, i32), (u32, u32))>;
+
 pub(crate) struct WindowsCaptureBridge {
     service: Arc<CaptureService>,
     // Only metadata is retained; PNG ownership/expiry remains in CaptureService.
-    wgc: Mutex<HashMap<(String, u32, u64), (CaptureId, CaptureBinding)>>,
+    wgc: Mutex<WgcCaptures>,
     /// Per window: visible frame size at its latest default-route capture and that capture's native size.
-    frames: Mutex<HashMap<u64, ((i32, i32), (u32, u32))>>,
+    frames: Mutex<CapturedFrameSizes>,
 }
 
 impl WindowsCaptureBridge {
@@ -298,7 +301,7 @@ fn live_geometry_for_backend(
             use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
             let hwnd = HWND(window_id as usize as *mut std::ffi::c_void);
             anyhow::ensure!(
-                unsafe { IsWindow(hwnd).as_bool() },
+                unsafe { IsWindow(Some(hwnd)).as_bool() },
                 "native window was replaced"
             );
             let mut owner_pid = 0_u32;
@@ -353,7 +356,7 @@ fn window_owner_matches(pid: u32, window_id: u64) -> anyhow::Result<bool> {
     use windows::Win32::UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow};
     let hwnd = HWND(window_id as usize as *mut std::ffi::c_void);
     anyhow::ensure!(
-        unsafe { IsWindow(hwnd).as_bool() },
+        unsafe { IsWindow(Some(hwnd)).as_bool() },
         "native window was replaced"
     );
     let mut owner = 0_u32;

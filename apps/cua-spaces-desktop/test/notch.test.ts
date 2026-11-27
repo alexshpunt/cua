@@ -60,7 +60,10 @@ class FakeChild extends EventEmitter {
     this.stdin.on("data", (c: string) => (this.written += c));
   }
   get received(): { type: string; [k: string]: unknown }[] {
-    return this.written.split("\n").filter(Boolean).map((l) => JSON.parse(l));
+    return this.written
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l));
   }
   say(m: unknown) {
     this.stdout.write(`${JSON.stringify(m)}\n`);
@@ -261,29 +264,35 @@ describe("window drags onto the app's own Space tiles (fake helper)", () => {
 });
 
 describe("window drags onto the notch", () => {
-    it("follows window drags with the SDK's teleport handle once there is one", async () => {
-      let handle: { windowDragSupported(): boolean; windowDragPermitted(): boolean; requestWindowDragPermission(): boolean; startWindowDrag: ReturnType<typeof vi.fn>; captureWindowThumbnail(): ArrayBuffer } | null = null;
-      const t = notchTeleport(() => handle as never);
-      expect(t.windowDragSupported()).toBe(false);
-      expect(t.windowDragPermitted()).toBe(false);
-      await expect(t.startWindowDrag({ onEvent() {} })).rejects.toThrow(/not running/);
-      const monitor = { stop: vi.fn() };
-      handle = {
-        windowDragSupported: () => true,
-        windowDragPermitted: () => true,
-        requestWindowDragPermission: () => true,
-        startWindowDrag: vi.fn(() => monitor),
-        captureWindowThumbnail: () => new ArrayBuffer(3),
-      };
-      expect(t.windowDragSupported()).toBe(true);
-      const listener = { onEvent() {} };
-      const started = t.startWindowDrag(listener);
-      // Not inside the caller's own call: the event tap may take a while to start.
-      expect(handle.startWindowDrag).not.toHaveBeenCalled();
-      expect(await started).toBe(monitor);
-      expect(handle.startWindowDrag).toHaveBeenCalledWith(listener);
-      expect((t.captureWindowThumbnail(7, 320) as ArrayBuffer).byteLength).toBe(3);
-    });
+  it("follows window drags with the SDK's teleport handle once there is one", async () => {
+    let handle: {
+      windowDragSupported(): boolean;
+      windowDragPermitted(): boolean;
+      requestWindowDragPermission(): boolean;
+      startWindowDrag: ReturnType<typeof vi.fn>;
+      captureWindowThumbnail(): ArrayBuffer;
+    } | null = null;
+    const t = notchTeleport(() => handle as never);
+    expect(t.windowDragSupported()).toBe(false);
+    expect(t.windowDragPermitted()).toBe(false);
+    await expect(t.startWindowDrag({ onEvent() {} })).rejects.toThrow(/not running/);
+    const monitor = { stop: vi.fn() };
+    handle = {
+      windowDragSupported: () => true,
+      windowDragPermitted: () => true,
+      requestWindowDragPermission: () => true,
+      startWindowDrag: vi.fn(() => monitor),
+      captureWindowThumbnail: () => new ArrayBuffer(3),
+    };
+    expect(t.windowDragSupported()).toBe(true);
+    const listener = { onEvent() {} };
+    const started = t.startWindowDrag(listener);
+    // Not inside the caller's own call: the event tap may take a while to start.
+    expect(handle.startWindowDrag).not.toHaveBeenCalled();
+    expect(await started).toBe(monitor);
+    expect(handle.startWindowDrag).toHaveBeenCalledWith(listener);
+    expect((t.captureWindowThumbnail(7, 320) as ArrayBuffer).byteLength).toBe(3);
+  });
 });
 
 // CUA-1618: window-drag tracking needs both the SDK (the launch's end) and

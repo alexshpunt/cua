@@ -1,7 +1,18 @@
 // SPDX-License-Identifier: FSL-1.1-MIT
 // Copyright (c) 2026 Cua AI, Inc.
 
-import { ChevronDownIcon, ChevronRightIcon, CookieIcon, DatabaseIcon, EyeOffIcon, FileIcon, FolderIcon, GlobeIcon, KeyRoundIcon, SearchIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CookieIcon,
+  DatabaseIcon,
+  EyeOffIcon,
+  FileIcon,
+  FolderIcon,
+  GlobeIcon,
+  KeyRoundIcon,
+  SearchIcon,
+} from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { TeleportStore, Tri, VaultAction, VaultRow, VaultView } from "@/bridge";

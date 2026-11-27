@@ -347,6 +347,87 @@ fn harness_wpf_legacy_click_keeps_unread_pointer_at_target() {
 
 #[test]
 #[ignore]
+fn desktop_drag_targets_visible_nonforeground_window() {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetAncestor, WindowFromPoint, GA_ROOT, SWP_NOZORDER,
+    };
+
+    let case = CaseSpec::delivered(
+        "windows-wpf-desktop-drag-visible-background-px-foreground",
+        "wpf",
+        "wpf",
+        "drag",
+        Targeting::Px,
+        Delivery::Foreground,
+        Scope::Desktop,
+        DriverRoute::WindowsSendInput,
+        vec![OracleKind::FixtureState, OracleKind::NoLeakedInput],
+    );
+    execute_case(case, |evidence| {
+        let _coordinates = PhysicalCoordinates::enter();
+        let mut pair = PointerPair::launch("desktop-drag-visible-background", 0, "down");
+        *evidence = recording_evidence(pair.driver.recording_dir());
+        // Leave the human window foreground but uncover the target canvas.
+        unsafe {
+            SetWindowPos(
+                HWND(pair.human_wid as *mut _),
+                None,
+                0,
+                0,
+                100,
+                80,
+                SWP_NOACTIVATE | SWP_NOZORDER,
+            )
+            .expect("uncover target without activating it");
+        }
+        assert_eq!(foreground(), pair.human_wid);
+        let (from_x, from_y) = fraction_point(pair.screen_canvas, 0.25);
+        let (to_x, to_y) = fraction_point(pair.screen_canvas, 0.75);
+        let hit = unsafe {
+            WindowFromPoint(POINT {
+                x: from_x,
+                y: from_y,
+            })
+        };
+        assert_eq!(
+            unsafe { GetAncestor(hit, GA_ROOT) }.0 as usize as u64,
+            pair.target_wid,
+            "drag start must be visible on the nonforeground target"
+        );
+        let session = "desktop-drag-visible-background";
+        let started = pair.driver.call(
+            "start_session",
+            serde_json::json!({
+                "session": session, "capture_scope": "desktop"
+            }),
+        );
+        assert!(!started.is_error(), "{}", started.text());
+        pair.driver.start_behavior_recording();
+        let response = pair.driver.call(
+            "drag",
+            serde_json::json!({
+                "session": session, "scope": "desktop",
+                "from_x": from_x, "from_y": from_y, "to_x": to_x, "to_y": to_y,
+                "duration_ms": 400, "steps": 10
+            }),
+        );
+        let finished_ms = pointer_oracle_time_ms();
+        assert!(!response.is_error(), "{}", response.text());
+        let target =
+            wait_pointer_receiver(&pair.target_path, finished_ms, |state| state["up"] == 1);
+        assert_eq!(target["down"], 1, "{target}");
+        assert!(target["held_moves"].as_u64().unwrap_or(0) > 0, "{target}");
+        assert_eq!(target["dropped_events"], 0, "{target}");
+        pair.assert_human_received_no_pointer_input(finished_ms);
+        Observation::delivered(
+            vec![OracleKind::FixtureState, OracleKind::NoLeakedInput],
+            Evidence::default(),
+        )
+    });
+}
+
+#[test]
+#[ignore]
 fn harness_wpf_straight_drag_keeps_unread_release_at_target() {
     // The receiver stays busy past the release witness's one-second timeout, so the
     // release is still unread when the drag returns.

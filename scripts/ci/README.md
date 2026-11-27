@@ -450,7 +450,7 @@ In the fork, `E2E: Cua Driver release gate` (`.github/workflows/e2e-cua-driver-r
 | --- | --- | --- | --- |
 | Push to `main` | The pushed commits touch a gated path (`.github/scripts/cua_driver_e2e_gate_paths.py`). Runs queue; a burst of merges leaves one pending run for the newest commit | full | A failure opens or updates the issue below |
 | Nightly, 06:00 UTC | Default branch HEAD | full | Same. The first fully clean full run closes the issue |
-| Pull request | The `e2e-gate` label is present, or the PR touches the cursor overlay, focus, background input or browser routing paths. Release Please PRs skip the lanes unless labelled | quick | The quick lanes run on the PR merge commit. |
+| Pull request | The `e2e-gate` label is present, or the PR touches a driver crate, test app, build input, fixture or the gate itself; docs are excluded. Release Please PRs skip the lanes unless labelled | quick | The quick lanes run on the PR merge commit. |
 | Other pull requests | Everything else | none | The lanes are skipped and `E2E gate / result` passes at once. |
 
 A failed full run or a flaky case opens or updates one issue named for the branch, "Cua Driver release gate failing on <branch> (nightly)". A break the quick lane could not see is already on the branch when the full run finds it, so it is **fixed forward** with a new PR.

@@ -118,8 +118,22 @@ export function demoCatalog(now: number): CatalogEntry[] {
 
 export const DEMO_OPEN_WINDOWS: OpenWindow[] = [
   { windowId: 41, appId: "com.tinyspeck.slackmacgap", appName: "Slack", windowTitle: "general - Acme", supported: true, bundlePath: "/Applications/Slack.app" },
-  { windowId: 38, appId: "com.google.Chrome", appName: "Google Chrome", windowTitle: "Pull requests - trycua/cua", supported: true, bundlePath: "/Applications/Google Chrome.app" },
-  { windowId: 12, appId: "com.microsoft.VSCode", appName: "Code", windowTitle: "main.rs - cua", supported: true, bundlePath: "/Applications/Visual Studio Code.app" },
+  {
+    windowId: 38,
+    appId: "com.google.Chrome",
+    appName: "Google Chrome",
+    windowTitle: "Pull requests - trycua/cua",
+    supported: true,
+    bundlePath: "/Applications/Google Chrome.app",
+  },
+  {
+    windowId: 12,
+    appId: "com.microsoft.VSCode",
+    appName: "Code",
+    windowTitle: "main.rs - cua",
+    supported: true,
+    bundlePath: "/Applications/Visual Studio Code.app",
+  },
   { windowId: 7, appId: "com.apple.finder", appName: "Finder", windowTitle: "Downloads", supported: false },
 ];
 
@@ -199,7 +213,14 @@ const MB = 1_048_576;
 function consentFor(e: CatalogEntry, move: TeleportMove, files: string[], groups: SensitiveGroup[]): ConsentItem[] {
   const items: ConsentItem[] = [];
   if (e.installSource === "manifest" && e.installId) {
-    items.push({ kind: "install", key: e.installId, label: `${e.name} ${e.installVersion ?? ""}`.trim(), detail: "pinned, sha256 verified", bytes: 0, sensitive: false });
+    items.push({
+      kind: "install",
+      key: e.installId,
+      label: `${e.name} ${e.installVersion ?? ""}`.trim(),
+      detail: "pinned, sha256 verified",
+      bytes: 0,
+      sensitive: false,
+    });
   }
   for (const f of files) items.push({ kind: "file", key: f, label: f.split("/").pop() ?? f, detail: f, bytes: 240_000, sensitive: false });
   if (move !== "app_with_state") return items;
@@ -258,7 +279,9 @@ export function demoTeleportHandlers({ wait, emit, now, stepMs }: DemoTeleportDe
         steps: [
           ...(consent.some((c) => c.kind === "install") ? [{ kind: "install", summary: `Install ${app.installId} (pinned, verified)` }] : []),
           ...(files.length ? [{ kind: "files", summary: `Send ${files.length} item(s) to ~/Downloads/${app.launchBin}` }] : []),
-          ...(move === "app_with_state" ? [{ kind: "state", summary: `Import ${consent.filter((c) => c.kind === "state" || c.kind === "secret").length} ${app.providerId} item(s)` }] : []),
+          ...(move === "app_with_state"
+            ? [{ kind: "state", summary: `Import ${consent.filter((c) => c.kind === "state" || c.kind === "secret").length} ${app.providerId} item(s)` }]
+            : []),
           { kind: "launch", summary: `Open ${app.launchBin ?? app.name}` },
         ],
         consent,
@@ -274,10 +297,26 @@ export function demoTeleportHandlers({ wait, emit, now, stepMs }: DemoTeleportDe
       const steps = plan.steps.length;
       for (const [i, s] of plan.steps.entries()) {
         const total = s.kind === "state" || s.kind === "files" ? plan.totalBytes : 0;
-        emit({ type: "teleport.progress", runId, event: { step: i, steps, kind: s.kind, phase: "started", detail: s.summary, doneBytes: 0, totalBytes: total } });
+        emit({
+          type: "teleport.progress",
+          runId,
+          event: { step: i, steps, kind: s.kind, phase: "started", detail: s.summary, doneBytes: 0, totalBytes: total },
+        });
         await wait(stepMs / 2);
         if (total) {
-          emit({ type: "teleport.progress", runId, event: { step: i, steps, kind: s.kind, phase: "progress", detail: s.kind === "state" ? "Uploading" : s.summary, doneBytes: Math.round(total / 2), totalBytes: total } });
+          emit({
+            type: "teleport.progress",
+            runId,
+            event: {
+              step: i,
+              steps,
+              kind: s.kind,
+              phase: "progress",
+              detail: s.kind === "state" ? "Uploading" : s.summary,
+              doneBytes: Math.round(total / 2),
+              totalBytes: total,
+            },
+          });
           await wait(stepMs / 2);
         }
         emit({ type: "teleport.progress", runId, event: { step: i, steps, kind: s.kind, phase: "finished", detail: "", doneBytes: total, totalBytes: total } });

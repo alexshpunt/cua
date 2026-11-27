@@ -19,12 +19,24 @@ import { TeleportReview } from "@/components/teleport/review";
 
 afterEach(cleanup);
 
-const flow = JSON.parse(
-  readFileSync(join(import.meta.dirname, "../../../../libs/cua/crates/cua-spaces-app-core/parity/teleport-sign-ins.json"), "utf8"),
-) as { spaceName: string; entries: unknown; plan: unknown; picker: Record<string, unknown>[] };
+const flow = JSON.parse(readFileSync(join(import.meta.dirname, "../../../../libs/cua/crates/cua-spaces-app-core/parity/teleport-sign-ins.json"), "utf8")) as {
+  spaceName: string;
+  entries: unknown;
+  plan: unknown;
+  picker: Record<string, unknown>[];
+};
 
 /** What the Keyvault daemon says: `picks` is its `password_domains` feature. */
-const daemon = (picks: boolean): PickerEvent => ({ type: "vault-items", count: 0, newestMs: 0, nowMs: 0, selected: [], passwordIds: [], passwords: [], passwordPicks: picks });
+const daemon = (picks: boolean): PickerEvent => ({
+  type: "vault-items",
+  count: 0,
+  newestMs: 0,
+  nowMs: 0,
+  selected: [],
+  passwordIds: [],
+  passwords: [],
+  passwordPicks: picks,
+});
 
 /** The review of Chrome with its sites read (the flow up to the first
  * `domains-loaded`), on a daemon with or without the per-site choice. */
@@ -73,7 +85,8 @@ describe.skipIf(!wasmBuilt)("Teleport review, saved passwords", () => {
     render(<Review core={core} start={reviewState(core)} sent={sent} />);
     expect(document.querySelector("[data-review-password]")).toBeNull();
     fireEvent.click(document.querySelector("[data-review-passwords]")!);
-    const rows = () => [...document.querySelectorAll<HTMLElement>("[data-review-password]")].map((r) => `${r.dataset.reviewPassword}${r.dataset.selected ? " x" : ""}`);
+    const rows = () =>
+      [...document.querySelectorAll<HTMLElement>("[data-review-password]")].map((r) => `${r.dataset.reviewPassword}${r.dataset.selected ? " x" : ""}`);
     // Starts from the sites kept signed in.
     expect(rows()).toEqual(["bank.example", "github.com x", "google.com"]);
     expect(document.querySelector("[data-review-passwords-summary]")?.textContent).toBe("1 of 3 sites");

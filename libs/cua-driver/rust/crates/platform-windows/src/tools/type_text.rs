@@ -19,6 +19,72 @@ use super::impl_::{
 
 // ── type_text ─────────────────────────────────────────────────────────────────
 
+#[derive(Debug)]
+enum AppendValueError {
+    Read(anyhow::Error),
+    Write(anyhow::Error),
+}
+
+// ValuePattern only replaces the complete value, so a failed read must never
+// be treated as an empty document or followed by a write.
+fn append_existing_value(
+    text: &str,
+    read: impl FnOnce() -> anyhow::Result<String>,
+    write: impl FnOnce(&str) -> anyhow::Result<()>,
+) -> Result<(String, String), AppendValueError> {
+    let before = read().map_err(AppendValueError::Read)?;
+    let after = format!("{before}{text}");
+    write(&after).map_err(AppendValueError::Write)?;
+    Ok((before, after))
+}
+
+#[cfg(test)]
+mod append_existing_value_tests {
+    use super::{append_existing_value, AppendValueError};
+    use std::cell::Cell;
+
+    #[test]
+    fn failed_read_never_writes_a_replacement_value() {
+        let wrote = Cell::new(false);
+        let result = append_existing_value(
+            "new",
+            || Err(anyhow::anyhow!("read failed")),
+            |_| {
+                wrote.set(true);
+                Ok(())
+            },
+        );
+        assert!(matches!(result, Err(AppendValueError::Read(_))));
+        assert!(!wrote.get());
+    }
+
+    #[test]
+    fn failed_write_is_reported_as_a_write_failure() {
+        let result = append_existing_value(
+            "new",
+            || Ok("existing".to_owned()),
+            |_| Err(anyhow::anyhow!("write failed")),
+        );
+        assert!(matches!(result, Err(AppendValueError::Write(_))));
+    }
+
+    #[test]
+    fn successful_read_is_preserved_when_appending() {
+        let mut written = String::new();
+        let result = append_existing_value(
+            "new",
+            || Ok("existing".to_owned()),
+            |value| {
+                written = value.to_owned();
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(result, ("existing".to_owned(), "existingnew".to_owned()));
+        assert_eq!(written, "existingnew");
+    }
+}
+
 pub struct TypeTextTool {
     pub(crate) state: Arc<ToolState>,
 }
@@ -45,8 +111,9 @@ impl Tool for TypeTextTool {
                 separate capability-gated path can use the exact focused UIA Document \
                 only when it is writable and empty. \
                 Eligibility depends on control capabilities and live focus, not app names. \
-                Chromium/Electron windows keep their existing boundary because a UIA \
-                value echo does not prove that the renderer accepted the text. The \
+                For a background Chromium/Electron element, the driver refuses before \
+                a UIA write because it can activate the window; explicitly choose pixel \
+                targeting or foreground delivery instead. The \
                 path reads the value and caret back; after SetValue starts, an \
                 unverifiable result requires a fresh observation before any retry and \
                 is never replayed through native input. This replaces the full \
@@ -73,7 +140,7 @@ impl Tool for TypeTextTool {
                     "pid":{"type":"integer","description":"Target process ID."},
                     "text":{"type":"string","description":"Text to insert at the focused element's cursor."},
                     "window_id":{"type":"integer","description":"HWND of the target window. Omit when element_token is supplied (the token carries it)."},
-                    "element_token":{"type":"string","pattern":"^s[0-9a-f]{8}:[0-9]+$","description":"Opaque element handle from get_window_state. When supplied, type_text writes through UIA ValuePattern and reads that exact element back by handle. The shared ActionResult is confirmed only when the complete expected value is synchronously visible. If SetValue succeeds but read-back is stale or unavailable, the result is unverifiable with no escalation; take a fresh snapshot before retrying because deferred providers may publish only after this call returns."},
+                    "element_token":{"type":"string","pattern":"^s[0-9a-f]{8}:[0-9]+$","description":"Opaque element handle from get_window_state. When supplied, type_text may write through UIA ValuePattern and read that exact element back by handle; Chromium/Electron background element writes are refused before delivery. The shared ActionResult is confirmed only when the complete expected value is synchronously visible. If SetValue succeeds but read-back is stale or unavailable, the result is unverifiable with no escalation; take a fresh snapshot before retrying because deferred providers may publish only after this call returns."},
                     "x":{"type":"number","description":"Window-local screenshot-pixel X of the field to type into — the element px action form. Pass x,y (no element_token) and the tool pixel-clicks there to establish real renderer focus, then types. Use for Chromium/Electron inputs the UIA/WM_CHAR path can't reach. Read straight off the get_window_state PNG, same convention as click."},
                     "y":{"type":"number","description":"Window-local screenshot-pixel Y of the field (see x)."},
                     "delay_ms":{"type":"integer","minimum":0,"maximum":200,"description":"Milliseconds between characters. Default 0 sends batched key events; a positive value sends one key per character with this pause."},
@@ -159,6 +226,84 @@ impl Tool for TypeTextTool {
         }
         let delivery = DeliveryMode::from_args(&args);
 
+        let hwnd = match hwnd_opt {
+            Some(h) => h,
+            None => {
+                let windows = cua_driver_core::desktop_activity::spawn_blocking({
+                    let admitted = admitted.clone();
+                    move || {
+                        let _admission = &admitted;
+                        crate::win32::list_windows(Some(pid))
+                    }
+                })
+                .await
+                .unwrap_or_default();
+                match windows.first() {
+                    Some(w) => w.hwnd,
+                    None => {
+                        return ToolResult::error(format!(
+                            "No windows found for pid {pid}. Provide window_id."
+                        ))
+                    }
+                }
+            }
+        };
+        // A Chromium accessibility value write can activate the window even
+        // when the host is temporarily disabled around the UIA call.
+        // Clicking the element to establish renderer focus is not equivalent:
+        // it may invoke page handlers and move the caret or selection. Refuse
+        // before either action; callers may explicitly choose the pixel or
+        // foreground route instead.
+        if delivery.is_background()
+            && elem_idx.is_some()
+            && crate::input::is_chromium_target_window(hwnd)
+        {
+            return crate::input::delivery::background_unavailable_error(
+                hwnd,
+                EventKind::TextInput,
+            );
+        }
+
+        // Native ConsoleHost can accept every synthesized Unicode event while
+        // dropping the text at the prompt (observed on Windows 11 ARM64).
+        // Classify terminal delivery before the foreground SendInput branch so
+        // an explicit foreground retry cannot bypass the hard refusal.
+        match crate::terminal::type_text_policy(hwnd, delivery.is_foreground()) {
+            crate::terminal::TypeTextPolicy::Unsupported => {
+                return crate::terminal::native_consolehost_type_text_error(hwnd);
+            }
+            crate::terminal::TypeTextPolicy::ForegroundRequired => {
+                return crate::input::delivery::background_unavailable_error(
+                    hwnd,
+                    EventKind::TextInput,
+                );
+            }
+            crate::terminal::TypeTextPolicy::Supported => {}
+        }
+
+        // Refuse known background drops before the final WM_CHAR path. Posted
+        // WM_CHAR reaches WPF's keyboard focus element and Chromium's top-level
+        // window (LPT-1846).
+        if delivery.is_background()
+            && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::TextInput)
+        {
+            return crate::input::delivery::background_unavailable_error(
+                hwnd,
+                EventKind::TextInput,
+            );
+        }
+        // Without an element, WPF has no supported background text route.
+        // Check before a pixel-focus click can mutate the target.
+        if delivery.is_background()
+            && elem_idx.is_none()
+            && crate::input::delivery::is_wpf_target_window(hwnd)
+        {
+            return crate::input::delivery::background_unavailable_error(
+                hwnd,
+                EventKind::TextInput,
+            );
+        }
+
         // ── px form: focus by pixel-click, then type into the focused element ──
         // Pass x,y (no element_token) for an *element px action*: pixel-click the
         // field to give the Chromium/Electron renderer the real keyboard focus the
@@ -181,7 +326,7 @@ impl Tool for TypeTextTool {
                 if let Err(e) = focus_by_pixel(
                     &self.state,
                     pid,
-                    hwnd_opt,
+                    Some(hwnd),
                     cx,
                     cy,
                     delivery.is_foreground(),
@@ -211,28 +356,6 @@ impl Tool for TypeTextTool {
             _ => None,
         };
         let _delay_ms = cua_driver_core::type_pacing::delay_from_args(&args);
-        let hwnd = match hwnd_opt {
-            Some(h) => h,
-            None => {
-                let windows = cua_driver_core::desktop_activity::spawn_blocking({
-                    let admitted = admitted.clone();
-                    move || {
-                        let _admission = &admitted;
-                        crate::win32::list_windows(Some(pid))
-                    }
-                })
-                .await
-                .unwrap_or_default();
-                match windows.first() {
-                    Some(w) => w.hwnd,
-                    None => {
-                        return ToolResult::error(format!(
-                            "No windows found for pid {pid}. Provide window_id."
-                        ))
-                    }
-                }
-            }
-        };
         if let Some(element) = admitted.as_ref() {
             let (cx, cy) = element.center;
             pin_overlay_above(&cursor_key, hwnd);
@@ -255,34 +378,6 @@ impl Tool for TypeTextTool {
         }
         let text_len = text.chars().count();
 
-        // Native ConsoleHost can accept every synthesized Unicode event while
-        // dropping the text at the prompt (observed on Windows 11 ARM64).
-        // Classify terminal delivery before the foreground SendInput branch so
-        // an explicit foreground retry cannot bypass the hard refusal.
-        match crate::terminal::type_text_policy(hwnd, delivery.is_foreground()) {
-            crate::terminal::TypeTextPolicy::Unsupported => {
-                return crate::terminal::native_consolehost_type_text_error(hwnd);
-            }
-            crate::terminal::TypeTextPolicy::ForegroundRequired => {
-                return crate::input::delivery::background_unavailable_error(
-                    hwnd,
-                    EventKind::TextInput,
-                );
-            }
-            crate::terminal::TypeTextPolicy::Supported => {}
-        }
-
-        // Refuse known background drops before the final WM_CHAR path. Posted
-        // WM_CHAR reaches WPF's keyboard focus element and Chromium's top-level
-        // window (LPT-1846).
-        if delivery == DeliveryMode::Background
-            && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::TextInput)
-        {
-            return crate::input::delivery::background_unavailable_error(
-                hwnd,
-                EventKind::TextInput,
-            );
-        }
         // delivery_mode:"foreground" — explicit SendInput Unicode with a brief
         // foreground swap (send_text_synthesized), symmetric with press_key's
         // foreground path. This is the rung that lands on VCL/LibreOffice
@@ -433,36 +528,52 @@ impl Tool for TypeTextTool {
                     };
                     let elem: IUIAutomationElement =
                         unsafe { IUIAutomationElement::from_raw(ptr as *mut _) };
-                    let result = (|| -> anyhow::Result<(String, String)> {
-                        let pattern = unsafe { elem.GetCurrentPattern(UIA_ValuePatternId) }?;
-                        let vp: IUIAutomationValuePattern = pattern.cast()?;
-                        // Shield the SetValue against host self-foreground. A
-                        // Chromium/Electron (or XAML) ValuePattern.SetValue handler
-                        // calls SetForegroundWindow(self), which WS_EX_NOACTIVATE
-                        // does NOT stop; the EnableWindow shield does (disabled
-                        // top-level can't be foregrounded) while the a11y-channel
-                        // SetValue still lands. Same fix as the UIA Invoke path.
-                        crate::uia::fg_bypass::run_with_uwp_bypass(hwnd as isize, || unsafe {
-                            // ValuePattern has no caret/selection insertion API. Preserve
-                            // the current document and append as the deterministic
-                            // background fallback; replacing the whole value violates
-                            // type_text's insertion contract for editors.
-                            let current = vp
-                                .CurrentValue()
-                                .map(|value| value.to_string())
-                                .unwrap_or_default();
-                            let inserted = format!("{current}{text_for_uia}");
-                            vp.SetValue(&BSTR::from(inserted.as_str()))?;
-                            Ok((current, inserted))
+                    let pattern = unsafe { elem.GetCurrentPattern(UIA_ValuePatternId) }
+                        .ok()
+                        .and_then(|pattern| pattern.cast::<IUIAutomationValuePattern>().ok());
+                    let result = pattern.map(|vp| {
+                        // The shield prevents supported hosts from self-activating.
+                        crate::uia::fg_bypass::run_with_uwp_bypass(hwnd as isize, || {
+                            append_existing_value(
+                                &text_for_uia,
+                                || {
+                                    unsafe { vp.CurrentValue() }
+                                        .map(|value| value.to_string())
+                                        .map_err(Into::into)
+                                },
+                                |value| {
+                                    unsafe { vp.SetValue(&BSTR::from(value)) }.map_err(Into::into)
+                                },
+                            )
                         })
-                    })()
-                    .ok();
+                    });
                     std::mem::forget(elem);
                     result
                 }
             })
-            .await
-            .unwrap_or(None);
+            .await;
+            let set_result = match set_result {
+                Ok(Some(Ok(value))) => Some(value),
+                Ok(Some(Err(AppendValueError::Read(error)))) => {
+                    return ToolResult::error(format!(
+                        "Could not read the existing value before typing; no value was written: {error}"
+                    ))
+                    .with_structured(json!({"effect": "refused"}));
+                }
+                Ok(Some(Err(AppendValueError::Write(error)))) => {
+                    return ToolResult::error(format!(
+                        "The value write failed and may have changed the target; inspect it before retrying: {error}"
+                    ))
+                    .with_structured(json!({"effect": "unverifiable"}));
+                }
+                Ok(None) => None,
+                Err(error) => {
+                    return ToolResult::error(format!(
+                        "The value task failed and may have changed the target; inspect it before retrying: {error}"
+                    ))
+                    .with_structured(json!({"effect": "unverifiable"}));
+                }
+            };
             if let Some((before, expected)) = set_result {
                 // Read the value back by element handle — focus-independent
                 // (works regardless of which window is foreground), proving the
@@ -539,19 +650,6 @@ impl Tool for TypeTextTool {
                 });
             }
             // ValuePattern unavailable → fall through to the WM_CHAR path.
-        }
-
-        // 2. No element_index on a WPF target: WM_CHAR is dropped and there's no
-        //    element to SetValue. The only background path was a cloaked focus
-        //    grab (SendInput), which the macOS-aligned contract forbids in
-        //    background. Prefer supplying an element_index (path 1, UIA SetValue —
-        //    never raises); otherwise surface background_unavailable so the agent
-        //    escalates to delivery_mode:"foreground".
-        if elem_idx.is_none() && crate::input::delivery::is_wpf_target_window(hwnd) {
-            return crate::input::delivery::background_unavailable_error(
-                hwnd,
-                EventKind::TextInput,
-            );
         }
 
         // 3. Legacy Win32 / GDI / Chromium-IME — PostMessage WM_CHAR, no focus steal.

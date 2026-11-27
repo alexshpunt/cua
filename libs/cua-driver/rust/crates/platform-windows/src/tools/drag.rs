@@ -227,7 +227,7 @@ impl Tool for DragTool {
             let steps = input.steps.unwrap_or(20) as usize;
             let button = input.button.unwrap_or(ClickButton::Left).as_str();
             let modifiers = input.modifier.unwrap_or_default();
-            let hwnd = match crate::input::mouse::foreground_window() {
+            let hwnd = match crate::input::mouse::window_at_screen_point(from_x, from_y) {
                 Ok(hwnd) => hwnd,
                 Err(error) => return ToolResult::error(error.to_string()),
             };
@@ -402,15 +402,24 @@ impl Tool for DragTool {
         // the structured error so the caller retries with delivery_mode:foreground
         // (a WinUI3 Slider can also be set with the set_value tool, which uses
         // UIA RangeValuePattern and holds the contract).
-        if delivery == DeliveryMode::Background {
+        if delivery.is_background() {
             if let Some(r) = winui3_background_gesture(&None, pid, hwnd, None, 1, &button).await {
                 return r;
             }
         }
 
+        // Chromium can accept a posted press but lose later drag phases after
+        // pointer capture. Refuse before the press rather than leaving a partial
+        // gesture behind; foreground delivery remains available.
+        if delivery.is_background() && crate::input::is_chromium_target_window(hwnd) {
+            return crate::input::delivery::background_unavailable_error(
+                hwnd,
+                EventKind::MouseMove,
+            );
+        }
         // Synthetic background input cannot guarantee cursor/focus posture.
         // Refuse before input rather than restoring an unread stream by timer.
-        if delivery == DeliveryMode::Background
+        if delivery.is_background()
             && crate::input::delivery::would_be_silently_dropped(hwnd, EventKind::MouseMove)
         {
             return crate::input::delivery::background_pointer_unavailable_error(

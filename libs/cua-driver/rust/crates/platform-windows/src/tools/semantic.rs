@@ -103,7 +103,7 @@ impl UiaControl<'_> {
         unsafe {
             GetWindowThreadProcessId(hwnd, Some(&mut pid));
         }
-        if !unsafe { IsWindow(hwnd) }.as_bool() || pid != self.pid {
+        if !unsafe { IsWindow(Some(hwnd)) }.as_bool() || pid != self.pid {
             return Err(Failure::refusal("semantic_window_changed"));
         }
         Ok(())

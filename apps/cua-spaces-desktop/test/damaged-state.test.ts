@@ -23,7 +23,9 @@ beforeEach(forgetKept);
 afterEach(() => dirs.splice(0).forEach((d) => rmSync(d, { recursive: true, force: true })));
 
 /** The steps the checklist's words map to (the real ones come from the native core). */
-const native = { AppChecklistStep: { AddMachine: "AddMachine", CreateSpace: "CreateSpace", Teleport: "Teleport", Share: "Share", RunAgent: "RunAgent" } } as unknown as Native;
+const native = {
+  AppChecklistStep: { AddMachine: "AddMachine", CreateSpace: "CreateSpace", Teleport: "Teleport", Share: "Share", RunAgent: "RunAgent" },
+} as unknown as Native;
 
 const GARBAGE = ["{", '{"completed": tru', "", "null", "[]", "\u0000\u0001garbage", '"a string"'];
 

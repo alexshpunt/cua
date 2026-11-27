@@ -484,7 +484,7 @@ impl Tool for LaunchAppTool {
         let pid = if let Some(aumid) = aumid_for_uwp.clone() {
             let aumid_clone = aumid.clone();
             let args_clone = extra_joined.clone();
-            let activation = tokio::task::spawn_blocking(move || {
+            let activation = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::launch_uwp::launch_uwp(&aumid_clone, &args_clone)
             })
             .await;
@@ -526,149 +526,152 @@ impl Tool for LaunchAppTool {
             // UI so that case fails fast with an error code; the timeout is the
             // backstop for any *other* blocking broker dialog (SmartScreen, an
             // elevation/consent surface) so a bad target can't hang the daemon.
-            let launch = tokio::task::spawn_blocking(move || -> anyhow::Result<u32> {
-                use windows::core::{PCWSTR, PWSTR};
-                use windows::Win32::Foundation::CloseHandle;
-                use windows::Win32::System::Threading::{
-                    CreateProcessW, GetProcessId, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION,
-                    STARTF_USESHOWWINDOW, STARTUPINFOW,
-                };
-                use windows::Win32::UI::Shell::{
-                    ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOCLOSEPROCESS,
-                    SHELLEXECUTEINFOW,
-                };
-
-                fn to_wide(s: &str) -> Vec<u16> {
-                    s.encode_utf16().chain(std::iter::once(0)).collect()
-                }
-                let op_w = to_wide("open");
-                let file_w = to_wide(if let Some(t) = target_for_shell.as_deref() {
-                    t
-                } else {
-                    urls_clone.first().map(|s| s.as_str()).unwrap_or("")
-                });
-                let args_w = to_wide(&extra_for_shell);
-
-                use crate::standard_user_launch::AppLaunchToken;
-                let pid = if direct_minimized_exe {
-                    let target = target_for_shell
-                        .as_deref()
-                        .expect("checked executable path");
-                    let command_line_text = if extra_for_shell.is_empty() {
-                        format!(r#""{target}""#)
-                    } else {
-                        format!(r#""{target}" {extra_for_shell}"#)
+            let launch = cua_driver_core::desktop_activity::spawn_blocking(
+                move || -> anyhow::Result<u32> {
+                    use windows::core::{PCWSTR, PWSTR};
+                    use windows::Win32::Foundation::CloseHandle;
+                    use windows::Win32::System::Threading::{
+                        CreateProcessW, GetProcessId, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION,
+                        STARTF_USESHOWWINDOW, STARTUPINFOW,
                     };
-                    if let AppLaunchToken::StandardUser(token) = &launch_token {
-                        crate::standard_user_launch::create_process(
+                    use windows::Win32::UI::Shell::{
+                        ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOCLOSEPROCESS,
+                        SHELLEXECUTEINFOW,
+                    };
+
+                    fn to_wide(s: &str) -> Vec<u16> {
+                        s.encode_utf16().chain(std::iter::once(0)).collect()
+                    }
+                    let op_w = to_wide("open");
+                    let file_w = to_wide(if let Some(t) = target_for_shell.as_deref() {
+                        t
+                    } else {
+                        urls_clone.first().map(|s| s.as_str()).unwrap_or("")
+                    });
+                    let args_w = to_wide(&extra_for_shell);
+
+                    use crate::standard_user_launch::AppLaunchToken;
+                    let pid = if direct_minimized_exe {
+                        let target = target_for_shell
+                            .as_deref()
+                            .expect("checked executable path");
+                        let command_line_text = if extra_for_shell.is_empty() {
+                            format!(r#""{target}""#)
+                        } else {
+                            format!(r#""{target}" {extra_for_shell}"#)
+                        };
+                        if let AppLaunchToken::StandardUser(token) = &launch_token {
+                            crate::standard_user_launch::create_process(
+                                token,
+                                target,
+                                &command_line_text,
+                                n_show_for_shell,
+                            )
+                            .map_err(anyhow::Error::msg)?
+                        } else {
+                            let mut command_line = to_wide(&command_line_text);
+                            let startup = STARTUPINFOW {
+                                cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+                                dwFlags: STARTF_USESHOWWINDOW,
+                                wShowWindow: n_show_for_shell as u16,
+                                ..Default::default()
+                            };
+                            let mut process = PROCESS_INFORMATION::default();
+                            unsafe {
+                                CreateProcessW(
+                                    PCWSTR(file_w.as_ptr()),
+                                    Some(PWSTR(command_line.as_mut_ptr())),
+                                    None,
+                                    None,
+                                    false,
+                                    PROCESS_CREATION_FLAGS(0),
+                                    None,
+                                    PCWSTR::null(),
+                                    &startup,
+                                    &mut process,
+                                )?;
+                                let _ = CloseHandle(process.hThread);
+                                let _ = CloseHandle(process.hProcess);
+                            }
+                            process.dwProcessId
+                        }
+                    } else if let AppLaunchToken::StandardUser(token) = &launch_token {
+                        let file = target_for_shell
+                            .as_deref()
+                            .or_else(|| urls_clone.first().map(String::as_str))
+                            .unwrap_or("");
+                        crate::standard_user_launch::shell_execute(
                             token,
-                            target,
-                            &command_line_text,
+                            file,
+                            &extra_for_shell,
                             n_show_for_shell,
+                            STANDARD_USER_SHELL_LAUNCH_TIMEOUT,
                         )
                         .map_err(anyhow::Error::msg)?
                     } else {
-                        let mut command_line = to_wide(&command_line_text);
-                        let startup = STARTUPINFOW {
-                            cb: std::mem::size_of::<STARTUPINFOW>() as u32,
-                            dwFlags: STARTF_USESHOWWINDOW,
-                            wShowWindow: n_show_for_shell as u16,
+                        let mut info = SHELLEXECUTEINFOW {
+                            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+                            fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI,
+                            lpVerb: PCWSTR(op_w.as_ptr()),
+                            lpFile: PCWSTR(file_w.as_ptr()),
+                            lpParameters: if extra_for_shell.is_empty() {
+                                PCWSTR::null()
+                            } else {
+                                PCWSTR(args_w.as_ptr())
+                            },
+                            nShow: n_show_for_shell,
                             ..Default::default()
                         };
-                        let mut process = PROCESS_INFORMATION::default();
                         unsafe {
-                            CreateProcessW(
-                                PCWSTR(file_w.as_ptr()),
-                                PWSTR(command_line.as_mut_ptr()),
-                                None,
-                                None,
-                                false,
-                                PROCESS_CREATION_FLAGS(0),
-                                None,
-                                PCWSTR::null(),
-                                &startup,
-                                &mut process,
-                            )?;
-                            let _ = CloseHandle(process.hThread);
-                            let _ = CloseHandle(process.hProcess);
+                            ShellExecuteExW(&mut info)?;
                         }
-                        process.dwProcessId
-                    }
-                } else if let AppLaunchToken::StandardUser(token) = &launch_token {
-                    let file = target_for_shell
-                        .as_deref()
-                        .or_else(|| urls_clone.first().map(String::as_str))
-                        .unwrap_or("");
-                    crate::standard_user_launch::shell_execute(
-                        token,
-                        file,
-                        &extra_for_shell,
-                        n_show_for_shell,
-                        STANDARD_USER_SHELL_LAUNCH_TIMEOUT,
-                    )
-                    .map_err(anyhow::Error::msg)?
-                } else {
-                    let mut info = SHELLEXECUTEINFOW {
-                        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-                        fMask: SEE_MASK_NOCLOSEPROCESS | SEE_MASK_FLAG_NO_UI,
-                        lpVerb: PCWSTR(op_w.as_ptr()),
-                        lpFile: PCWSTR(file_w.as_ptr()),
-                        lpParameters: if extra_for_shell.is_empty() {
-                            PCWSTR::null()
+                        if !info.hProcess.is_invalid() {
+                            let p = unsafe { GetProcessId(info.hProcess) };
+                            unsafe {
+                                let _ = CloseHandle(info.hProcess);
+                            }
+                            p
                         } else {
-                            PCWSTR(args_w.as_ptr())
-                        },
-                        nShow: n_show_for_shell,
-                        ..Default::default()
-                    };
-                    unsafe {
-                        ShellExecuteExW(&mut info)?;
-                    }
-                    if !info.hProcess.is_invalid() {
-                        let p = unsafe { GetProcessId(info.hProcess) };
-                        unsafe {
-                            let _ = CloseHandle(info.hProcess);
+                            0
                         }
-                        p
-                    } else {
-                        0
-                    }
-                };
-
-                // Open any additional URLs in the default browser (no focus
-                // steal, no pid capture for these — Swift's NSWorkspace flow
-                // behaves the same way for secondary URLs).
-                // When an app target was launched above, none of the URLs has
-                // been consumed yet. URLs-only launches use the first URL as
-                // `lpFile`, so only their remaining URLs belong here.
-                let first_unopened_url = first_unopened_shell_url_index(target_for_shell.is_some());
-                for url in &urls_clone[first_unopened_url.min(urls_clone.len())..] {
-                    if let AppLaunchToken::StandardUser(token) = &launch_token {
-                        let _ = crate::standard_user_launch::shell_execute(
-                            token,
-                            url,
-                            "",
-                            n_show_for_shell,
-                            STANDARD_USER_SHELL_LAUNCH_TIMEOUT,
-                        );
-                        continue;
-                    }
-                    let file = to_wide(url);
-                    let mut url_info = SHELLEXECUTEINFOW {
-                        cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
-                        fMask: SEE_MASK_FLAG_NO_UI,
-                        lpVerb: PCWSTR(op_w.as_ptr()),
-                        lpFile: PCWSTR(file.as_ptr()),
-                        nShow: n_show_for_shell,
-                        ..Default::default()
                     };
-                    unsafe {
-                        let _ = ShellExecuteExW(&mut url_info);
-                    }
-                }
 
-                Ok(pid)
-            });
+                    // Open any additional URLs in the default browser (no focus
+                    // steal, no pid capture for these — Swift's NSWorkspace flow
+                    // behaves the same way for secondary URLs).
+                    // When an app target was launched above, none of the URLs has
+                    // been consumed yet. URLs-only launches use the first URL as
+                    // `lpFile`, so only their remaining URLs belong here.
+                    let first_unopened_url =
+                        first_unopened_shell_url_index(target_for_shell.is_some());
+                    for url in &urls_clone[first_unopened_url.min(urls_clone.len())..] {
+                        if let AppLaunchToken::StandardUser(token) = &launch_token {
+                            let _ = crate::standard_user_launch::shell_execute(
+                                token,
+                                url,
+                                "",
+                                n_show_for_shell,
+                                STANDARD_USER_SHELL_LAUNCH_TIMEOUT,
+                            );
+                            continue;
+                        }
+                        let file = to_wide(url);
+                        let mut url_info = SHELLEXECUTEINFOW {
+                            cbSize: std::mem::size_of::<SHELLEXECUTEINFOW>() as u32,
+                            fMask: SEE_MASK_FLAG_NO_UI,
+                            lpVerb: PCWSTR(op_w.as_ptr()),
+                            lpFile: PCWSTR(file.as_ptr()),
+                            nShow: n_show_for_shell,
+                            ..Default::default()
+                        };
+                        unsafe {
+                            let _ = ShellExecuteExW(&mut url_info);
+                        }
+                    }
+
+                    Ok(pid)
+                },
+            );
             // 15s is generous: ShellExecuteExW returns once activation starts
             // (process created), not when the window appears, so a healthy
             // launch resolves in well under a second. On timeout we abandon the
@@ -716,7 +719,9 @@ impl Tool for LaunchAppTool {
         if aumid_for_uwp.is_none() && restore_foreground {
             let spawned_pid_for_restore = pid;
             let target_foreground_addr = foreground_before_addr;
+            let admission = cua_driver_core::tool::retain_desktop_action_admission();
             tokio::spawn(async move {
+                let _admission = admission;
                 restore_foreground_polling_best_effort(
                     target_foreground_addr,
                     spawned_pid_for_restore,
@@ -732,7 +737,7 @@ impl Tool for LaunchAppTool {
         if aumid_for_uwp.is_some() && !urls.is_empty() {
             let urls_clone = urls.clone();
             let n_show_for_urls = n_show;
-            let _ = tokio::task::spawn_blocking(move || {
+            let _ = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 use windows::core::PCWSTR;
                 use windows::Win32::UI::Shell::{ShellExecuteExW, SHELLEXECUTEINFOW};
                 fn to_wide(s: &str) -> Vec<u16> {
@@ -957,7 +962,7 @@ impl Tool for LaunchAppTool {
             // poll window.
             let parent_pid = pid;
             let immediate_hwnds_for_poll = immediate_hwnds.clone();
-            let _ = tokio::task::spawn_blocking(move || {
+            let _ = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 use windows::Win32::Foundation::HWND;
                 use windows::Win32::UI::WindowsAndMessaging::{ShowWindow, SW_SHOWMINNOACTIVE};
                 for h in immediate_hwnds {
@@ -1035,17 +1040,18 @@ impl Tool for LaunchAppTool {
                                 hit_count_total += 1;
                             }
                             let hwnd_iso = w.hwnd as usize;
-                            let restored = tokio::task::spawn_blocking(move || unsafe {
-                                let hwnd = HWND(hwnd_iso as *mut _);
-                                if IsIconic(hwnd).as_bool() {
-                                    false
-                                } else {
-                                    let _ = ShowWindow(hwnd, SW_SHOWMINNOACTIVE);
-                                    true
-                                }
-                            })
-                            .await
-                            .unwrap_or(false);
+                            let restored =
+                                cua_driver_core::desktop_activity::spawn_blocking(move || unsafe {
+                                    let hwnd = HWND(hwnd_iso as *mut _);
+                                    if IsIconic(hwnd).as_bool() {
+                                        false
+                                    } else {
+                                        let _ = ShowWindow(hwnd, SW_SHOWMINNOACTIVE);
+                                        true
+                                    }
+                                })
+                                .await
+                                .unwrap_or(false);
                             if is_new || restored {
                                 tick_hits += 1;
                             }

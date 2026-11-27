@@ -497,7 +497,7 @@ impl Tool for ScrollTool {
             // coordinate-based compositor fallback.
             if !(crate::wayland::is_wayland() && is_webkitgtk_embedder(pid)) {
                 let direction_for_ax = direction.clone();
-                let ax_result = tokio::task::spawn_blocking(move || {
+                let ax_result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                     crate::atspi::scroll_token(pid, &element, &direction_for_ax, amount, by)
                 })
                 .await;
@@ -600,7 +600,7 @@ impl Tool for ScrollTool {
                 );
             };
             let direction_for_inject = direction.clone();
-            let result = tokio::task::spawn_blocking(move || {
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::wayland::inject_scroll(pid, xid, x, y, &direction_for_inject, amount as u32)
             })
             .await;

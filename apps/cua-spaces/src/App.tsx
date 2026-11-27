@@ -87,7 +87,19 @@ function reportBridgeError(operation: string, error: unknown) {
   console.error(`[Cua Spaces] ${operation} failed`, error);
 }
 
-export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesList, windowDrag, teleportApps, host, tray, now = Date.now, collapseDelayMs = SWITCH_COLLAPSE_MS, initial }: AppProps) {
+export function App({
+  bridge,
+  spacesBridge: spacesBridgeProp,
+  teleport,
+  spacesList,
+  windowDrag,
+  teleportApps,
+  host,
+  tray,
+  now = Date.now,
+  collapseDelayMs = SWITCH_COLLAPSE_MS,
+  initial,
+}: AppProps) {
   const t = useT(["settings", "teleport"]);
   const [state, dispatch] = useReducer(reduce, initial, (preset) => preset ?? initialState());
   const [env, setEnv] = useState<PortalEnvironment | null>(null);
@@ -228,14 +240,12 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
     let unlisten: (() => void) | undefined;
     void import("@tauri-apps/api/event")
       .then(({ listen }) =>
-        listen<{ active: boolean; sent_bytes?: number; total_bytes?: number }>(
-          "notch:transfer",
-          (event) =>
-            setTransfer({
-              active: !!event.payload.active,
-              sent: event.payload.sent_bytes,
-              total: event.payload.total_bytes,
-            }),
+        listen<{ active: boolean; sent_bytes?: number; total_bytes?: number }>("notch:transfer", (event) =>
+          setTransfer({
+            active: !!event.payload.active,
+            sent: event.payload.sent_bytes,
+            total: event.payload.total_bytes,
+          }),
         ),
       )
       .then((stop) => {
@@ -362,10 +372,7 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
   // teleport grows the *ambient* window taller so the "Teleport to Cua" box has
   // room to hang below the notch. The selector/create modes already own the
   // screen, so they are unaffected.
-  const effectiveMode: WindowMode =
-    state.mode === "ambient" && teleportTall
-      ? "ambient-teleport"
-      : state.mode;
+  const effectiveMode: WindowMode = state.mode === "ambient" && teleportTall ? "ambient-teleport" : state.mode;
 
   // Keep the native window in step with the effective mode.
   useEffect(() => {
@@ -537,8 +544,7 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
         const committing = Boolean(space && space.status !== "local");
         // Capture the dragged app before the cleanup nulls it — the "+" drop
         // creates a Space asynchronously and teleports it in afterwards.
-        const droppedApp =
-          dragAppRef.current?.app && dragAppRef.current.supported ? dragAppRef.current.app : null;
+        const droppedApp = dragAppRef.current?.app && dragAppRef.current.supported ? dragAppRef.current.app : null;
         const droppedEntry = dragAppRef.current?.supported ? (dragAppRef.current.entry ?? null) : null;
         // `drop` commits over a valid tile (→ consent picker → push → item B)
         // and dismisses both surfaces. The real window is never moved.
@@ -613,17 +619,18 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
         setDropTargetId(id);
         // The "+" tile is a drop target but not a real Space: keep the box's
         // "over <Space>" copy neutral while the cursor is over it.
-        dispatchOverlay(
-          id && id !== NEW_SPACE_DROP_ID ? { type: "over", spaceId: id } : { type: "out" },
-        );
+        dispatchOverlay(id && id !== NEW_SPACE_DROP_ID ? { type: "over", spaceId: id } : { type: "out" });
       }
       if (tickTimer != null) window.clearTimeout(tickTimer);
       tickTimer = null;
       if (t.tickAtMs != null) {
-        tickTimer = window.setTimeout(() => {
-          tickTimer = null;
-          feed({ type: "tick", tMs: now() }, x, y);
-        }, Math.max(0, t.tickAtMs - now()));
+        tickTimer = window.setTimeout(
+          () => {
+            tickTimer = null;
+            feed({ type: "tick", tMs: now() }, x, y);
+          },
+          Math.max(0, t.tickAtMs - now()),
+        );
       }
     };
 
@@ -634,8 +641,7 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
         // (full or install only, per the SDK catalog), and never while the
         // notch is hidden (menu bar only).
         if (!event.supported || menuBarRef.current) return;
-        const app: LocalApp | null =
-          event.appId && event.appName ? { id: event.appId, name: event.appName } : null;
+        const app: LocalApp | null = event.appId && event.appName ? { id: event.appId, name: event.appName } : null;
         dragAppRef.current = { app, entry: event.entry ?? null, supported: Boolean(event.supported) };
         refreshDisplays();
         feed(
@@ -742,14 +748,9 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
           const paths = event.payload.paths;
           if (!hasAppPath(paths)) return;
           const scale = window.devicePixelRatio || 1;
-          const element = document.elementFromPoint(
-            event.payload.position.x / scale,
-            event.payload.position.y / scale,
-          );
+          const element = document.elementFromPoint(event.payload.position.x / scale, event.payload.position.y / scale);
           const tile = element?.closest<HTMLElement>("[data-space-id]");
-          const space = tile
-            ? stateRef.current.spaces.find((s) => s.id === tile.dataset.spaceId)
-            : undefined;
+          const space = tile ? stateRef.current.spaces.find((s) => s.id === tile.dataset.spaceId) : undefined;
           if (!space || space.status === "local") return;
           void handleAppDrop(paths, space, beginTeleportRef.current, teleportAppsBridge);
         })
@@ -809,9 +810,7 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
     }
     if (islandCollapseTimer.current !== null) window.clearTimeout(islandCollapseTimer.current);
     setIslandCollapsing(true);
-    const reduce =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     islandCollapseTimer.current = window.setTimeout(
       () => {
         islandCollapseTimer.current = null;
@@ -966,7 +965,6 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
     };
   }, [spacesBridge, handlers]);
 
-
   return (
     <SpacesContext.Provider value={spacesContext}>
       <div
@@ -994,7 +992,6 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
         {displayStyle === "notched" && !(menuBar && state.mode === "ambient") && (
           <NotchCap mode={state.mode} teleport={teleportTall} />
         )}
-
 
         {state.mode === "ambient" && (
           <Ambient
@@ -1058,7 +1055,6 @@ export function App({ bridge, spacesBridge: spacesBridgeProp, teleport, spacesLi
             </section>
           </div>
         )}
-
       </div>
     </SpacesContext.Provider>
   );

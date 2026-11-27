@@ -8,12 +8,36 @@
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { PASSPHRASE_CANCEL, PASSPHRASE_CHECK, PASSPHRASE_SUBMIT, PassphraseSession, checkView, escapeHtml, formTitle, passphrasePage, type PassphraseCheck } from "../src/passphrase";
+import {
+  PASSPHRASE_CANCEL,
+  PASSPHRASE_CHECK,
+  PASSPHRASE_SUBMIT,
+  PassphraseSession,
+  checkView,
+  escapeHtml,
+  formTitle,
+  passphrasePage,
+  type PassphraseCheck,
+} from "../src/passphrase";
 import { keyvaultPrompts, unlockDetail, type MessageBoxes } from "../src/prompts";
 import type { KvCredentialForm, KvFormMode, KvMethod, KvPassphraseCheck } from "../src/native/generated/index";
 
-const setup = { mode: "setup" as KvFormMode, method: "passphrase" as KvMethod, help: "12 or more characters.", passphraseLabel: "Passphrase", confirmLabel: "Confirm passphrase", submitLabel: "Set up Keyvault" };
-const unlock = { mode: "unlock" as KvFormMode, method: "passphrase" as KvMethod, help: "Enter the Keyvault passphrase.", passphraseLabel: "Passphrase", confirmLabel: undefined, submitLabel: "Unlock" };
+const setup = {
+  mode: "setup" as KvFormMode,
+  method: "passphrase" as KvMethod,
+  help: "12 or more characters.",
+  passphraseLabel: "Passphrase",
+  confirmLabel: "Confirm passphrase",
+  submitLabel: "Set up Keyvault",
+};
+const unlock = {
+  mode: "unlock" as KvFormMode,
+  method: "passphrase" as KvMethod,
+  help: "Enter the Keyvault passphrase.",
+  passphraseLabel: "Passphrase",
+  confirmLabel: undefined,
+  submitLabel: "Unlock",
+};
 
 describe("the passphrase form's page", () => {
   it("asks twice at setup and once to unlock", () => {
@@ -123,10 +147,22 @@ describe("the Keyvault's native prompts", () => {
     return { impl, shown };
   }
   const native = { kvPassphraseCheck: () => ({ canSubmit: true, strength: undefined, hint: undefined }) };
-  const prompt = { title: "Allow unattended access?", message: "Cua will sign in without asking.", subject: "3 items", deny: "Deny", allow: "Allow", neverAsk: "Never ask again" };
+  const prompt = {
+    title: "Allow unattended access?",
+    message: "Cua will sign in without asking.",
+    subject: "3 items",
+    deny: "Deny",
+    allow: "Allow",
+    neverAsk: "Never ask again",
+  };
 
   it("maps the unlock prompt's buttons: Allow, Deny, Never ask again, and closing is Deny", async () => {
-    for (const [response, answer] of [[0, "allow"], [1, "deny"], [2, "neverAskAgain"], [-1, "deny"]] as const) {
+    for (const [response, answer] of [
+      [0, "allow"],
+      [1, "deny"],
+      [2, "neverAskAgain"],
+      [-1, "deny"],
+    ] as const) {
       const b = boxes(response);
       expect(await keyvaultPrompts(b.impl, native).askUnlock("win", prompt)).toBe(answer);
       expect(b.shown[0]![0]).toBe("win");

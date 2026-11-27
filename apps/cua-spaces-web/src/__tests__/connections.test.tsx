@@ -38,13 +38,49 @@ const MATRIX: Record<string, ConnectionRow> = {
   upgraded: { ...base, previous_version: "0.60.1" },
   "not connected": { ...base, mcp: "missing", state: "not_connected", signin_imported: false, signin_import: "missing" },
   "not signed in": { ...base, signed_in: "no", state: "attention", problem: { line: "Connected. No ChatGPT sign-in on This Mac yet.", action: "sign_in" } },
-  "sign-in expired": { ...base, signed_in: "expired", state: "attention", problem: { line: "Codex's ChatGPT sign-in expired. Sign in again.", action: "sign_in" } },
-  "copy expired": { ...base, signin_import: "expired", state: "attention", problem: { line: "The copy of Codex's sign-in in Keyvault expired. Reconnect copies it again.", action: "reconnect" } },
-  "entry broken": { ...base, mcp: "broken", state: "attention", problem: { line: "Cua's entry in ~/.codex/config.toml points at a cua that isn't there. Reconnect fixes it.", action: "reconnect" } },
-  "entry removed": { ...base, mcp: "missing", state: "attention", problem: { line: "Cua was taken out of ~/.codex/config.toml. Reconnect adds it back.", action: "reconnect" } },
+  "sign-in expired": {
+    ...base,
+    signed_in: "expired",
+    state: "attention",
+    problem: { line: "Codex's ChatGPT sign-in expired. Sign in again.", action: "sign_in" },
+  },
+  "copy expired": {
+    ...base,
+    signin_import: "expired",
+    state: "attention",
+    problem: { line: "The copy of Codex's sign-in in Keyvault expired. Reconnect copies it again.", action: "reconnect" },
+  },
+  "entry broken": {
+    ...base,
+    mcp: "broken",
+    state: "attention",
+    problem: { line: "Cua's entry in ~/.codex/config.toml points at a cua that isn't there. Reconnect fixes it.", action: "reconnect" },
+  },
+  "entry removed": {
+    ...base,
+    mcp: "missing",
+    state: "attention",
+    problem: { line: "Cua was taken out of ~/.codex/config.toml. Reconnect adds it back.", action: "reconnect" },
+  },
   "other cua": { ...base, mcp: "stale", problem: { line: "Codex uses another copy of cua. Reconnect to use this one.", action: "reconnect" } },
-  uninstalled: { ...base, installed: false, version: null, state: "attention", problem: { line: "Codex isn't on This Mac anymore. Disconnect takes Cua out of its settings.", action: "disconnect" } },
-  "no key yet": { ...base, id: "hermes", name: "Hermes", signed_in: "no", sign_in: "provider key", signin_import: "missing", signin_imported: false, state: "attention", problem: { line: "Connected. No provider key on This Mac yet.", action: "none" } },
+  uninstalled: {
+    ...base,
+    installed: false,
+    version: null,
+    state: "attention",
+    problem: { line: "Codex isn't on This Mac anymore. Disconnect takes Cua out of its settings.", action: "disconnect" },
+  },
+  "no key yet": {
+    ...base,
+    id: "hermes",
+    name: "Hermes",
+    signed_in: "no",
+    sign_in: "provider key",
+    signin_import: "missing",
+    signin_imported: false,
+    state: "attention",
+    problem: { line: "Connected. No provider key on This Mac yet.", action: "none" },
+  },
   "unknown sign-in": { ...base, id: "cursor", name: "Cursor", signed_in: "unknown", sign_in: null, signin_import: "unsupported", signin_imported: false },
   "not installed": { ...base, installed: false, mcp: "missing", state: "not_installed" },
 };
@@ -105,11 +141,14 @@ describe.skipIf(!wasmBuilt)("the Agents page, On This Mac", () => {
     fireEvent.click(row("hermes")!.querySelector('[data-connection-action="connect"]')!);
     await waitFor(() => expect(router.state.location.pathname).toBe("/settings/connections"));
     expect((router.state.location.search as { app?: string }).app).toBe("hermes");
-    const appRow = await waitFor(() => {
-      const r = document.querySelector<HTMLElement>('[data-connector-app="hermes"]');
-      expect(r).not.toBeNull();
-      return r!;
-    }, { timeout: 8000 });
+    const appRow = await waitFor(
+      () => {
+        const r = document.querySelector<HTMLElement>('[data-connector-app="hermes"]');
+        expect(r).not.toBeNull();
+        return r!;
+      },
+      { timeout: 8000 },
+    );
     // The redesign's row: still Connect, nothing connected on the spot.
     expect(appRow.dataset.state).toBe("not-connected");
   });

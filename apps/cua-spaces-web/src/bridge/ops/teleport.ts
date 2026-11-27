@@ -319,9 +319,7 @@ export function tauriTeleportOps(
       ),
     "teleport.run": async ({ spaceId, plan, consent, runId }) => {
       const onEvent = tauriChannel(internals, (m) => emit({ type: "teleport.progress", runId, event: runEventFromSdk(m) }));
-      return runReportFromSdk(
-        await invoke<Json>("teleport_run", { spaceId, plan: JSON.parse(plan.json), consent: consentToSdk(consent), onEvent }),
-      );
+      return runReportFromSdk(await invoke<Json>("teleport_run", { spaceId, plan: JSON.parse(plan.json), consent: consentToSdk(consent), onEvent }));
     },
     "teleport.streamWindow": async ({ spaceId, spaceName, windowId, appName, title }) => {
       await invoke("stream_remote_windows", { spaceId, spaceName, windowId, appName, title, replica: false });

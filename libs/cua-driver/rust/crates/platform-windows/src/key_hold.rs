@@ -172,7 +172,9 @@ fn coordinate(value: Option<&Value>) -> Result<f64, &'static str> {
         .filter(|v| v.is_finite() && *v >= 0.0)
         .ok_or("invalid_hold_point")
 }
-fn points(action: &Value) -> Result<(Vec<(f64, f64)>, u64), &'static str> {
+type HoldPath = (Vec<(f64, f64)>, u64);
+
+fn points(action: &Value) -> Result<HoldPath, &'static str> {
     let object = action.as_object().ok_or("invalid_hold_action")?;
     let kind = action["action"].as_str().ok_or("invalid_hold_action")?;
     let allowed = if kind == "click" {

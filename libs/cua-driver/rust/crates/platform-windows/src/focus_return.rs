@@ -224,7 +224,8 @@ mod native {
     use std::sync::{Mutex, OnceLock};
     use std::thread::sleep;
     use std::time::{Duration, Instant};
-    use windows::Win32::Foundation::{BOOL, HWND, LPARAM, RECT};
+    use windows::core::BOOL;
+    use windows::Win32::Foundation::{HWND, LPARAM, RECT};
     use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
     use windows::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetClassNameW, GetForegroundWindow, GetWindowLongPtrW, GetWindowRect,

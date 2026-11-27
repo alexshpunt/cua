@@ -54,54 +54,54 @@ with `capturePage`, so the native traffic lights are not in the images.
 Measured on 2026-10-03 on an Apple silicon Mac (macOS 26.6) with Electron
 44.9.1, an unsigned build, and the placeholder page.
 
-| | |
-|---|---|
-| `Cua Spaces.app`, arm64 | 242 MB, of which Electron Framework is 238 MB and `app.asar` is 2.1 MB |
-| `Cua Spaces.app`, universal | 461 MB |
-| arm64 dmg / zip | 116 MB / 115 MB |
-| universal dmg / zip | 215 MB / 215 MB |
+|                                         |                                                                                     |
+| --------------------------------------- | ----------------------------------------------------------------------------------- |
+| `Cua Spaces.app`, arm64                 | 242 MB, of which Electron Framework is 238 MB and `app.asar` is 2.1 MB              |
+| `Cua Spaces.app`, universal             | 461 MB                                                                              |
+| arm64 dmg / zip                         | 116 MB / 115 MB                                                                     |
+| universal dmg / zip                     | 215 MB / 215 MB                                                                     |
 | Cold start, first launch of a new build | about 2.1 to 2.7 s from spawn to `ready-to-show` (macOS scans the new binary first) |
-| Cold start, later launches | median 336 ms from spawn to `ready-to-show` (about 295 ms inside the process) |
+| Cold start, later launches              | median 336 ms from spawn to `ready-to-show` (about 295 ms inside the process)       |
 
 `pnpm measure` repeats the start-up runs with a fresh profile each time. These
 numbers will grow once the real web UI replaces the placeholder.
 
 ## Layout
 
-| File | What it does |
-|---|---|
-| `src/boot.ts` | Packaged entry. Turns on the V8 compile cache (`module.enableCompileCache`), then loads `main.cjs` |
-| `src/main.ts` | Single-instance lock, start-up order (the native host, the bridge, the notch), theme updates |
-| `src/native/` | The native layer: where it is (`location.ts`), loading it (`load.ts`, `node-runtime.ts`), and the generated bindings (`generated/`, `pnpm native -- --bindings`) |
-| `src/bridge/` | The bridge host (the SwiftUI app's `WebUIBridge`): one file per area registering its methods, the table and envelope (`host.ts`), `BridgeValue` (`value.ts`), IPC (`ipc.ts`) |
-| `src/model/` | The SwiftUI app's models, ported: `AppModel`, `SpacesBackend`, the launch (`startup.ts`), the daemon (`daemon.ts`), `AppEnvironment` (`environment.ts`), host, devices, clouds, the Keyvault (`keyvault.ts`), Teleport's sources, consent and caches (`teleport.ts`), a Space's stream rows and panels (`streams.ts`), thumbnails (`thumbnails.ts`) |
-| `src/drop.ts` | The preload's part of the drop well: the last drop's paths go on `spaces.droppedFiles` (the page sees only names) |
-| `src/model/agents.ts` | Agents: the persistent agents and a run's events over the daemon's tools, a Space's runs, the provider keys the daemon keeps in the OS credential vault (`agentKeys.*`), and the coding agents on this machine (`agents.setup`, `configure`, `setupDriver`) |
-| `src/model/update-refresh.ts` | The first launch after an update: `cua agents update` with the bundled `cua`, and the notice when it fails |
-| `src/prompts.ts`, `src/passphrase.ts` | The Keyvault's native prompts (unlock, delete) and its passphrase form: a window of this app that only its own preload can talk to, so a passphrase never crosses the web UI's bridge |
-| `scripts/build-native.mjs` | `pnpm native`: builds the native layer for a Rust target, and the bindings |
-| `src/protocol.ts` | `cua-spaces://app/`: privileged scheme, `protocol.handle`, CSP, static files or the dev-server proxy |
-| `src/window.ts` | Main window: created hidden and shown on `ready-to-show`, title bar, `--titlebar-left-inset`, saved bounds |
-| `src/theme.ts` | `nativeTheme`; background and overlay colours from the web UI's `--background` and `--foreground` (`#16181c` / `#e9ebef` dark, `#f7f8fa` / `#181b1f` light) |
-| `src/preload.ts` | Sandboxed preload that exposes `window.cuaDesktop` |
-| `src/channels.ts` | Re-exports the web bridge's Electron channels (see below) |
-| `src/capture.ts` | `CUA_SPACES_CAPTURE_ROUTES`: route screenshots and checks |
-| `src/media-bridge.ts` | `spaces.openStream`: media tickets from the cua daemon (see "Live video") |
-| `src/gpu.ts` | Chromium's hardware video decode switches (VA-API on Linux) |
-| `src/pip.ts`, `src/pip-layout.ts` | Picture in picture: a floating window per panel, where it opens and its shape |
-| `src/viewer.ts`, `src/viewer-layout.ts` | "Open in window": a Space's viewer window (the web UI's `/viewer`: its desktop under the source picker, size and Pop out), one per Space, shaped to the stream, where the last one was left |
-| `src/video-bench.ts`, `src/video-report.ts`, `scripts/video-bench.mjs` | The video bench, the same hooks as the SwiftUI app's ([docs/video.md](docs/video.md)) |
-| `src/icon.ts` | The window icon on Linux |
-| `src/menu.ts` | The application menu, as the SwiftUI app's: Settings… (⌘,), New Space (⌘N), full screen, Cua Spaces Help; on Windows and Linux the same items in File and Help |
-| `src/tray.ts` | The menu bar item on macOS and the tray icon on Windows and Linux: the core's menu (on Windows and Linux with each Space) |
-| `src/system.ts`, `src/login-item.ts` | The bridge's system services: links and settings panes, Show in Finder / Explorer, notifications, the owner check before approving a device, launch at login on each system |
-| `src/migrate-swift.ts` | macOS: takes over the Swift app's settings once (files, defaults domain) |
-| `src/notch.ts`, `src/notch/` | The macOS notch: the app core's notch model and the Swift helper that draws it (see "The macOS notch") |
-| `src/updater.ts` | electron-updater behind Settings → About (checks on launch and every few hours, on by default; background download; the in-app "Restart to update" indicator through `update.get` and `update.install`; the channel; Check Now), beta channel only until the Sparkle cutover on macOS |
-| `scripts/sparkle/` | Sparkle's own update checks against an Electron build (`accepts.sh`, `selftest.sh`; [docs/sparkle-cutover.md](docs/sparkle-cutover.md)) |
-| `scripts/feed-urls.mjs` | Makes a feed's installer URLs absolute (CI) |
-| `scripts/smoke/` | Linux and Windows package checks in Docker |
-| `electron-builder.config.cjs` | Packaging and signing hooks |
+| File                                                                   | What it does                                                                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/boot.ts`                                                          | Packaged entry. Turns on the V8 compile cache (`module.enableCompileCache`), then loads `main.cjs`                                                                                                                                                                                                                                                  |
+| `src/main.ts`                                                          | Single-instance lock, start-up order (the native host, the bridge, the notch), theme updates                                                                                                                                                                                                                                                        |
+| `src/native/`                                                          | The native layer: where it is (`location.ts`), loading it (`load.ts`, `node-runtime.ts`), and the generated bindings (`generated/`, `pnpm native -- --bindings`)                                                                                                                                                                                    |
+| `src/bridge/`                                                          | The bridge host (the SwiftUI app's `WebUIBridge`): one file per area registering its methods, the table and envelope (`host.ts`), `BridgeValue` (`value.ts`), IPC (`ipc.ts`)                                                                                                                                                                        |
+| `src/model/`                                                           | The SwiftUI app's models, ported: `AppModel`, `SpacesBackend`, the launch (`startup.ts`), the daemon (`daemon.ts`), `AppEnvironment` (`environment.ts`), host, devices, clouds, the Keyvault (`keyvault.ts`), Teleport's sources, consent and caches (`teleport.ts`), a Space's stream rows and panels (`streams.ts`), thumbnails (`thumbnails.ts`) |
+| `src/drop.ts`                                                          | The preload's part of the drop well: the last drop's paths go on `spaces.droppedFiles` (the page sees only names)                                                                                                                                                                                                                                   |
+| `src/model/agents.ts`                                                  | Agents: the persistent agents and a run's events over the daemon's tools, a Space's runs, the provider keys the daemon keeps in the OS credential vault (`agentKeys.*`), and the coding agents on this machine (`agents.setup`, `configure`, `setupDriver`)                                                                                         |
+| `src/model/update-refresh.ts`                                          | The first launch after an update: `cua agents update` with the bundled `cua`, and the notice when it fails                                                                                                                                                                                                                                          |
+| `src/prompts.ts`, `src/passphrase.ts`                                  | The Keyvault's native prompts (unlock, delete) and its passphrase form: a window of this app that only its own preload can talk to, so a passphrase never crosses the web UI's bridge                                                                                                                                                               |
+| `scripts/build-native.mjs`                                             | `pnpm native`: builds the native layer for a Rust target, and the bindings                                                                                                                                                                                                                                                                          |
+| `src/protocol.ts`                                                      | `cua-spaces://app/`: privileged scheme, `protocol.handle`, CSP, static files or the dev-server proxy                                                                                                                                                                                                                                                |
+| `src/window.ts`                                                        | Main window: created hidden and shown on `ready-to-show`, title bar, `--titlebar-left-inset`, saved bounds                                                                                                                                                                                                                                          |
+| `src/theme.ts`                                                         | `nativeTheme`; background and overlay colours from the web UI's `--background` and `--foreground` (`#16181c` / `#e9ebef` dark, `#f7f8fa` / `#181b1f` light)                                                                                                                                                                                         |
+| `src/preload.ts`                                                       | Sandboxed preload that exposes `window.cuaDesktop`                                                                                                                                                                                                                                                                                                  |
+| `src/channels.ts`                                                      | Re-exports the web bridge's Electron channels (see below)                                                                                                                                                                                                                                                                                           |
+| `src/capture.ts`                                                       | `CUA_SPACES_CAPTURE_ROUTES`: route screenshots and checks                                                                                                                                                                                                                                                                                           |
+| `src/media-bridge.ts`                                                  | `spaces.openStream`: media tickets from the cua daemon (see "Live video")                                                                                                                                                                                                                                                                           |
+| `src/gpu.ts`                                                           | Chromium's hardware video decode switches (VA-API on Linux)                                                                                                                                                                                                                                                                                         |
+| `src/pip.ts`, `src/pip-layout.ts`                                      | Picture in picture: a floating window per panel, where it opens and its shape                                                                                                                                                                                                                                                                       |
+| `src/viewer.ts`, `src/viewer-layout.ts`                                | "Open in window": a Space's viewer window (the web UI's `/viewer`: its desktop under the source picker, size and Pop out), one per Space, shaped to the stream, where the last one was left                                                                                                                                                         |
+| `src/video-bench.ts`, `src/video-report.ts`, `scripts/video-bench.mjs` | The video bench, the same hooks as the SwiftUI app's ([docs/video.md](docs/video.md))                                                                                                                                                                                                                                                               |
+| `src/icon.ts`                                                          | The window icon on Linux                                                                                                                                                                                                                                                                                                                            |
+| `src/menu.ts`                                                          | The application menu, as the SwiftUI app's: Settings… (⌘,), New Space (⌘N), full screen, Cua Spaces Help; on Windows and Linux the same items in File and Help                                                                                                                                                                                      |
+| `src/tray.ts`                                                          | The menu bar item on macOS and the tray icon on Windows and Linux: the core's menu (on Windows and Linux with each Space)                                                                                                                                                                                                                           |
+| `src/system.ts`, `src/login-item.ts`                                   | The bridge's system services: links and settings panes, Show in Finder / Explorer, notifications, the owner check before approving a device, launch at login on each system                                                                                                                                                                         |
+| `src/migrate-swift.ts`                                                 | macOS: takes over the Swift app's settings once (files, defaults domain)                                                                                                                                                                                                                                                                            |
+| `src/notch.ts`, `src/notch/`                                           | The macOS notch: the app core's notch model and the Swift helper that draws it (see "The macOS notch")                                                                                                                                                                                                                                              |
+| `src/updater.ts`                                                       | electron-updater behind Settings → About (checks on launch and every few hours, on by default; background download; the in-app "Restart to update" indicator through `update.get` and `update.install`; the channel; Check Now), beta channel only until the Sparkle cutover on macOS                                                               |
+| `scripts/sparkle/`                                                     | Sparkle's own update checks against an Electron build (`accepts.sh`, `selftest.sh`; [docs/sparkle-cutover.md](docs/sparkle-cutover.md))                                                                                                                                                                                                             |
+| `scripts/feed-urls.mjs`                                                | Makes a feed's installer URLs absolute (CI)                                                                                                                                                                                                                                                                                                         |
+| `scripts/smoke/`                                                       | Linux and Windows package checks in Docker                                                                                                                                                                                                                                                                                                          |
+| `electron-builder.config.cjs`                                          | Packaging and signing hooks                                                                                                                                                                                                                                                                                                                         |
 
 ## Window and chrome
 
@@ -181,17 +181,17 @@ numbers will grow once the real web UI replaces the placeholder.
 builds, for one Rust target (the host's by default), into
 `native/<platform>-<arch>/` (gitignored):
 
-| File | What it is |
-|---|---|
-| `libcua_spaces_ffi.dylib` / `.so` / `cua_spaces_ffi.dll` | `libs/cua/crates/cua-spaces-ffi`: the cua SDK (`cua_sdk`) and the Spaces app core (`cua_spaces_ffi`), the library the SwiftUI app links |
-| `cua_node_runtime.node` | uniffi-bindgen-react-native's N-API runtime, rebuilt Electron-safe by `libs/cua/scripts/build-node-runtime.mjs` (copies instead of external ArrayBuffers) |
-| `cua` / `cua.exe` | The Spaces build of the CLI (`cua-spaces-cli`): the app's daemon, the keychain check, and the CLI it puts on PATH |
+| File                                                     | What it is                                                                                                                                                |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `libcua_spaces_ffi.dylib` / `.so` / `cua_spaces_ffi.dll` | `libs/cua/crates/cua-spaces-ffi`: the cua SDK (`cua_sdk`) and the Spaces app core (`cua_spaces_ffi`), the library the SwiftUI app links                   |
+| `cua_node_runtime.node`                                  | uniffi-bindgen-react-native's N-API runtime, rebuilt Electron-safe by `libs/cua/scripts/build-node-runtime.mjs` (copies instead of external ArrayBuffers) |
+| `cua` / `cua.exe`                                        | The Spaces build of the CLI (`cua-spaces-cli`): the app's daemon, the keychain check, and the CLI it puts on PATH                                         |
 
-| Target | Directory | Built on |
-|---|---|---|
-| `aarch64-apple-darwin`, `x86_64-apple-darwin` | `darwin-arm64`, `darwin-x64` | a Mac (both, for the universal app: electron-builder packs each arch and @electron/universal lipos them) |
-| `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc` | `win32-x64`, `win32-arm64` | Windows (the C runtime linked statically) |
-| `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` | `linux-x64`, `linux-arm64` | Linux |
+| Target                                                  | Directory                    | Built on                                                                                                 |
+| ------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `aarch64-apple-darwin`, `x86_64-apple-darwin`           | `darwin-arm64`, `darwin-x64` | a Mac (both, for the universal app: electron-builder packs each arch and @electron/universal lipos them) |
+| `x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`     | `win32-x64`, `win32-arm64`   | Windows (the C runtime linked statically)                                                                |
+| `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu` | `linux-x64`, `linux-arm64`   | Linux                                                                                                    |
 
 electron-builder ships the directory of the arch it packs as
 `Resources/native` (`afterPack` refuses a package without it). The main
@@ -213,7 +213,7 @@ there does not depend on any of this.
 ```ts
 interface CuaDesktop {
   platform: "darwin" | "win32" | "linux";
-  invoke(channel: "cua:bridge", request: { id; method; args? }): Promise<{ id, ok: true, result } | { id, ok: false, error: { code, message } }>;
+  invoke(channel: "cua:bridge", request: { id; method; args? }): Promise<{ id; ok: true; result } | { id; ok: false; error: { code; message } }>;
   on(channel: "cua:event", listener: (event: { event; payload? }) => void): () => void; // returns unsubscribe
 }
 ```
@@ -315,14 +315,14 @@ Electron app, like the SwiftUI app, is a client of the broker's socket, and
 the broker decides who may ask and when the user must confirm. This table is
 what the SwiftUI app has and what each OS gets here.
 
-| | SwiftUI app (macOS) | Electron, macOS | Electron, Windows | Electron, Linux |
-|---|---|---|---|---|
-| Vault key | 256-bit key in a login-keychain item (service `Cua Keyvault`), its access list trusting the creating binary's code requirement; wraps the vault master key. Not the Secure Enclave, no biometric access flag on the item | The same item, the same daemon identity (`com.trycua.cua`), so a vault the Swift app made opens without a keychain prompt | Credential Manager entry (DPAPI, this account): any program of the account can read it, there is no per-program access list | Secret Service entry (the login keyring): any program of the user on the session bus can read it |
-| Confirmation before access widens | `LAContext` `deviceOwnerAuthentication`: Touch ID, Apple Watch or the login password, asked by the daemon | The same | Windows Hello (`UserConsentVerifier`): face, fingerprint or PIN, asked by the daemon over the foreground window | polkit `ai.cua.spaces.keyvault` (`auth_self`): the user's password or fingerprint through the session's agent, every time; installed by the `.deb` only |
-| Who the broker lets in | Audit token of the socket peer, `SecCode` validity, requirement "Apple-anchored, team YCK386LBJ7, identifier in the Cua list", hardened runtime | The same: the app is `com.trycua.spaces.macos`, its daemon `com.trycua.cua` (`packaging/sign-mac.cjs`) | The pipe's client process id, its image file's Authenticode signature (chain to a trusted root, nothing fetched) and its publisher equal to this process's. No hardened-runtime flag exists; the running image is not re-checked | `SO_PEERCRED` and `/proc/<pid>/exe` inside `/opt/Cua Spaces` (or another Cua install root) in a tree only root can change. Not OS-verified: same-user processes can ptrace each other |
-| Transport | Unix socket `$CUA_HOME/keyvault.sock`, 0600 in a 0700 directory | The same | Named pipe `\\.\pipe\cua-keyvault-<hash of that path>`: this account only, no remote clients, first instance unique, identification-level impersonation | The Unix socket, as macOS |
-| Anti-rollback counter | Login-keychain item outside the vault folder | The same | A file beside the vault folder (the weaker, portable floor) | The same file |
-| Third parties | Ask, wait on the Keyvault page, and are approved with confirmation | The same | The same | The same |
+|                                   | SwiftUI app (macOS)                                                                                                                                                                                                      | Electron, macOS                                                                                                           | Electron, Windows                                                                                                                                                                                                                | Electron, Linux                                                                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Vault key                         | 256-bit key in a login-keychain item (service `Cua Keyvault`), its access list trusting the creating binary's code requirement; wraps the vault master key. Not the Secure Enclave, no biometric access flag on the item | The same item, the same daemon identity (`com.trycua.cua`), so a vault the Swift app made opens without a keychain prompt | Credential Manager entry (DPAPI, this account): any program of the account can read it, there is no per-program access list                                                                                                      | Secret Service entry (the login keyring): any program of the user on the session bus can read it                                                                                      |
+| Confirmation before access widens | `LAContext` `deviceOwnerAuthentication`: Touch ID, Apple Watch or the login password, asked by the daemon                                                                                                                | The same                                                                                                                  | Windows Hello (`UserConsentVerifier`): face, fingerprint or PIN, asked by the daemon over the foreground window                                                                                                                  | polkit `ai.cua.spaces.keyvault` (`auth_self`): the user's password or fingerprint through the session's agent, every time; installed by the `.deb` only                               |
+| Who the broker lets in            | Audit token of the socket peer, `SecCode` validity, requirement "Apple-anchored, team YCK386LBJ7, identifier in the Cua list", hardened runtime                                                                          | The same: the app is `com.trycua.spaces.macos`, its daemon `com.trycua.cua` (`packaging/sign-mac.cjs`)                    | The pipe's client process id, its image file's Authenticode signature (chain to a trusted root, nothing fetched) and its publisher equal to this process's. No hardened-runtime flag exists; the running image is not re-checked | `SO_PEERCRED` and `/proc/<pid>/exe` inside `/opt/Cua Spaces` (or another Cua install root) in a tree only root can change. Not OS-verified: same-user processes can ptrace each other |
+| Transport                         | Unix socket `$CUA_HOME/keyvault.sock`, 0600 in a 0700 directory                                                                                                                                                          | The same                                                                                                                  | Named pipe `\\.\pipe\cua-keyvault-<hash of that path>`: this account only, no remote clients, first instance unique, identification-level impersonation                                                                          | The Unix socket, as macOS                                                                                                                                                             |
+| Anti-rollback counter             | Login-keychain item outside the vault folder                                                                                                                                                                             | The same                                                                                                                  | A file beside the vault folder (the weaker, portable floor)                                                                                                                                                                      | The same file                                                                                                                                                                         |
+| Third parties                     | Ask, wait on the Keyvault page, and are approved with confirmation                                                                                                                                                       | The same                                                                                                                  | The same                                                                                                                                                                                                                         | The same                                                                                                                                                                              |
 
 Not matched, and why: Windows and Linux have no per-program access list on
 the vault key and no code-signature check of the running image (macOS's
@@ -411,6 +411,7 @@ measures both on one Space.
    The answer is `{wsUrl, expiresAt}`: a loopback WebSocket that speaks rcdp
    wire v2. Without cua it is `unsupported`, and the page keeps the drawn
    thumbnail and "Open window", as in a browser.
+
 2. **Tiers.** These match the macOS app's `VideoTier`:
    - tiles ask for 10 fps, a 960 px long edge and view only;
    - the viewer takes the Space's defaults (30 fps, native size) with input
@@ -422,8 +423,8 @@ measures both on one Space.
    - `reopen` mints a fresh ticket when the old one expires or the socket
      closes with 4401;
    - a session that ends, or a ticket that doesn't come, is `failed`.
-   The socket goes from the renderer straight to the daemon, so video never
-   passes through IPC. `connect-src` already allows `ws://127.0.0.1:*`.
+     The socket goes from the renderer straight to the daemon, so video never
+     passes through IPC. `connect-src` already allows `ws://127.0.0.1:*`.
 4. **Input.** In the viewer, a click gives the Space the keyboard. While it
    has it, every key goes to the Space, Command chords too (the SwiftUI
    app's `KeyCapture`): the window's menu shortcuts stand aside
@@ -472,11 +473,11 @@ The packaged app ran over CDP against a stream feeder
 the viewer on `full60`. CPU is summed over the app's process tree, in % of
 one core.
 
-| | Windows | Linux |
-|---|---|---|
-| App: 3 tiles | 10.3 fps each, 30% CPU, 672 MB | 10.0 fps each, 29% CPU, about 1 GB RSS |
-| App: viewer, 1080p60 source | 21 fps, 72% CPU | 33 fps, 100% CPU |
-| App: minimized | 0 frames sent; back within 2 s of restoring | the same |
+|                             | Windows                                     | Linux                                  |
+| --------------------------- | ------------------------------------------- | -------------------------------------- |
+| App: 3 tiles                | 10.3 fps each, 30% CPU, 672 MB              | 10.0 fps each, 29% CPU, about 1 GB RSS |
+| App: viewer, 1080p60 source | 21 fps, 72% CPU                             | 33 fps, 100% CPU                       |
+| App: minimized              | 0 frames sent; back within 2 s of restoring | the same                               |
 
 Tiles hold their 10 fps with nothing dropped. Without a GPU, the viewer
 falls well short of 60 fps while using less than two cores, so presenting
@@ -605,19 +606,19 @@ it). The scripts run under cmd.exe and PowerShell: `pnpm build` removes
 
 Sizes for 0.6.0 with the real web UI, built on 2026-10-03 (MB = 10^6 bytes):
 
-| Artifact | Size |
-|---|---|
-| `Cua-Spaces-Setup-0.6.0-x64.exe` | 103.4 MB |
-| `Cua-Spaces-Setup-0.6.0-arm64.exe` | 97.3 MB |
-| `Cua-Spaces-Setup-0.6.0.exe` (x64 and arm64; picks at install, and is the one `latest.yml` points to) | 200.3 MB |
-| `Cua-Spaces-0.6.0-x86_64.AppImage` | 114.7 MB |
-| `Cua-Spaces-0.6.0-arm64.AppImage` | 114.9 MB |
-| `cua-spaces_0.6.0_amd64.deb` | 98.9 MB |
-| `cua-spaces_0.6.0_arm64.deb` | 94.1 MB |
-| Installed app, Windows x64 / arm64 | 331 / 333 MiB |
-| Installed app, Linux x64 / arm64 | 280 / 299 MiB |
-| `app.asar` (shell, preload, electron-updater) | 1.3 MB |
-| `resources/web` (web UI and core wasm) | 5.2 MiB |
+| Artifact                                                                                              | Size          |
+| ----------------------------------------------------------------------------------------------------- | ------------- |
+| `Cua-Spaces-Setup-0.6.0-x64.exe`                                                                      | 103.4 MB      |
+| `Cua-Spaces-Setup-0.6.0-arm64.exe`                                                                    | 97.3 MB       |
+| `Cua-Spaces-Setup-0.6.0.exe` (x64 and arm64; picks at install, and is the one `latest.yml` points to) | 200.3 MB      |
+| `Cua-Spaces-0.6.0-x86_64.AppImage`                                                                    | 114.7 MB      |
+| `Cua-Spaces-0.6.0-arm64.AppImage`                                                                     | 114.9 MB      |
+| `cua-spaces_0.6.0_amd64.deb`                                                                          | 98.9 MB       |
+| `cua-spaces_0.6.0_arm64.deb`                                                                          | 94.1 MB       |
+| Installed app, Windows x64 / arm64                                                                    | 331 / 333 MiB |
+| Installed app, Linux x64 / arm64                                                                      | 280 / 299 MiB |
+| `app.asar` (shell, preload, electron-updater)                                                         | 1.3 MB        |
+| `resources/web` (web UI and core wasm)                                                                | 5.2 MiB       |
 
 Nearly all of it is Electron itself.
 
@@ -750,23 +751,23 @@ Swift app's files stay as they are.
 
 ## Environment variables
 
-| Variable | Effect |
-|---|---|
-| `CUA_SPACES_DEV_URL` | Proxy this dev server instead of serving files. Ignored in packaged builds |
-| `CUA_SPACES_USER_DATA` | Use a different user data directory (for tests and measurements) |
-| `CUA_SPACES_LOG_STARTUP` | Log the web root and the time to `ready-to-show` |
-| `CUA_SPACES_CAPTURE=<png>` | Save a `capturePage` image after load, then quit |
+| Variable                          | Effect                                                                                                                                                            |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CUA_SPACES_DEV_URL`              | Proxy this dev server instead of serving files. Ignored in packaged builds                                                                                        |
+| `CUA_SPACES_USER_DATA`            | Use a different user data directory (for tests and measurements)                                                                                                  |
+| `CUA_SPACES_LOG_STARTUP`          | Log the web root and the time to `ready-to-show`                                                                                                                  |
+| `CUA_SPACES_CAPTURE=<png>`        | Save a `capturePage` image after load, then quit                                                                                                                  |
 | `CUA_SPACES_CAPTURE_ROUTES=<dir>` | Load every route in light and dark at 1440×900, check that the page is on the Electron bridge, save `capturePage` PNGs to `<dir>`, print a JSON report, then quit |
-| `CUA_SPACES_QUIT_AFTER_LOAD` | Quit after the first load (used by `pnpm measure`) |
-| `CUA_SPACES_AUTO_UPDATE=1` | Turn on the updater |
-| `CUA_SPACES_VERSION` | Build time: the version (default `package.json`); `X.Y.Z-suffix` is a beta (`beta*.yml`) |
-| `CUA_SPACES_BUILD_NUMBER` | Build time: the last part of CFBundleVersion and the Windows file version, `X.Y.Z.N` (default 0) |
-| `GITHUB_REPOSITORY` | Build time: the repository whose `cua-spaces-latest` release is the update feed (default `trycua/cua`) |
-| `CUA_SPACES_NO_FUSES=1` | Build time: leave the Electron fuses as Electron ships them (QA builds only) |
-| `CUA_SPACES_ARCHS` | Build time: `native` packs only the arches with a native folder, or a list (`x64`, `arm64,x64`); unset packs all (a release) |
-| `CUA_SPACES_TEST_STREAM_URL` | Answer every `spaces.openStream` with this URL (`{id}`, `{tier}` filled in), for the WebCodecs harness |
-| `CUA_SPACES_TEST_PRESENCE=1` | Answer every `presence.join` with two synthetic participants circling the picture (screenshots, the WebCodecs harness) |
-| `CUA_BIN`, `CUA_HOME` | Where to find `cua` and `~/.cua`. A `CUA_BIN` that doesn't exist means no cua (demo data) |
+| `CUA_SPACES_QUIT_AFTER_LOAD`      | Quit after the first load (used by `pnpm measure`)                                                                                                                |
+| `CUA_SPACES_AUTO_UPDATE=1`        | Turn on the updater                                                                                                                                               |
+| `CUA_SPACES_VERSION`              | Build time: the version (default `package.json`); `X.Y.Z-suffix` is a beta (`beta*.yml`)                                                                          |
+| `CUA_SPACES_BUILD_NUMBER`         | Build time: the last part of CFBundleVersion and the Windows file version, `X.Y.Z.N` (default 0)                                                                  |
+| `GITHUB_REPOSITORY`               | Build time: the repository whose `cua-spaces-latest` release is the update feed (default `trycua/cua`)                                                            |
+| `CUA_SPACES_NO_FUSES=1`           | Build time: leave the Electron fuses as Electron ships them (QA builds only)                                                                                      |
+| `CUA_SPACES_ARCHS`                | Build time: `native` packs only the arches with a native folder, or a list (`x64`, `arm64,x64`); unset packs all (a release)                                      |
+| `CUA_SPACES_TEST_STREAM_URL`      | Answer every `spaces.openStream` with this URL (`{id}`, `{tier}` filled in), for the WebCodecs harness                                                            |
+| `CUA_SPACES_TEST_PRESENCE=1`      | Answer every `presence.join` with two synthetic participants circling the picture (screenshots, the WebCodecs harness)                                            |
+| `CUA_BIN`, `CUA_HOME`             | Where to find `cua` and `~/.cua`. A `CUA_BIN` that doesn't exist means no cua (demo data)                                                                         |
 
 ## Run a Local build next to the released app (Windows)
 
@@ -793,17 +794,17 @@ later, pnpm, and for the web UI the `wasm32` Rust target and `wasm-bindgen-cli`
 there. Builds run at BelowNormal priority (`-NormalPriority` opts out). On a
 cold machine the Rust build takes a while.
 
-| | Cua Spaces | Cua Spaces Local |
-|---|---|---|
-| App | `%LOCALAPPDATA%\Programs\cua-spaces` | `%LOCALAPPDATA%\Programs\Cua Spaces Local` (`Cua Spaces Local.exe`) |
-| App id, AppUserModelID | `ai.cua.spaces.desktop` | `ai.cua.spaces.desktop.local` (own taskbar group and Run entry) |
-| CLI | `cua` | `cua-local` (`...\Cua Spaces Local\bin`, added to the user PATH) |
-| Cua home | `%USERPROFILE%\.cua` | `%USERPROFILE%\.cua-local` (the app sets `CUA_HOME`) |
-| Channel, ports, sign-in | `CUA_CHANNEL=stable` | `CUA_CHANNEL=local`, set by the app (`CuaChannel::Local`) |
-| Backend | production | staging (`CUA_ENV=prod` opts in) |
-| User data | `%APPDATA%\Cua Spaces` | `%APPDATA%\Cua Spaces Local` |
-| URL scheme | `cua://` | `cua-local://` |
-| Updates | electron-updater feed | none (no `app-update.yml`) |
+|                         | Cua Spaces                           | Cua Spaces Local                                                    |
+| ----------------------- | ------------------------------------ | ------------------------------------------------------------------- |
+| App                     | `%LOCALAPPDATA%\Programs\cua-spaces` | `%LOCALAPPDATA%\Programs\Cua Spaces Local` (`Cua Spaces Local.exe`) |
+| App id, AppUserModelID  | `ai.cua.spaces.desktop`              | `ai.cua.spaces.desktop.local` (own taskbar group and Run entry)     |
+| CLI                     | `cua`                                | `cua-local` (`...\Cua Spaces Local\bin`, added to the user PATH)    |
+| Cua home                | `%USERPROFILE%\.cua`                 | `%USERPROFILE%\.cua-local` (the app sets `CUA_HOME`)                |
+| Channel, ports, sign-in | `CUA_CHANNEL=stable`                 | `CUA_CHANNEL=local`, set by the app (`CuaChannel::Local`)           |
+| Backend                 | production                           | staging (`CUA_ENV=prod` opts in)                                    |
+| User data               | `%APPDATA%\Cua Spaces`               | `%APPDATA%\Cua Spaces Local`                                        |
+| URL scheme              | `cua://`                             | `cua-local://`                                                      |
+| Updates                 | electron-updater feed                | none (no `app-update.yml`)                                          |
 
 The shell knows it is Local from its executable name or `CUA_CHANNEL=local`
 (`src/channel.ts`); the packaging is `packaging/electron-builder.local.cjs`

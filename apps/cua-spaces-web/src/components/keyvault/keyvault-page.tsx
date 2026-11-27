@@ -49,11 +49,7 @@ export function KeyvaultPage({ initialView = "all", focus = null }: { initialVie
   // No vault yet: the core's page offers setup; without it, the overview says so.
   const canSetup = views ? views.page.canSetup : data?.overview.availability === "no_vault";
   // The core's page decides (a vault not set up yet is not locked); without it, the overview.
-  const locked = views
-    ? views.page.canUnlock
-    : data
-      ? data.overview.availability === "locked" || data.overview.status?.unlocked === false
-      : false;
+  const locked = views ? views.page.canUnlock : data ? data.overview.availability === "locked" || data.overview.status?.unlocked === false : false;
   // Not running, not set up, or only partly read: the host says why.
   const availability = data?.overview.availability;
   const unavailable = !canSetup && Boolean(availability && availability !== "ready" && availability !== "locked");
@@ -136,7 +132,11 @@ export function KeyvaultPage({ initialView = "all", focus = null }: { initialVie
           </p>
         ) : null}
         {views?.page.resetNotice ? <p className="mb-4 rounded-lg bg-brand-surface px-4 py-2.5 text-[13px]">{views.page.resetNotice}</p> : null}
-        {notice ? <p className="mb-4 px-1 text-xs text-muted-foreground" data-vault-notice>{notice}</p> : null}
+        {notice ? (
+          <p className="mb-4 px-1 text-xs text-muted-foreground" data-vault-notice>
+            {notice}
+          </p>
+        ) : null}
         {noticeDetail && noticeDetail !== notice ? (
           <p className="-mt-2 mb-4 px-1 text-xs text-muted-foreground" data-vault-notice-detail>
             {noticeDetail}
@@ -239,7 +239,19 @@ export function KeyvaultPage({ initialView = "all", focus = null }: { initialVie
 }
 
 /** No vault yet: what it is for, how it is protected, and the one next step. */
-function SetUpVault({ passphrase, help, label, busy, onSetUp }: { passphrase: boolean; help: string | null; label: string; busy: boolean; onSetUp: () => void }) {
+function SetUpVault({
+  passphrase,
+  help,
+  label,
+  busy,
+  onSetUp,
+}: {
+  passphrase: boolean;
+  help: string | null;
+  label: string;
+  busy: boolean;
+  onSetUp: () => void;
+}) {
   return (
     <div data-vault-setup>
       <EmptyState
@@ -276,7 +288,12 @@ function RecoveryKey({ value, onDone }: { value: string; onDone: () => void }) {
           size="sm"
           variant="secondary"
           aria-label={copied ? "Copied" : "Copy recovery key"}
-          onClick={() => void navigator.clipboard?.writeText(value).then(() => setCopied(true), () => {})}
+          onClick={() =>
+            void navigator.clipboard?.writeText(value).then(
+              () => setCopied(true),
+              () => {},
+            )
+          }
         >
           {copied ? <CheckIcon /> : <CopyIcon />} {copied ? "Copied" : "Copy"}
         </Button>

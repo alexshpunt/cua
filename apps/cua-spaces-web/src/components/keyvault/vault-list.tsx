@@ -52,7 +52,13 @@ export function VaultList({
       <div className="mx-auto w-full max-w-3xl px-8">
         <div className="relative mb-3">
           <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(e) => send({ type: "query", text: e.target.value })} placeholder={view.searchPrompt} aria-label="Search Keyvault" className="pl-8" />
+          <Input
+            value={query}
+            onChange={(e) => send({ type: "query", text: e.target.value })}
+            placeholder={view.searchPrompt}
+            aria-label="Search Keyvault"
+            className="pl-8"
+          />
         </div>
         {view.namesHidden ? (
           <div className="mb-3 flex items-center gap-3 rounded-lg bg-brand-surface px-4 py-2.5" data-vault-hidden>
@@ -66,7 +72,11 @@ export function VaultList({
         <div className="flex h-8 items-center justify-between px-1 text-xs text-muted-foreground">
           <span data-vault-summary>{view.selection.count > 0 ? view.selection.title : `${view.total} items in ${view.apps.length} apps`}</span>
           {view.canSelectAll ? (
-            <button type="button" className="text-brand hover:underline" onClick={() => send({ type: view.selection.count === view.shown ? "clear" : "select-all" })}>
+            <button
+              type="button"
+              className="text-brand hover:underline"
+              onClick={() => send({ type: view.selection.count === view.shown ? "clear" : "select-all" })}
+            >
               {view.selection.count === view.shown ? "Select None" : "Select All"}
             </button>
           ) : null}
@@ -90,7 +100,9 @@ export function VaultList({
           />
         )}
       </div>
-      {view.selection.count > 0 ? <BatchBar selection={view.selection} blocked={blocked} busy={busy} send={send} actions={actions} onDelete={onDelete} /> : null}
+      {view.selection.count > 0 ? (
+        <BatchBar selection={view.selection} blocked={blocked} busy={busy} send={send} actions={actions} onDelete={onDelete} />
+      ) : null}
     </div>
   );
 }
@@ -225,7 +237,19 @@ function GroupRow({
   );
 }
 
-function ItemRow({ row, indent, send, actions, blocked }: { row: VaultRow; indent: number; send: (a: VaultAction) => void; actions: LockActions; blocked: boolean }) {
+function ItemRow({
+  row,
+  indent,
+  send,
+  actions,
+  blocked,
+}: {
+  row: VaultRow;
+  indent: number;
+  send: (a: VaultAction) => void;
+  actions: LockActions;
+  blocked: boolean;
+}) {
   const Icon = KIND_ICON[row.kind] ?? FileIcon;
   const toggle = () => send({ type: "toggle", id: row.id });
   return (
@@ -234,7 +258,10 @@ function ItemRow({ row, indent, send, actions, blocked }: { row: VaultRow; inden
       aria-selected={row.selected}
       data-vault-item={row.id}
       onClick={toggle}
-      className={cn("mb-px flex h-11 items-center gap-2.5 rounded-lg px-3 transition-colors hover:bg-foreground/[0.04]", row.selected && "bg-brand-surface hover:bg-brand-surface")}
+      className={cn(
+        "mb-px flex h-11 items-center gap-2.5 rounded-lg px-3 transition-colors hover:bg-foreground/[0.04]",
+        row.selected && "bg-brand-surface hover:bg-brand-surface",
+      )}
       style={{ marginLeft: `${(indent - 1) * 1.5}rem` }}
     >
       <span onClick={(e) => e.stopPropagation()}>
@@ -266,7 +293,11 @@ function LockButton({ state, name, unlockIds, lockIds, help, actions, blocked }:
   const Icon = state === "locked" ? LockIcon : LockOpenIcon;
   const text =
     help ||
-    (state === "unlocked" ? "Unlocked. Click to lock." : state === "mixed" ? "Some unlocked. Click to unlock the rest." : "Locked. Click to allow unattended access.");
+    (state === "unlocked"
+      ? "Unlocked. Click to lock."
+      : state === "mixed"
+        ? "Some unlocked. Click to unlock the rest."
+        : "Locked. Click to allow unattended access.");
   return (
     <button
       type="button"

@@ -205,14 +205,23 @@ impl Tool for HotkeyTool {
             }
         };
 
+        // UIA focus can activate Chromium; a focus click could invoke page
+        // handlers. Refuse element-targeted background input before either.
+        if delivery.is_background()
+            && elem_idx.is_some()
+            && crate::input::is_chromium_target_window(hwnd)
+        {
+            return crate::input::delivery::background_unavailable_error(hwnd, EventKind::KeyCombo);
+        }
+
         // Match Swift's text format exactly: `"✅ Pressed K1+K2+... on pid X."`
         // where K1+K2+... is `keys.joined(separator: "+")` of the FULL keys
         // array as the caller supplied it (modifiers + non-modifier in order).
         let key_display = full_keys.join("+");
 
         // px form: pixel-click to focus, then the combo acts on the focused field
-        // (e.g. Ctrl+V into a Chromium input). A background focus click is posted
-        // like any background click; the chord follows on the posted route.
+        // (e.g. Ctrl+V into a Chromium input). Background pixel focus is
+        // refused before the click: it cannot safely establish keyboard focus.
         let px_focus = {
             let px = args.get("x").and_then(|v| v.as_f64());
             let py = args.get("y").and_then(|v| v.as_f64());
@@ -221,6 +230,14 @@ impl Tool for HotkeyTool {
                     return ToolResult::error(
                         "Pass either element_token (ax) or x,y (px) to hotkey, not both.",
                     );
+                }
+                if delivery.is_background() {
+                    let kind = if mods.is_empty() {
+                        EventKind::Keystroke
+                    } else {
+                        EventKind::KeyCombo
+                    };
+                    return crate::input::delivery::background_unavailable_error(hwnd, kind);
                 }
                 let from_zoom = args
                     .get("from_zoom")
@@ -274,7 +291,7 @@ impl Tool for HotkeyTool {
         } else {
             EventKind::Keystroke
         };
-        if delivery == DeliveryMode::Background
+        if delivery.is_background()
             && crate::input::delivery::would_be_silently_dropped(hwnd, event_kind)
         {
             // macOS-aligned: a `background` hotkey never fronts. This combo would

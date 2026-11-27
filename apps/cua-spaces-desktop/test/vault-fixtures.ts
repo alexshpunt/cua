@@ -28,20 +28,63 @@ import type {
   TeleportWindow,
 } from "../src/native/generated/index";
 
-const parity = JSON.parse(readFileSync(path.resolve(__dirname, "../../../libs/cua/crates/cua-spaces-app-core/parity/keyvault-approve-deny.json"), "utf8")) as { overview: unknown };
+const parity = JSON.parse(readFileSync(path.resolve(__dirname, "../../../libs/cua/crates/cua-spaces-app-core/parity/keyvault-approve-deny.json"), "utf8")) as {
+  overview: unknown;
+};
 
 /** The methods and page operations vault-native.test.ts covers (the other bridge tests leave them to it). */
 export const VAULT_METHODS = [
-  "teleport.catalog", "teleport.entryForPath", "teleport.windows", "teleport.remoteWindows", "teleport.icon", "teleport.thumbnail",
-  "teleport.plan", "teleport.run", "teleport.sites", "teleport.readiness", "teleport.remembered", "teleport.streamWindow",
-  "keyvault.get", "keyvault.lock", "keyvault.unlock", "keyvault.unlockVault", "keyvault.setup", "keyvault.setDisabled",
-  "keyvault.approve", "keyvault.deny", "keyvault.revokeGrant", "keyvault.showItems", "keyvault.delete", "keyvault.run", "keyvault.dismiss",
+  "teleport.catalog",
+  "teleport.entryForPath",
+  "teleport.windows",
+  "teleport.remoteWindows",
+  "teleport.icon",
+  "teleport.thumbnail",
+  "teleport.plan",
+  "teleport.run",
+  "teleport.sites",
+  "teleport.readiness",
+  "teleport.remembered",
+  "teleport.streamWindow",
+  "keyvault.get",
+  "keyvault.lock",
+  "keyvault.unlock",
+  "keyvault.unlockVault",
+  "keyvault.setup",
+  "keyvault.setDisabled",
+  "keyvault.approve",
+  "keyvault.deny",
+  "keyvault.revokeGrant",
+  "keyvault.showItems",
+  "keyvault.delete",
+  "keyvault.run",
+  "keyvault.dismiss",
 ];
 export const VAULT_OPS = [
-  "teleport.catalog", "teleport.entryForPath", "teleport.windows", "teleport.remoteWindows", "teleport.icon", "teleport.thumbnail",
-  "teleport.plan", "teleport.run", "teleport.sites", "teleport.readiness", "teleport.remembered", "teleport.streamWindow",
-  "keyvault.overview", "keyvault.unlock", "keyvault.setUnattended", "keyvault.setDisabled", "keyvault.approve", "keyvault.deny",
-  "keyvault.revokeGrant", "keyvault.setup", "keyvault.showItems", "keyvault.delete", "keyvault.run", "keyvault.dismiss",
+  "teleport.catalog",
+  "teleport.entryForPath",
+  "teleport.windows",
+  "teleport.remoteWindows",
+  "teleport.icon",
+  "teleport.thumbnail",
+  "teleport.plan",
+  "teleport.run",
+  "teleport.sites",
+  "teleport.readiness",
+  "teleport.remembered",
+  "teleport.streamWindow",
+  "keyvault.overview",
+  "keyvault.unlock",
+  "keyvault.setUnattended",
+  "keyvault.setDisabled",
+  "keyvault.approve",
+  "keyvault.deny",
+  "keyvault.revokeGrant",
+  "keyvault.setup",
+  "keyvault.showItems",
+  "keyvault.delete",
+  "keyvault.run",
+  "keyvault.dismiss",
 ] as const;
 
 /** The clock the Keyvault fixtures are read at (Unix ms; just after the shared parity fixture's "now"). */
@@ -68,7 +111,16 @@ export function unlockOverview(native: Native, name: string): KeyvaultOverview {
 /** A live copy of two of the GitHub items in Aurora (so deleting them wipes it). */
 export const withCopy = (wire: any) => {
   wire.deliveries = [
-    { import_id: "imp-1", target: "local:aurora", provider_id: "chrome", items: ["gh-ada", "gh-bob"], caller_fp: "fp", delivered_ms: NOW - 600_000, expires_ms: 0, wiped: false },
+    {
+      import_id: "imp-1",
+      target: "local:aurora",
+      provider_id: "chrome",
+      items: ["gh-ada", "gh-bob"],
+      caller_fp: "fp",
+      delivered_ms: NOW - 600_000,
+      expires_ms: 0,
+      wiped: false,
+    },
   ];
 };
 
@@ -80,7 +132,19 @@ export class FakeKeyvault implements KeyvaultClientLike {
   inventoryResult: KvInventory = {
     providerId: "chrome",
     appDisplay: "Google Chrome",
-    domains: [{ domain: "github.com", cookies: 12, sessionCookies: 4, localStorage: 3, passwords: 2, signin: true, identityProvider: false, unavailable: 0, unavailableReason: "" }],
+    domains: [
+      {
+        domain: "github.com",
+        cookies: 12,
+        sessionCookies: 4,
+        localStorage: 3,
+        passwords: 2,
+        signin: true,
+        identityProvider: false,
+        unavailable: 0,
+        unavailableReason: "",
+      },
+    ],
     notes: [],
   };
   inventoryAsks: { app: string; profile: string | undefined }[] = [];
@@ -353,7 +417,19 @@ export class FakeSpace {
       available: true,
       limitation: "",
     },
-    { windowId: "w-2", epoch: 1n, title: "Notes", appName: "Notes", appId: "", pid: 0, bounds: [], onScreen: false, focused: false, available: true, limitation: "" },
+    {
+      windowId: "w-2",
+      epoch: 1n,
+      title: "Notes",
+      appName: "Notes",
+      appId: "",
+      pid: 0,
+      bounds: [],
+      onScreen: false,
+      focused: false,
+      available: true,
+      limitation: "",
+    },
   ];
   thumbnailCalls: { windowId: string; epoch: bigint; max: number }[] = [];
   async windowThumbnail(windowId: string, epoch: bigint, max: number) {

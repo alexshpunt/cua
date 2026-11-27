@@ -116,7 +116,7 @@ pub(crate) fn exact_window_frame(window_id: u64, pid: u32, identity: &str) -> Op
     let property: Vec<u16> = property.encode_utf16().chain(Some(0)).collect();
     unsafe {
         let hwnd = HWND(window_id as *mut _);
-        if !IsWindow(hwnd).as_bool()
+        if !IsWindow(Some(hwnd)).as_bool()
             || !IsWindowVisible(hwnd).as_bool()
             || IsIconic(hwnd).as_bool()
             || crate::uia::windows_enum::window_is_cloaked(hwnd)
@@ -172,7 +172,7 @@ pub(crate) fn create_protected_hud(class: PCWSTR, bounds: ActivityRect) -> Optio
             bounds.height as i32,
             None,
             None,
-            instance,
+            Some(instance.into()),
             None,
         )
         .ok()?;
@@ -347,9 +347,10 @@ pub(super) fn run(rx: Receiver<()>) {
             .map(|key| settings(key).frame_ms())
             .min()
             .unwrap_or(if preparing.is_some() { 16 } else { 250 });
-        match rx.recv_timeout(Duration::from_millis(interval)) {
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return,
-            _ => {}
+        if let Err(std::sync::mpsc::RecvTimeoutError::Disconnected) =
+            rx.recv_timeout(Duration::from_millis(interval))
+        {
+            return;
         }
         unsafe {
             let mut message = MSG::default();

@@ -23,7 +23,7 @@ use serde_json::{json, Value};
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use windows::Win32::Foundation::{HWND, RECT};
+use windows::Win32::Foundation::RECT;
 use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
 use windows::Win32::Graphics::Gdi::{MonitorFromWindow, MONITOR_DEFAULTTONEAREST};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
@@ -314,7 +314,7 @@ impl Backend for NativeBackend {
                 unsafe {
                     SetWindowPos(
                         hwnd,
-                        HWND::default(),
+                        None,
                         adjusted.0,
                         adjusted.1,
                         adjusted.2,
@@ -363,58 +363,6 @@ impl Backend for NativeBackend {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn no_mutation_refusal_retains_exact_source_and_diagnostic_without_invented_measurements() {
-        let input = json!({"pid":42,"window_id":91,"state_id":"control-state","operation":"move"});
-        let payload = refusal_payload(
-            json!({"code":"window_state_expired","detail":"Lifetime changed","owner_pid":7}),
-            &input,
-        );
-        for field in ["pid", "window_id", "state_id", "operation"] {
-            assert_eq!(payload[field], input[field], "{field}");
-        }
-        assert_eq!(payload["code"], "window_state_expired");
-        assert_eq!(payload["detail"], "Lifetime changed");
-        assert_eq!(payload["owner_pid"], 7);
-        assert_eq!(payload["route"], "native");
-        assert_eq!(payload["status"], "refused");
-        assert_eq!(payload["effect"], "refused");
-        for field in [
-            "mutation_attempted",
-            "mutation_accepted",
-            "postcondition_confirmed",
-        ] {
-            assert_eq!(payload[field], false, "{field}");
-        }
-        for field in ["requested_bounds", "before", "observed"] {
-            assert_eq!(payload[field], Value::Null, "{field}");
-        }
-    }
-
-    #[test]
-    fn pre_mutation_receipt_cannot_inherit_success_flags_or_foreign_source() {
-        let payload = refusal_payload(
-            json!({
-                "pid":9,"state_id":"other","operation":"focus","status":"ok","effect":"confirmed",
-                "mutation_attempted":true,"mutation_accepted":true,"postcondition_confirmed":true,
-                "observed":{"foreground_at_target":true},
-            }),
-            &json!({"pid":42,"window_id":91,"state_id":"control-state","operation":"maximize"}),
-        );
-        assert_eq!(payload["pid"], 42);
-        assert_eq!(payload["state_id"], "control-state");
-        assert_eq!(payload["operation"], "maximize");
-        assert_eq!(payload["mutation_attempted"], false);
-        assert_eq!(payload["mutation_accepted"], false);
-        assert_eq!(payload["postcondition_confirmed"], false);
-        assert_eq!(payload["observed"], Value::Null);
-        assert_eq!(payload["effect"], "refused");
-    }
-}
 pub(super) struct ManageWindowTool {
     pub state: Arc<ToolState>,
 }
@@ -502,5 +450,57 @@ impl Tool for ManageWindowTool {
                 ToolResult::error(format!("Management worker outcome unknown: {error}. Do not replay.")).with_structured(payload)
             }
         }
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn no_mutation_refusal_retains_exact_source_and_diagnostic_without_invented_measurements() {
+        let input = json!({"pid":42,"window_id":91,"state_id":"control-state","operation":"move"});
+        let payload = refusal_payload(
+            json!({"code":"window_state_expired","detail":"Lifetime changed","owner_pid":7}),
+            &input,
+        );
+        for field in ["pid", "window_id", "state_id", "operation"] {
+            assert_eq!(payload[field], input[field], "{field}");
+        }
+        assert_eq!(payload["code"], "window_state_expired");
+        assert_eq!(payload["detail"], "Lifetime changed");
+        assert_eq!(payload["owner_pid"], 7);
+        assert_eq!(payload["route"], "native");
+        assert_eq!(payload["status"], "refused");
+        assert_eq!(payload["effect"], "refused");
+        for field in [
+            "mutation_attempted",
+            "mutation_accepted",
+            "postcondition_confirmed",
+        ] {
+            assert_eq!(payload[field], false, "{field}");
+        }
+        for field in ["requested_bounds", "before", "observed"] {
+            assert_eq!(payload[field], Value::Null, "{field}");
+        }
+    }
+
+    #[test]
+    fn pre_mutation_receipt_cannot_inherit_success_flags_or_foreign_source() {
+        let payload = refusal_payload(
+            json!({
+                "pid":9,"state_id":"other","operation":"focus","status":"ok","effect":"confirmed",
+                "mutation_attempted":true,"mutation_accepted":true,"postcondition_confirmed":true,
+                "observed":{"foreground_at_target":true},
+            }),
+            &json!({"pid":42,"window_id":91,"state_id":"control-state","operation":"maximize"}),
+        );
+        assert_eq!(payload["pid"], 42);
+        assert_eq!(payload["state_id"], "control-state");
+        assert_eq!(payload["operation"], "maximize");
+        assert_eq!(payload["mutation_attempted"], false);
+        assert_eq!(payload["mutation_accepted"], false);
+        assert_eq!(payload["postcondition_confirmed"], false);
+        assert_eq!(payload["observed"], Value::Null);
+        assert_eq!(payload["effect"], "refused");
     }
 }

@@ -32,8 +32,7 @@ const once = <T>(items: T[], key: (t: T) => unknown): T[] => {
 /* ---- The grid ---------------------------------------------------------------- */
 
 function tileLine(t: PickerTile): string {
-  const icon =
-    t.icon.kind === "host" ? `host ${t.icon.path}` : t.icon.kind === "guest" ? `guest ${t.icon.appName} ${t.icon.appId} ${t.icon.pid}` : "-";
+  const icon = t.icon.kind === "host" ? `host ${t.icon.path}` : t.icon.kind === "guest" ? `guest ${t.icon.appName} ${t.icon.appId} ${t.icon.pid}` : "-";
   const thumb =
     t.thumbnail.kind === "host-window"
       ? `window ${t.thumbnail.windowId}`
@@ -91,9 +90,11 @@ async function checkPicker(page: Page, cp: Cp<"picker">): Promise<void> {
       const want = frame.sections.map((s) => `${s.title}: ${s.entries.map((e) => e.name).join(", ")}`);
       await expect
         .poll(() =>
-          root.locator("[data-grid-section]").evaluateAll((els) =>
-            els.map((el) => `${el.getAttribute("data-grid-section")}: ${[...el.querySelectorAll("[data-tile-title]")].map((t) => t.textContent).join(", ")}`),
-          ),
+          root
+            .locator("[data-grid-section]")
+            .evaluateAll((els) =>
+              els.map((el) => `${el.getAttribute("data-grid-section")}: ${[...el.querySelectorAll("[data-tile-title]")].map((t) => t.textContent).join(", ")}`),
+            ),
         )
         .toEqual(want);
       const visible = frame.sections.flatMap((s) => s.entries.map((e) => e.id));
@@ -107,12 +108,14 @@ async function checkPicker(page: Page, cp: Cp<"picker">): Promise<void> {
       const want = frame.sensitive.map((o) => `${o.group}:${messageText(o.label)}:${messageText(o.detail)}:${o.checked ? "on" : "off"}`);
       await expect
         .poll(() =>
-          root.locator("[data-sensitive]").evaluateAll((els) =>
-            els.map(
-              (el) =>
-                `${el.getAttribute("data-sensitive")}:${el.querySelector("[data-sensitive-label]")?.textContent}:${el.querySelector("[data-sensitive-detail]")?.textContent}:${el.hasAttribute("data-checked") ? "on" : "off"}`,
+          root
+            .locator("[data-sensitive]")
+            .evaluateAll((els) =>
+              els.map(
+                (el) =>
+                  `${el.getAttribute("data-sensitive")}:${el.querySelector("[data-sensitive-label]")?.textContent}:${el.querySelector("[data-sensitive-detail]")?.textContent}:${el.hasAttribute("data-checked") ? "on" : "off"}`,
+              ),
             ),
-          ),
         )
         .toEqual(want);
       if (frame.canPlan) await expect(page.locator("[data-teleport-plan]")).toBeEnabled();
@@ -128,9 +131,9 @@ async function checkPicker(page: Page, cp: Cp<"picker">): Promise<void> {
       const shown = r.items.filter((i) => i.kind === "install" || (r.source !== "vault" && r.toggles.some((t) => t.key === i.key)));
       await expect
         .poll(() =>
-          root.locator("[data-review-item]").evaluateAll((els) =>
-            els.map((el) => `${el.getAttribute("data-kind")}:${el.querySelector("[data-review-label]")?.textContent}`).sort(),
-          ),
+          root
+            .locator("[data-review-item]")
+            .evaluateAll((els) => els.map((el) => `${el.getAttribute("data-kind")}:${el.querySelector("[data-review-label]")?.textContent}`).sort()),
         )
         .toEqual(shown.map((i) => `${kind(i)}:${i.label}`).sort());
       if (r.leavesText) await expect(page.locator("[data-review-leaves]")).toHaveText(r.leavesText);
@@ -139,7 +142,11 @@ async function checkPicker(page: Page, cp: Cp<"picker">): Promise<void> {
       // Saved passwords: the picker only where the Keyvault keeps the choice.
       const picking = r.offersPasswords && r.includePasswords && Boolean(r.passwordSummary);
       await expect
-        .poll(() => root.locator("[data-review-password]").evaluateAll((els) => els.map((e) => `${e.getAttribute("data-review-password")}${e.hasAttribute("data-selected") ? " x" : ""}`)))
+        .poll(() =>
+          root
+            .locator("[data-review-password]")
+            .evaluateAll((els) => els.map((e) => `${e.getAttribute("data-review-password")}${e.hasAttribute("data-selected") ? " x" : ""}`)),
+        )
         .toEqual(picking ? (r.passwords ?? []).map((p) => `${p.key}${p.selected ? " x" : ""}`) : []);
       for (const [gate, needed, checked] of [
         ["ack", r.needsAcknowledgement, r.acknowledged],
@@ -179,7 +186,10 @@ export async function checkTeleport(page: Page, checkpoints: ParityCheckpoint[])
     await checkPicker(page, cp);
     checked++;
   }
-  for (const cp of once(checkpoints.filter((c): c is Cp<"grid-tabs"> => c.kind === "grid-tabs"), (c) => c.tabs)) {
+  for (const cp of once(
+    checkpoints.filter((c): c is Cp<"grid-tabs"> => c.kind === "grid-tabs"),
+    (c) => c.tabs,
+  )) {
     await showGrid(page, { tab: "apps", spaceName: cp.spaceName });
     await expect
       .poll(() => page.locator("[data-teleport-tab]").evaluateAll((els) => els.map((e) => `${e.getAttribute("data-teleport-tab")}=${e.textContent}`)))

@@ -61,6 +61,9 @@ that are easy to miss:
   cua-spacesd or any other in-guest service.
 - Tests that start VMs, containers, or host input are opt-in
   (off by default) and clean up what they create.
+- When stopping an interactive Windows test launched by Task Scheduler, verify
+  and stop its own descendant processes too. Stopping the scheduled task alone
+  can leave an input-sending test alive and lock its executable.
 
 ## Before you push: `bin/ci`
 
@@ -90,9 +93,10 @@ lanes still run there. See [`CI.md`](docs/contributing/CI.md#run-the-checks-loca
 
 ## Fork testing priorities
 
-This fork primarily targets Windows. Keep the existing Linux CI coverage, but
-do not require macOS tests or macOS certification to land fork changes unless
-the user explicitly requests them. Keep manual macOS workflows available.
+This fork currently targets Windows only. Require Windows tests and native
+verification for fork changes. Linux, macOS, and their image or compositor
+lanes are not required for landing unless the user explicitly requests them.
+Keep other-platform manual workflows available when practical.
 
 ## Cross-platform Cua Driver behavior
 
@@ -100,11 +104,10 @@ Implement shared state, geometry, timing, and protocol semantics in the common
 crates whenever possible, and keep platform adapters thin. Do not present a
 platform-specific cursor or interaction change as universal.
 
-Add focused coverage for affected supported platforms, prioritizing Windows
-and retaining Linux coverage. Verify native behavior where required by this
-fork's testing priorities, or document a concrete operating-system or compositor
-limitation. Explicitly report unsupported behavior rather than substituting
-misleading results; macOS verification is not a prerequisite for fork changes.
+Add focused Windows coverage for affected behavior. Verify native behavior
+where required by this fork's testing priorities, or document a concrete
+operating-system limitation. Explicitly report unsupported behavior rather
+than substituting misleading results.
 
 ## Expensive end-to-end test timing
 
@@ -113,7 +116,7 @@ plus the repository's ordinary pull request CI. Do not repeatedly run the full
 representative desktop matrix against intermediate commits when the affected
 code or test plan is still changing.
 
-Run the fork's applicable Windows and Linux desktop E2E matrix once the
+Run the fork's applicable Windows desktop E2E matrix once the
 implementation is stable, on the exact candidate SHA immediately before the
 pull request is made ready or merged. If that candidate changes afterward,
 rerun only the evidence affected by the change; a product, harness,
@@ -132,8 +135,9 @@ Follow the [test harnesses guide](libs/cua-driver/docs/test-harnesses-guide.md#t
 and [CI runner guide](scripts/ci/README.md#desktop-runners) for canonical commands,
 environment prerequisites, and evidence authority.
 
-Do not assume that GitHub-hosted Windows runs in Session 0. Keep the hosted Linux
-X11 gate, Nix source checks, and compositor-specific Wayland lanes separate.
+Do not assume that GitHub-hosted Windows runs in Session 0. When explicitly
+running Linux checks, keep the hosted X11 gate, Nix source checks, and
+compositor-specific Wayland lanes separate.
 
 ## Cua Driver test ownership
 

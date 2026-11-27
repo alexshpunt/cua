@@ -104,49 +104,51 @@ impl Tool for KillAppTool {
         // Run the syscalls on a blocking thread — TerminateProcess + the
         // WaitForSingleObject confirmation are both blocking, and we don't
         // want to stall the tokio reactor.
-        let outcome = tokio::task::spawn_blocking(move || -> Result<(), String> {
-            use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
-            use windows::Win32::System::Threading::{
-                OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
-                PROCESS_TERMINATE,
-            };
+        let outcome =
+            cua_driver_core::desktop_activity::spawn_blocking(move || -> Result<(), String> {
+                use windows::Win32::Foundation::{CloseHandle, WAIT_OBJECT_0};
+                use windows::Win32::System::Threading::{
+                    OpenProcess, TerminateProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
+                    PROCESS_TERMINATE,
+                };
 
-            // SAFETY: OpenProcess returns a Result<HANDLE> in windows-rs;
-            // PROCESS_TERMINATE | PROCESS_SYNCHRONIZE lets us both kill the
-            // target AND wait for the OS to fully reap it (so the caller's
-            // follow-up list_apps reflects the change immediately).
-            let h = unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, false, pid_v) }
-                .map_err(|e| {
-                format!(
+                // SAFETY: OpenProcess returns a Result<HANDLE> in windows-rs;
+                // PROCESS_TERMINATE | PROCESS_SYNCHRONIZE lets us both kill the
+                // target AND wait for the OS to fully reap it (so the caller's
+                // follow-up list_apps reflects the change immediately).
+                let h =
+                    unsafe { OpenProcess(PROCESS_TERMINATE | PROCESS_SYNCHRONIZE, false, pid_v) }
+                        .map_err(|e| {
+                        format!(
                     "OpenProcess(pid={pid_v}, PROCESS_TERMINATE|PROCESS_SYNCHRONIZE) failed: {e}. \
                      The process may not exist, or the daemon lacks the right to terminate it. \
                      Try listing processes first to confirm the pid is correct."
                 )
-            })?;
+                    })?;
 
-            let term_result = unsafe { TerminateProcess(h, 1) };
+                let term_result = unsafe { TerminateProcess(h, 1) };
 
-            // WaitForSingleObject so the caller can assume the process is
-            // really gone on return. 2-second cap — TerminateProcess is
-            // synchronous in practice but the OS still needs a moment to
-            // reap kernel structures. WAIT_TIMEOUT is treated as a soft
-            // success (the kill request landed; the process may take a
-            // little longer to disappear from list_apps).
-            let wait_status = unsafe { WaitForSingleObject(h, 2000) };
-            let _ = unsafe { CloseHandle(h) };
+                // WaitForSingleObject so the caller can assume the process is
+                // really gone on return. 2-second cap — TerminateProcess is
+                // synchronous in practice but the OS still needs a moment to
+                // reap kernel structures. WAIT_TIMEOUT is treated as a soft
+                // success (the kill request landed; the process may take a
+                // little longer to disappear from list_apps).
+                let wait_status = unsafe { WaitForSingleObject(h, 2000) };
+                let _ = unsafe { CloseHandle(h) };
 
-            match (term_result, wait_status) {
-                (Ok(()), s) if s == WAIT_OBJECT_0 => Ok(()),
-                (Ok(()), _) => Ok(()), // killed, wait timed out — caller can re-check
-                (Err(e), _) => Err(format!(
-                    "TerminateProcess(pid={pid_v}) failed: {e}. The handle was opened \
+                match (term_result, wait_status) {
+                    (Ok(()), s) if s == WAIT_OBJECT_0 => Ok(()),
+                    (Ok(()), _) => Ok(()), // killed, wait timed out — caller can re-check
+                    (Err(e), _) => Err(format!(
+                        "TerminateProcess(pid={pid_v}) failed: {e}. The handle was opened \
                      successfully but the kill itself was rejected; this is unusual for \
                      PROCESS_TERMINATE rights and may indicate a protected-process target \
                      (PPL, e.g. csrss / system services)."
-                )),
-            }
-        })
-        .await;
+                    )),
+                }
+            })
+            .await;
 
         match outcome {
             Ok(Ok(())) => ToolResult::text(format!("✅ Terminated pid {pid_v}.")),

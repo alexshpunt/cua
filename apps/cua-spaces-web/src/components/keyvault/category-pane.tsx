@@ -111,7 +111,11 @@ export function CategoryPane({
           {page.logStatus ? <p className="px-1 text-xs text-muted-foreground">{page.logStatus}</p> : null}
         </>
       ) : null}
-      {list.emptyText ? <p className="px-1 text-[13px] text-muted-foreground" data-category-empty>{list.emptyText}</p> : null}
+      {list.emptyText ? (
+        <p className="px-1 text-[13px] text-muted-foreground" data-category-empty>
+          {list.emptyText}
+        </p>
+      ) : null}
     </div>
   );
 }

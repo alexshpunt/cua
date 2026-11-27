@@ -330,13 +330,14 @@ impl Tool for HotkeyTool {
 
         if crate::wayland::is_inject_mode() {
             if let Err(error) =
-                focus_nested_inject_target(pid, xid, token.clone(), px.zip(py)).await
+                focus_nested_inject_target(&self.state, &args, pid, xid, token.clone(), px.zip(py))
+                    .await
             {
                 return error;
             }
             let mut chord = mods.clone();
             chord.push(key.clone());
-            let result = tokio::task::spawn_blocking(move || {
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::wayland::inject_hotkey(pid, xid, &chord)
             })
             .await;
@@ -375,8 +376,10 @@ impl Tool for HotkeyTool {
         // does it inside `background_key_route`, under the focus guard.
         if let Some(element) = token.clone().filter(|_| delivery.is_foreground()) {
             let element_index = element.index;
-            let focused =
-                tokio::task::spawn_blocking(move || crate::atspi::focus_token(pid, &element)).await;
+            let focused = cua_driver_core::desktop_activity::spawn_blocking(move || {
+                crate::atspi::focus_token(pid, &element)
+            })
+            .await;
             match focused {
                 Ok(Ok(true)) => {}
                 Ok(Ok(false)) => {

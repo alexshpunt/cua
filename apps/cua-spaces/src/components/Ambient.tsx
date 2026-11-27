@@ -59,7 +59,13 @@ export function Ambient({
   // coming up; nothing when idle. It scales with the notch on hover.
   const activity = notchActivity(spaces, hotspotActive, transfer);
   const leftSlot = activity ? (
-    <div className="ambient-hotspot" role="status" aria-label={activity.label} title={activity.label} data-activity={activity.kind}>
+    <div
+      className="ambient-hotspot"
+      role="status"
+      aria-label={activity.label}
+      title={activity.label}
+      data-activity={activity.kind}
+    >
       {activity.kind === "remote-access" ? (
         <RemoteAccessGlyph className="ambient-hotspot-glyph" />
       ) : activity.symbol ? (
@@ -120,11 +126,7 @@ export function Ambient({
   // the count over "Space(s)". During a drag teleport the tab retracts into the
   // notch (see `[data-teleport="on"] .ambient-tab`) and the box grows below it.
   return (
-    <div
-      className="ambient-notched"
-      data-teleport={teleportOpen ? "on" : "off"}
-      data-menu-bar={menuBar ? "on" : "off"}
-    >
+    <div className="ambient-notched" data-teleport={teleportOpen ? "on" : "off"} data-menu-bar={menuBar ? "on" : "off"}>
       {leftSlot}
       {!menuBar && (
         <button type="button" className="ambient ambient-tab" onClick={onExpand} aria-label={summary} title={label}>

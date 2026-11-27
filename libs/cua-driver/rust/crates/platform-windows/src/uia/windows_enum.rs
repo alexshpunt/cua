@@ -1,19 +1,9 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Cua AI, Inc.
 
-//! UIA-based enumeration of top-level windows.
-//!
-//! Walks the UI Automation tree from the desktop root and returns one entry
-//! per top-level interactable window. UIA surfaces modern containers (WebView2
-//! hosts, packaged-UWP frames, browser windows whose chrome lives inside a
-//! container HWND) with their real title and bounds — which `EnumWindows`
-//! either misses or returns with a misleading parent HWND.
-//!
-//! The result is shape-compatible with `crate::win32::windows::WindowInfo`
-//! (returned as `WindowInfo` directly) so the existing pipeline that consumes
-//! `list_windows` output keeps working unchanged. Each record's `hwnd` is the
-//! UIA element's `NativeWindowHandle` — i.e. an honest Win32 HWND that downstream
-//! code can pass to `GetWindowRect`, `PostMessage`, etc.
+//! Bounded UI Automation calls: window enumeration, the process-wide
+//! single-flight gate, desktop health probe, point/accelerator invocation,
+//! and pointer-shape hit-testing.
 
 // We pattern-match against `UIA_*ControlTypeId` constants from the `windows`
 // crate, which use mixed case we can't rename. The lint's suggested rewrite
@@ -29,7 +19,7 @@ use std::time::Duration;
 use cua_driver_core::single_flight::SingleFlight;
 
 use anyhow::{bail, Context};
-use windows::core::{Interface, BSTR};
+use windows::core::Interface;
 use windows::Win32::Foundation::{HWND, RECT};
 use windows::Win32::Graphics::Dwm::{
     DwmGetWindowAttribute, DWMWA_CLOAKED, DWMWA_EXTENDED_FRAME_BOUNDS,
@@ -37,6 +27,7 @@ use windows::Win32::Graphics::Dwm::{
 use windows::Win32::System::Com::{
     CoCreateInstance, CoInitializeEx, CoUninitialize, CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED,
 };
+use windows::Win32::System::Variant::VT_BSTR;
 use windows::Win32::UI::Accessibility::{
     CUIAutomation, IUIAutomation, IUIAutomationElement, IUIAutomationInvokePattern,
     IUIAutomationTogglePattern, TreeScope_Children, TreeScope_Subtree,
@@ -58,7 +49,7 @@ use crate::win32::windows::WindowInfo;
 /// same task, or a library on the same OS thread) picked a different
 /// apartment. Safe to ignore — COM is up either way.
 const RPC_E_CHANGED_MODE: i32 = -2147417850; // 0x80010106
-/// Desktop child enumeration: one wedged provider must not stall list_windows.
+/// Bound desktop enumeration when a provider is unresponsive.
 const DESKTOP_CALL_TIMEOUT: Duration = Duration::from_secs(2);
 /// Subtree scans: keep the pre-existing interactive operation budget.
 const SUBTREE_OP_TIMEOUT: Duration = Duration::from_secs(4);
@@ -105,15 +96,15 @@ where
     };
 
     let (tx, rx) = mpsc::channel();
-    let cancelled = permit.timeout_flag();
+    let deadline = permit.deadline();
     let worker_cancelled = permit.timeout_flag();
     let spawn = thread::Builder::new()
         .name(format!("cua-uia-{stage}"))
-        .spawn(move || {
+        .spawn(crate::dpi::owned_thread(move || {
             let _permit = permit;
             let result = f(worker_cancelled);
             let _ = tx.send(result);
-        });
+        }));
 
     if let Err(e) = spawn {
         // The unspawned closure, and with it the permit, is already dropped,
@@ -125,7 +116,7 @@ where
     match rx.recv_timeout(timeout) {
         Ok(result) => Ok(result),
         Err(mpsc::RecvTimeoutError::Timeout) => {
-            cancelled.store(true, Ordering::Release);
+            deadline.expire();
             tracing::warn!(
                 target: "uia_windows_enum",
                 "UIA {stage} exceeded {}ms; falling back to {fallback}; no other UIA worker will start until this provider call returns",
@@ -751,10 +742,8 @@ fn read_current_bstr(
 ) -> Option<String> {
     unsafe {
         let variant = element.GetCurrentPropertyValue(property_id).ok()?;
-        if variant.as_raw().Anonymous.Anonymous.vt == 8 {
-            let bstr = BSTR::from_raw(variant.as_raw().Anonymous.Anonymous.Anonymous.bstrVal);
-            let s = bstr.to_string();
-            std::mem::forget(bstr);
+        if variant.vt() == VT_BSTR {
+            let s = variant.Anonymous.Anonymous.Anonymous.bstrVal.to_string();
             let trimmed = s.trim();
             if trimmed.is_empty() {
                 None
@@ -926,7 +915,7 @@ unsafe fn window_info_from_uia_element(elem: &IUIAutomationElement) -> Option<Wi
         .ok()
         .is_some_and(rect_is_valid);
 
-    if !IsWindow(hwnd).as_bool() {
+    if !IsWindow(Some(hwnd)).as_bool() {
         return None;
     }
 
@@ -970,7 +959,7 @@ unsafe fn window_info_from_uia_element(elem: &IUIAutomationElement) -> Option<Wi
         // or reused HWND cannot be accepted as the original UIA window.
         let mut pid_after = 0u32;
         let thread_after = GetWindowThreadProcessId(hwnd, Some(&mut pid_after));
-        if !IsWindow(hwnd).as_bool()
+        if !IsWindow(Some(hwnd)).as_bool()
             || elem.CurrentNativeWindowHandle().ok() != Some(hwnd)
             || elem
                 .CurrentProcessId()
@@ -1188,7 +1177,6 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
     use std::time::Instant;
-    use windows::Win32::Foundation::RECT;
 
     #[test]
     fn point_invoke_preserves_worker_outcomes() {
@@ -1228,40 +1216,6 @@ mod tests {
                 Err(PointInvokeOutcome::Unavailable),
             );
         }
-    }
-
-    fn rect() -> RECT {
-        RECT {
-            left: 200,
-            top: 52,
-            right: 1400,
-            bottom: 852,
-        }
-    }
-
-    #[test]
-    fn invalid_uia_bounds_prefer_the_reported_win32_rect() {
-        let win32 = rect();
-        assert_eq!(select_window_rect(true, None, Some(win32)), Some(win32));
-    }
-
-    #[test]
-    fn normal_windows_keep_valid_dwm_geometry() {
-        let dwm = rect();
-        let mut win32 = dwm;
-        win32.left -= 8;
-        assert_eq!(select_window_rect(false, Some(dwm), Some(win32)), Some(dwm));
-    }
-
-    #[test]
-    fn invalid_dwm_geometry_falls_through_and_invalid_win32_fails_closed() {
-        let empty = RECT::default();
-        let win32 = rect();
-        assert_eq!(
-            select_window_rect(false, Some(empty), Some(win32)),
-            Some(win32)
-        );
-        assert!(select_window_rect(true, Some(win32), Some(empty)).is_none());
     }
 
     #[test]

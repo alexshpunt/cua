@@ -11,7 +11,9 @@ import { FakeSpace, FakeTeleport, JPEG, PNG, SVG, asSpace, asTeleport, entry, pl
 describe("the picker's sources", () => {
   it("lists this machine's windows as the picker's records", async () => {
     const sources = liveSources(asTeleport(new FakeTeleport()), null);
-    expect(await sources.openWindows()).toEqual([{ windowId: 41, appId: "", appName: "Slack", windowTitle: "general", supported: true, bundlePath: "/Applications/Slack.app" }]);
+    expect(await sources.openWindows()).toEqual([
+      { windowId: 41, appId: "", appName: "Slack", windowTitle: "general", supported: true, bundlePath: "/Applications/Slack.app" },
+    ]);
   });
 
   it("has no windows where the SDK has none: Windows, Linux, or no handle", async () => {
@@ -27,13 +29,28 @@ describe("the picker's sources", () => {
 
   it("lists the Space's windows with sizes and pids only when they are reported", async () => {
     const [a, b] = await liveSources(null, asSpace(new FakeSpace())).remoteWindows();
-    expect(a).toEqual({ id: "w-1", appName: "Firefox", title: "Mozilla Firefox", visible: true, appId: "org.mozilla.firefox", targetEpoch: 7n, widthPx: 1280, heightPx: 720, pid: 321 });
+    expect(a).toEqual({
+      id: "w-1",
+      appName: "Firefox",
+      title: "Mozilla Firefox",
+      visible: true,
+      appId: "org.mozilla.firefox",
+      targetEpoch: 7n,
+      widthPx: 1280,
+      heightPx: 720,
+      pid: 321,
+    });
     expect(b).toMatchObject({ id: "w-2", visible: false, widthPx: undefined, heightPx: undefined, pid: undefined });
   });
 
   it("answers no preview where the SDK cannot capture one", async () => {
     const t = new FakeTeleport();
-    const bad = asTeleport({ ...t, captureWindowThumbnail: () => { throw new Error("CuaError.Unsupported: no Screen Recording permission"); } } as unknown as FakeTeleport);
+    const bad = asTeleport({
+      ...t,
+      captureWindowThumbnail: () => {
+        throw new Error("CuaError.Unsupported: no Screen Recording permission");
+      },
+    } as unknown as FakeTeleport);
     expect(await liveSources(bad, null).hostThumbnail(41)).toBeNull();
     expect(await liveSources(asTeleport(t), null).hostThumbnail(41)).toEqual(PNG);
     expect(await liveSources(null, asSpace(new FakeSpace())).guestThumbnail("w-1", 7n)).toEqual(JPEG);
@@ -92,7 +109,13 @@ describe("the consent", () => {
   });
 
   it("carries the sites picked for saved passwords apart from the cookie sites", () => {
-    const c = teleportConsent({ approved: true, acknowledgeSensitive: true, includePasswords: true, cookieDomains: ["github.com"], passwordDomains: ["bank.example", "github.com"] });
+    const c = teleportConsent({
+      approved: true,
+      acknowledgeSensitive: true,
+      includePasswords: true,
+      cookieDomains: ["github.com"],
+      passwordDomains: ["bank.example", "github.com"],
+    });
     expect(c.cookieDomains).toEqual(["github.com"]);
     expect(c.passwordDomains).toEqual(["bank.example", "github.com"]);
     expect(c.includePasswords).toBe(true);
@@ -101,15 +124,35 @@ describe("the consent", () => {
 
   it("takes only true as yes, and only lists of strings as lists", () => {
     const c = teleportConsent({ approved: "yes", saveToKeyvault: 1, cookieDomains: ["a", 2], exclude: "x", fromVault: null });
-    expect(c).toEqual({ approved: false, acknowledgeSensitive: false, saveToKeyvault: false, acknowledgeRelayPlaintext: false, cookieDomains: undefined, exclude: [], fromVault: undefined, includePasswords: false });
+    expect(c).toEqual({
+      approved: false,
+      acknowledgeSensitive: false,
+      saveToKeyvault: false,
+      acknowledgeRelayPlaintext: false,
+      cookieDomains: undefined,
+      exclude: [],
+      fromVault: undefined,
+      includePasswords: false,
+    });
   });
 
   it("reports a run as the page reads it", () => {
-    expect(runReport({ appId: "slack", installed: ["slack"], sent: ["a"], imported: ["b"], skipped: ["c"], launched: true })).toEqual({ appId: "slack", installed: ["slack"], sent: ["a"], imported: ["b"], skipped: ["c"], launched: true });
+    expect(runReport({ appId: "slack", installed: ["slack"], sent: ["a"], imported: ["b"], skipped: ["c"], launched: true })).toEqual({
+      appId: "slack",
+      installed: ["slack"],
+      sent: ["a"],
+      imported: ["b"],
+      skipped: ["c"],
+      launched: true,
+    });
   });
 
   it("asks for a Space app's icon with what the page names, and nothing negative", () => {
-    expect(iconRequest({ kind: "guest", appName: "Firefox", appId: "org.mozilla.firefox", pid: 12.9 })).toEqual({ appName: "Firefox", appId: "org.mozilla.firefox", pid: 12 });
+    expect(iconRequest({ kind: "guest", appName: "Firefox", appId: "org.mozilla.firefox", pid: 12.9 })).toEqual({
+      appName: "Firefox",
+      appId: "org.mozilla.firefox",
+      pid: 12,
+    });
     expect(iconRequest({ pid: -4 })).toEqual({ appName: "", appId: "", pid: 0 });
   });
 });

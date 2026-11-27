@@ -77,7 +77,7 @@ impl ActivitySource {
                 ..
             } => {
                 *window_id > 0
-                    && *window_id <= (1u64 << 53) - 1
+                    && *window_id < (1u64 << 53)
                     && *pid > 0
                     && identity_property(identity, *pid).is_some()
             }

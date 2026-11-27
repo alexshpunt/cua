@@ -44,7 +44,11 @@ class WindowsDesktopTest(unittest.TestCase):
                 capture_output=True, text=True, timeout=300,
             )  # fmt: skip
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
-            return json.loads((out / "row.json").read_text("utf-8"))
+            row = json.loads((out / "row.json").read_text("utf-8"))
+            self.assertEqual(
+                row.get("agent_exit"), 0, f"{task}: {row}\n{done.stdout}\n{done.stderr}"
+            )
+            return row
 
     def test_oracle_solves_every_task(self) -> None:
         for task in TASKS:
@@ -54,7 +58,7 @@ class WindowsDesktopTest(unittest.TestCase):
                     "foreground",
                     [sys.executable, str(ORACLE), "--mode", "{mode}", "--seed", "{seed}"],
                 )
-                failed = [k for k, v in row["evaluation"]["checks"].items() if not v["passed"]]
+                failed = {k: v for k, v in row["evaluation"]["checks"].items() if not v["passed"]}
                 self.assertTrue(row["checker_passed"], failed)
                 self.assertFalse(row["gui_only"]["violation"], row["gui_only"])
                 self.assertTrue(row["passed"])

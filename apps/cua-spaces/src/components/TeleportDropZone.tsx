@@ -238,14 +238,9 @@ export default function TeleportDropZone({
 
 /** Whether a client-space point falls inside the zone's box. Exported so the
  * drop hit-test is testable without a real drag. */
-export function isInsideZone(
-  element: HTMLElement | null,
-  point: { x: number; y: number },
-): boolean {
+export function isInsideZone(element: HTMLElement | null, point: { x: number; y: number }): boolean {
   if (!element) return false;
   const box = element.getBoundingClientRect();
   if (box.width === 0 && box.height === 0) return false;
-  return (
-    point.x >= box.left && point.x <= box.right && point.y >= box.top && point.y <= box.bottom
-  );
+  return point.x >= box.left && point.x <= box.right && point.y >= box.top && point.y <= box.bottom;
 }

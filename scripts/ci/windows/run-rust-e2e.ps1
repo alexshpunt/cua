@@ -447,6 +447,24 @@ if ($suite -in @("shared", "all")) {
 }
 
 if ($suite -in @("native", "all")) {
+    foreach ($test in @(
+        "input::keyboard::attached_wait_services_sent_messages::attached_wait_answers_a_message_the_target_sends",
+        "input::keyboard::attached_wait_pumps_own_queue::attached_wait_retrieves_a_message_posted_to_the_driver_thread",
+        "input::keyboard::attached_wait_pumps_own_queue::input_handed_to_the_driver_thread_is_never_read_by_the_target",
+        "input::keyboard::thread_activation_tests::a_window_its_thread_has_not_activated_is_not_ready_for_attachment",
+        "input::keyboard::busy_target_activation_tests::foreground_long_mixed_text_is_paced_without_authorizing_focus_return",
+        "input::keyboard::busy_target_activation_tests::foreground_text_stops_before_next_batch_when_reader_stalls",
+        "input::keyboard::busy_target_activation_tests::foreground_text_stops_before_next_batch_after_foreground_moves",
+        "input::mouse::wheel_tests::posted_click_is_delivered_when_calling_thread_cannot_be_paused",
+        "input::mouse::wheel_tests::posted_click_completes_before_the_leave_its_move_triggers",
+        "input::mouse::wheel_tests::posted_double_click_queues_move_press_release_per_click",
+        "input::mouse::wheel_tests::foreground_loss_refuses_new_mouse_input_even_without_a_witness"
+    )) {
+        Invoke-CargoTest "Windows input queue $test" @(
+            "test", "-p", "platform-windows", "--lib", $test, "--",
+            "--ignored", "--exact", "--nocapture", "--test-threads=1"
+        )
+    }
     Invoke-CargoTest "Windows installed-app discovery deadline" @(
         "test", "-p", "cua-driver", "--test", "protocol_tools_call_test", "--",
         "--ignored", "--exact", "tools_call_list_apps", "--nocapture", "--test-threads=1"
@@ -478,6 +496,10 @@ if ($suite -in @("native", "all")) {
 }
 
 if ($suite -in @("capture", "all")) {
+    Invoke-CargoTest "Embedded SDK DPI ABI capture" @(
+        "test", "-p", "cua-driver-sdk", "--lib", "tests::embedded_abi_uses_physical_pixels_from_an_unaware_host_thread", "--",
+        "--ignored", "--exact", "--nocapture", "--test-threads=1"
+    )
     Invoke-CargoTest "capture contract" @(
         "test", "-p", "cua-driver-e2e", "--test", "capture_contract_test", "--",
         "--ignored", "--nocapture", "--test-threads=1"

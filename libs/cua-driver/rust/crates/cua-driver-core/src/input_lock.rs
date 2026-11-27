@@ -14,8 +14,9 @@
 //! dispatches its steps through the registry must not wait for itself.
 
 use std::fs::{File, OpenOptions, TryLockError};
+use std::future::Future;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 /// The refusal code when another agent's input did not finish in time.
@@ -71,6 +72,22 @@ pub fn configured() -> bool {
 
 fn path() -> PathBuf {
     std::env::temp_dir().join("cua-driver-shared-input.lock")
+}
+
+tokio::task_local! {
+    static CURRENT_TURN: Option<Arc<InputTurn>>;
+}
+
+/// Scope the current dispatch's shared lock so its native workers can retain it.
+pub(crate) async fn scope<T>(turn: Option<Arc<InputTurn>>, future: impl Future<Output = T>) -> T {
+    CURRENT_TURN.scope(turn, future).await
+}
+
+pub(crate) fn current() -> Option<Arc<InputTurn>> {
+    CURRENT_TURN.try_with(Clone::clone).ok().flatten()
+}
+pub(crate) fn sync_scope<T>(turn: Option<Arc<InputTurn>>, action: impl FnOnce() -> T) -> T {
+    CURRENT_TURN.sync_scope(turn, action)
 }
 
 /// This process's hold on the shared lock; the last turn to drop releases it.
@@ -171,6 +188,37 @@ mod tests {
         );
         assert_eq!(holder.run_if_unchanged(holder.generation, || 23), Some(23));
     }
+    #[test]
+    fn shared_lock_probe_subprocess() {
+        let Some(path) = std::env::var_os("CUA_TEST_LOCK_PROBE_PATH") else {
+            return;
+        };
+        let file = OpenOptions::new().write(true).open(path).unwrap();
+        let result = file.try_lock();
+        match std::env::var("CUA_TEST_LOCK_PROBE_EXPECT")
+            .unwrap()
+            .as_str()
+        {
+            "busy" => assert!(matches!(result, Err(TryLockError::WouldBlock))),
+            "free" => result.unwrap(),
+            _ => panic!("invalid probe expectation"),
+        }
+    }
+
+    fn assert_process_lock(path: &std::path::Path, expectation: &str) {
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "input_lock::tests::shared_lock_probe_subprocess",
+                "--nocapture",
+            ])
+            .env("CUA_TEST_LOCK_PROBE_PATH", path)
+            .env("CUA_TEST_LOCK_PROBE_EXPECT", expectation)
+            .status()
+            .unwrap();
+        assert!(status.success());
+    }
+
     #[tokio::test]
     async fn turns_nest_in_one_process_and_release_on_the_last_drop() {
         let directory = tempfile::tempdir().unwrap();
@@ -192,5 +240,79 @@ mod tests {
         assert!(error.starts_with("input_busy:"), "{error}");
         other.unlock().unwrap();
         drop(acquire_at(&path, Duration::from_millis(30)).await.unwrap());
+
+        // A cancelled dispatch must not unlock the shared file while its
+        // native worker is still running, including a background-only call.
+        let turn = Arc::new(acquire_at(&path, Duration::from_millis(50)).await.unwrap());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        let dispatch = tokio::spawn(scope(Some(turn), async move {
+            crate::desktop_activity::spawn_blocking(move || {
+                started_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                let _ = finished_tx.send(());
+            })
+            .await
+            .unwrap();
+        }));
+        started_rx.await.unwrap();
+        dispatch.abort();
+        assert!(dispatch.await.unwrap_err().is_cancelled());
+        assert_process_lock(&path, "busy");
+        release_tx.send(()).unwrap();
+        finished_rx.await.unwrap();
+        // Wait for the worker closure and its admission to drop.
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match other.try_lock() {
+                Ok(()) => {
+                    other.unlock().unwrap();
+                    break;
+                }
+                Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                    tokio::task::yield_now().await
+                }
+                Err(error) => panic!("worker did not release lock: {error:?}"),
+            }
+        }
+        assert_process_lock(&path, "free");
+
+        // The outer blocking worker may launch another blocking worker and
+        // return before the latter finishes. The nested worker owns the turn.
+        let turn = Arc::new(acquire_at(&path, Duration::from_millis(50)).await.unwrap());
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
+        scope(Some(turn), async move {
+            crate::desktop_activity::spawn_blocking(move || {
+                let _nested = crate::desktop_activity::spawn_blocking(move || {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    let _ = finished_tx.send(());
+                });
+            })
+            .await
+            .unwrap();
+        })
+        .await;
+        started_rx.await.unwrap();
+        assert_process_lock(&path, "busy");
+        release_tx.send(()).unwrap();
+        finished_rx.await.unwrap();
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match other.try_lock() {
+                Ok(()) => {
+                    other.unlock().unwrap();
+                    break;
+                }
+                Err(TryLockError::WouldBlock) if Instant::now() < deadline => {
+                    tokio::task::yield_now().await
+                }
+                Err(error) => panic!("nested worker did not release lock: {error:?}"),
+            }
+        }
+        assert_process_lock(&path, "free");
     }
 }

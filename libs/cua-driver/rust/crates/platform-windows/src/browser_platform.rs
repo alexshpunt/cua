@@ -42,10 +42,9 @@ use crate::browser_standard_user::{
     browser_launch_context, require_profile_writable, spawn_with_token, with_impersonation,
     BrowserLaunchContext,
 };
-use windows::core::PCWSTR;
+use windows::core::{BOOL, PCWSTR};
 use windows::Win32::Foundation::{
-    CloseHandle, BOOL, ERROR_INSUFFICIENT_BUFFER, E_ACCESSDENIED, FILETIME, HWND, LPARAM, NO_ERROR,
-    RECT,
+    CloseHandle, ERROR_INSUFFICIENT_BUFFER, E_ACCESSDENIED, FILETIME, HWND, LPARAM, NO_ERROR, RECT,
 };
 use windows::Win32::Graphics::Gdi::{
     EnumDisplayMonitors, GetMonitorInfoW, MonitorFromWindow, HDC, HMONITOR, MONITORINFO,
@@ -1092,7 +1091,7 @@ fn physical_displays() -> Vec<PhysicalDisplay> {
     let mut displays: Vec<PhysicalDisplay> = Vec::new();
     unsafe {
         let _ = EnumDisplayMonitors(
-            HDC::default(),
+            None,
             None,
             Some(collect),
             LPARAM(&mut displays as *mut Vec<PhysicalDisplay> as isize),
@@ -1441,7 +1440,7 @@ fn windows_loopback_listeners(allowed_pids: &[u32]) -> Result<Vec<(u16, u32)>, B
     windows_loopback_listeners_with(allowed_pids, query_tcp_owner_table)
 }
 
-fn system_directory_path() -> Result<PathBuf, BrowserRefusal> {
+pub(crate) fn system_directory_path() -> Result<PathBuf, BrowserRefusal> {
     let mut buffer = [0u16; 32768];
     let length = unsafe { GetSystemDirectoryW(Some(&mut buffer)) } as usize;
     if length == 0 || length >= buffer.len() {
@@ -1984,6 +1983,10 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         }
     }
 
+    fn managed_extension_policy(&self, executable: &str) -> Option<String> {
+        crate::browser_managed_policy::managed_extension_policy(executable)
+    }
+
     fn spawn_isolated_browser(
         &self,
         mut command: std::process::Command,
@@ -2386,18 +2389,19 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         // transient identity-reproof failure must not make an old exact-pid
         // listener appear newly created after the approved setup action.
         let listeners_before = unfiltered_loopback_ports_for_exact_pid(pid_u32).await?;
-        let handle =
-            tokio::task::spawn_blocking(move || crate::browser_setup_ui::enable(hwnd, descriptor))
-                .await
-                .map_err(|error| {
-                    BrowserRefusal::new(
-                        BrowserRefusalCode::BrowserRouteUnavailable,
-                        format!(
-                            "could not inspect {}'s remote-debugging setup UI: {error}",
-                            descriptor.product_name
-                        ),
-                    )
-                })??;
+        let handle = cua_driver_core::desktop_activity::spawn_blocking(move || {
+            crate::browser_setup_ui::enable(hwnd, descriptor)
+        })
+        .await
+        .map_err(|error| {
+            BrowserRefusal::new(
+                BrowserRefusalCode::BrowserRouteUnavailable,
+                format!(
+                    "could not inspect {}'s remote-debugging setup UI: {error}",
+                    descriptor.product_name
+                ),
+            )
+        })??;
         let opened_setup_page = handle.opened_setup_page;
         let enabled_remote_debugging = handle.enabled_remote_debugging;
         let setup_was_already_enabled = !enabled_remote_debugging;
@@ -2511,14 +2515,15 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         let endpoint = match endpoint_result {
             Ok(endpoint) => endpoint,
             Err(error) => {
-                let error = tokio::task::spawn_blocking(move || handle.abort(error))
-                    .await
-                    .map_err(|join_error| {
-                        BrowserRefusal::new(
-                            BrowserRefusalCode::BrowserRouteUnavailable,
-                            format!("could not roll back browser setup: {join_error}"),
-                        )
-                    })?;
+                let error =
+                    cua_driver_core::desktop_activity::spawn_blocking(move || handle.abort(error))
+                        .await
+                        .map_err(|join_error| {
+                            BrowserRefusal::new(
+                                BrowserRefusalCode::BrowserRouteUnavailable,
+                                format!("could not roll back browser setup: {join_error}"),
+                            )
+                        })?;
                 return Err(error);
             }
         };
@@ -2540,7 +2545,7 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         &self,
         request: ExistingProfileSetupRequest,
     ) -> Result<bool, BrowserRefusal> {
-        tokio::task::spawn_blocking(move || {
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
             crate::browser_setup_ui::commit_pending(request.window_id)
         })
         .await
@@ -2582,7 +2587,7 @@ impl BrowserPlatform for WindowsBrowserPlatform {
         request: ExistingProfileSetupRequest,
         error: BrowserRefusal,
     ) -> BrowserRefusal {
-        tokio::task::spawn_blocking(move || {
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
             crate::browser_setup_ui::abort_pending(request.window_id, error)
         })
         .await
@@ -2591,6 +2596,26 @@ impl BrowserPlatform for WindowsBrowserPlatform {
                 BrowserRefusalCode::BrowserRouteUnavailable,
                 format!("could not roll back exact browser setup: {join_error}"),
             )
+        })
+    }
+
+    async fn dismiss_abandoned_existing_profile_consent(
+        &self,
+        pid: i64,
+        window_id: u64,
+    ) -> Result<bool, BrowserRefusal> {
+        let Ok(pid) = u32::try_from(pid) else {
+            return Ok(false);
+        };
+        cua_driver_core::desktop_activity::spawn_blocking(move || {
+            crate::browser_consent_ui::dismiss(pid, window_id)
+        })
+        .await
+        .unwrap_or_else(|join_error| {
+            Err(BrowserRefusal::new(
+                BrowserRefusalCode::BrowserRouteUnavailable,
+                format!("could not close the abandoned browser consent prompt: {join_error}"),
+            ))
         })
     }
 

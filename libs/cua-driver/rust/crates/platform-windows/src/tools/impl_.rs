@@ -284,34 +284,8 @@ pub(crate) fn minimized_element_refusal(
 /// the capture fallback which also keeps the full PrintWindow bitmap
 /// without crop.
 pub(crate) fn bitmap_to_screen(hwnd: u64, px: i32, py: i32) -> (i32, i32) {
-    use windows::Win32::Foundation::{HWND, RECT};
-    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
-    use windows::Win32::UI::WindowsAndMessaging::GetWindowRect;
-
-    // Keep this constant in sync with `capture::DWM_CROP_INSET_PX`.
-    const DWM_CROP_INSET_PX: i32 = 1;
-    let h = HWND(hwnd as *mut _);
-    unsafe {
-        let mut dwm = RECT::default();
-        let hr = DwmGetWindowAttribute(
-            h,
-            DWMWA_EXTENDED_FRAME_BOUNDS,
-            &mut dwm as *mut _ as *mut _,
-            std::mem::size_of::<RECT>() as u32,
-        );
-        if hr.is_ok() {
-            return (
-                dwm.left + DWM_CROP_INSET_PX + px,
-                dwm.top + DWM_CROP_INSET_PX + py,
-            );
-        }
-        // Fallback path — capture also keeps the full bitmap when DWM
-        // bounds aren't available, so the bitmap origin IS GetWindowRect
-        // top-left in that branch.
-        let mut wr = RECT::default();
-        let _ = GetWindowRect(h, &mut wr);
-        (wr.left + px, wr.top + py)
-    }
+    let (left, top) = crate::capture::window_capture_origin(hwnd).unwrap_or((0, 0));
+    (left + px, top + py)
 }
 
 /// Queue movement in screen coordinates on the presentation timeline. Never
@@ -763,8 +737,7 @@ fn background_window_input(tool: &str, args: &Value) -> bool {
     };
     BACKGROUND_WINDOW_INPUT_TOOLS.contains(&tool)
         && args.get("scope").and_then(Value::as_str) != Some("desktop")
-        && crate::input::delivery::DeliveryMode::from_args(args)
-            == crate::input::delivery::DeliveryMode::Background
+        && crate::input::delivery::DeliveryMode::from_args(args).is_background()
         && exact("pid")
         && exact("window_id")
 }
@@ -1135,7 +1108,7 @@ pub(crate) async fn restore_foreground_polling_best_effort(
                     // Foreground changed but to something we didn't
                     // spawn (e.g. user Alt-Tabbed). Don't touch it.
                     None
-                } else if !unsafe { IsWindow(prior) }.as_bool() {
+                } else if !unsafe { IsWindow(Some(prior)) }.as_bool() {
                     tracing::trace!(
                         target: "launch_app.focus_restore",
                         "prior foreground HWND no longer valid — skipping restore (spawned pid {} owns fg)",
@@ -1486,6 +1459,9 @@ pub fn build_registry_with_provider(
         let state = state.clone();
         r.set_token_window_resolver(Arc::new(move |args| state.snapshots.window_for_token(args)));
     }
+    r.set_window_identity_resolver(Arc::new(|pid, window_id| {
+        crate::win32::hosted_app_pid(u32::try_from(pid).ok()?, window_id).map(i64::from)
+    }));
     let cursor_outcome_reader = {
         let cursor_registry = state.cursor_registry.clone();
         cua_driver_core::session::register_scoped_cursor_outcome_reader(std::sync::Arc::new(
@@ -1802,6 +1778,31 @@ mod drag_capture_id_tests;
 mod semantic_admission_tests;
 #[cfg(test)]
 mod uia_only_tests;
+
+#[cfg(test)]
+mod background_window_input_tests {
+    use super::background_window_input;
+    use serde_json::json;
+
+    #[test]
+    fn only_exact_background_window_actions_use_independent_lane() {
+        for mode in [None, Some("background")] {
+            let mut args = json!({"pid": 42, "window_id": 7});
+            if let Some(mode) = mode {
+                args["delivery_mode"] = json!(mode);
+            }
+            assert!(background_window_input("click", &args));
+            assert!(!background_window_input("get_window_state", &args));
+            args["scope"] = json!("desktop");
+            assert!(!background_window_input("click", &args));
+        }
+        assert!(!background_window_input(
+            "click",
+            &json!({"pid": 42, "window_id": 7, "delivery_mode": "foreground"}),
+        ));
+        assert!(!background_window_input("click", &json!({"pid": 42})));
+    }
+}
 
 #[cfg(test)]
 mod cursor_key_resolution_tests {

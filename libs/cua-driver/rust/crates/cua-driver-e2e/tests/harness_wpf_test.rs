@@ -1278,6 +1278,126 @@ fn harness_wpf_right_click() {
             vec![OracleKind::Cursor, OracleKind::Focus]
         },
     );
+    for targeting in [Targeting::Ax, Targeting::Px] {
+        let mut case = native_foreground_case(
+            "wpf",
+            "right_click",
+            targeting,
+            DriverRoute::WindowsSendInput,
+        );
+        case.cell_id.push_str("-modifier-sequence");
+        run_case(case, |pid, wid, driver| {
+            focus_harness(driver, pid, wid);
+            for (click_count, modifiers, expected) in
+                [(1, vec!["shift"], "Shift"), (2, Vec::new(), "None")]
+            {
+                let snap = snapshot(driver, pid, wid);
+                assert!(!snap.is_error(), "snapshot failed: {}", snap.text());
+                let mut args = serde_json::json!({
+                    "pid": pid as i64, "window_id": wid, "modifier": modifiers
+                });
+                if targeting == Targeting::Ax {
+                    args["element_token"] =
+                        serde_json::json!(element_token_by_id(&snap, "border-click-target"));
+                } else {
+                    let (x, y) = pixel_center(
+                        &snap,
+                        "border-click-target",
+                        window_bounds(driver, pid, wid),
+                    );
+                    args["x"] = serde_json::json!(x);
+                    args["y"] = serde_json::json!(y);
+                }
+
+                if click_count == 1 {
+                    let refused = driver.call("right_click", args.clone());
+                    assert_eq!(
+                        refused.structured()["code"],
+                        "background_unavailable",
+                        "background modified right-click returned the wrong refusal: {}",
+                        refused.text()
+                    );
+                    assert!(refused.is_error());
+                    let after_refusal = snapshot(driver, pid, wid);
+                    assert!(
+                        after_refusal.text().contains("last_action=none"),
+                        "refused right-click reached the fixture: {}",
+                        after_refusal.text()
+                    );
+                    // The readback replaces the snapshot, so renew the token.
+                    if targeting == Targeting::Ax {
+                        args["element_token"] = serde_json::json!(element_token_by_id(
+                            &after_refusal,
+                            "border-click-target"
+                        ));
+                    }
+                }
+                let mut window_rect = RECT::default();
+                unsafe {
+                    GetWindowRect(HWND(wid as *mut _), &mut window_rect)
+                        .expect("read harness bounds");
+                    SetCursorPos(window_rect.left + 10, window_rect.top + 10)
+                        .expect("place cursor away from right-click target");
+                }
+                let mut cursor_before = POINT::default();
+                unsafe { GetCursorPos(&mut cursor_before) }.expect("read cursor before click");
+                args["delivery_mode"] = serde_json::json!("foreground");
+                let response = driver.call("right_click", args);
+                assert!(
+                    !response.is_error(),
+                    "foreground right-click failed: {}",
+                    response.text()
+                );
+                let mut cursor_after = POINT::default();
+                unsafe { GetCursorPos(&mut cursor_after) }.expect("read cursor after click");
+                let idx = ax::element_index_by_id(snap.text(), "border-click-target")
+                    .expect("border-click-target not in snapshot");
+                let frame = &snap.structured()["elements"]
+                    .as_array()
+                    .expect("structured elements")
+                    .iter()
+                    .find(|element| element["element_index"].as_u64() == Some(idx))
+                    .expect("right-click target frame")["frame"];
+                let click_x = frame["x"].as_f64().unwrap() + frame["w"].as_f64().unwrap() / 2.0;
+                let click_y = frame["y"].as_f64().unwrap() + frame["h"].as_f64().unwrap() / 2.0;
+                assert!(
+                    (f64::from(cursor_before.x) - click_x).abs() > 2.0
+                        || (f64::from(cursor_before.y) - click_y).abs() > 2.0,
+                    "cursor must start away from the injected point"
+                );
+                // No receiver-read witness covers this sequence; the fork keeps
+                // the unconfirmed target posture instead of restoring the cursor.
+                assert!(
+                    (f64::from(cursor_after.x) - click_x).abs() <= 1.0
+                        && (f64::from(cursor_after.y) - click_y).abs() <= 1.0,
+                    "unconfirmed right click moved off its target: ({}, {}) vs ({click_x}, {click_y})",
+                    cursor_after.x, cursor_after.y
+                );
+                assert_eq!(
+                    unsafe { GetForegroundWindow() }.0 as usize as u64,
+                    wid,
+                    "unconfirmed right click returned foreground away from its target"
+                );
+                let expected = format!(
+                    "last_action=right_click modifiers={expected} right_clicks={click_count}"
+                );
+                let deadline = Instant::now() + Duration::from_secs(3);
+                loop {
+                    let post = snapshot(driver, pid, wid);
+                    if post.text().contains(&expected) {
+                        break;
+                    }
+                    assert!(
+                        Instant::now() < deadline,
+                        "right-click did not preserve/release modifiers: expected {expected:?}, got {}",
+                        post.text()
+                    );
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+            }
+            Observation::delivered_with_fixture_state(Vec::new())
+        });
+    }
 }
 
 #[test]
@@ -1359,6 +1479,65 @@ fn harness_wpf_press_key_accelerator() {
                     post.text().contains("accel_fired=0"),
                     "refused WPF key mutated fixture state: {}",
                     post.text().chars().take(500).collect::<String>()
+                );
+                passed.push(OracleKind::FixtureState);
+                Observation::refused(code, passed, response.text(), Evidence::default())
+            })
+            .expect("required WPF session did not start")
+        },
+    );
+}
+
+#[test]
+#[ignore]
+fn harness_wpf_background_px_key_refuses_before_click() {
+    execute_case(
+        native_background_case("wpf", "press_key", Targeting::Px, DriverRoute::PostMessage)
+            .expecting_refusal(vec![RefusalCode::BackgroundUnavailable]),
+        |evidence| {
+            with_named_session("windows-wpf-keyboard-px-refusal", |pid, wid, driver| {
+                *evidence = recording_evidence(driver.recording_dir());
+                let bounds = window_bounds(driver, pid, wid);
+                let before = snapshot(driver, pid, wid);
+                let (x, y) = pixel_center(&before, "border-click-target", bounds);
+                let (text_response, _) = observe_background(driver, pid, wid, |driver| {
+                    driver.call(
+                        "type_text",
+                        serde_json::json!({
+                            "pid": pid as i64, "window_id": wid, "text": "x",
+                            "x": x, "y": y, "delivery_mode": "background"
+                        }),
+                    )
+                });
+                assert!(text_response.is_error());
+                assert_eq!(
+                    text_response.structured()["code"].as_str(),
+                    Some("background_unavailable")
+                );
+                assert!(snapshot(driver, pid, wid).text().contains("clicks=0"));
+                let (response, mut passed) = observe_background(driver, pid, wid, |driver| {
+                    driver.call(
+                        "press_key",
+                        serde_json::json!({
+                            "pid": pid as i64, "window_id": wid, "key": "f5",
+                            "x": x, "y": y, "delivery_mode": "background"
+                        }),
+                    )
+                });
+                assert!(
+                    response.is_error(),
+                    "background key unexpectedly succeeded: {}",
+                    response.text()
+                );
+                let code = response.structured()["code"]
+                    .as_str()
+                    .and_then(RefusalCode::from_driver_code)
+                    .expect("background key refusal needs a structured code");
+                let after = snapshot(driver, pid, wid);
+                assert!(
+                    after.text().contains("clicks=0"),
+                    "refused key clicked the button: {}",
+                    after.text()
                 );
                 passed.push(OracleKind::FixtureState);
                 Observation::refused(code, passed, response.text(), Evidence::default())
@@ -2235,8 +2414,11 @@ fn harness_wpf_activation_unlock_permits_focus_return() {
         .expect("rest the pointer on the human canvas");
         // Let the human receiver read this process's own input before the driver acts.
         std::thread::sleep(Duration::from_millis(300));
-        let human_before = wait_pointer_receiver(&human_path, pointer_oracle_time_ms(), |_| true);
+        let human_before = wait_pointer_receiver(&human_path, pointer_oracle_time_ms(), |state| {
+            state["moves"].as_u64().is_some_and(|moves| moves > 0)
+        });
 
+        driver.start_behavior_recording();
         let started_ms = pointer_oracle_time_ms();
         let response = driver.call(
             "click",
@@ -2249,17 +2431,69 @@ fn harness_wpf_activation_unlock_permits_focus_return() {
         assert!(!response.is_error(), "click failed: {}", response.text());
         let target_state =
             wait_pointer_receiver(&target_path, started_ms, |state| state["up"] == 1);
-        let human_state = wait_pointer_receiver(&human_path, started_ms, |_| true);
+        let human_state = wait_pointer_receiver(&human_path, pointer_oracle_time_ms(), |state| {
+            state["events"].as_array().is_some_and(|events| {
+                events.iter().any(|event| {
+                    event["kind"] == "activated"
+                        && event["utc_ms"]
+                            .as_u64()
+                            .is_some_and(|time| time >= started_ms)
+                })
+            })
+        });
         assert_eq!(target_state["down"], 1, "target state: {target_state}");
         assert_eq!(human_state["down"], 0, "click DOWN leaked: {human_state}");
         assert_eq!(human_state["up"], 0, "click UP leaked: {human_state}");
-        assert_eq!(
-            human_state["moves"], human_before["moves"],
-            "the unlock moved the pointer over the human's window: {human_state}"
-        );
-        let keys: Vec<_> = human_state["events"]
+        let events = human_state["events"]
             .as_array()
-            .expect("human event journal")
+            .expect("human event journal");
+        let deactivated = events
+            .iter()
+            .position(|event| {
+                event["kind"] == "deactivated"
+                    && event["utc_ms"]
+                        .as_u64()
+                        .is_some_and(|time| time >= started_ms)
+            })
+            .expect("human window was not deactivated by the target activation");
+        let unlock_moves: Vec<_> = events[..deactivated]
+            .iter()
+            .filter(|event| {
+                event["kind"] == "move"
+                    && event["utc_ms"]
+                        .as_u64()
+                        .is_some_and(|time| time >= started_ms)
+            })
+            .collect();
+        assert!(
+            unlock_moves.is_empty(),
+            "the unlock sent pointer movement to the human: {unlock_moves:?}"
+        );
+        // Windows recalculates the cursor when windows change Z order, which can
+        // generate WM_MOUSEMOVE at the *same* position when focus returns. It is
+        // not physical movement; reject any movement to a different position.
+        let baseline_move = human_before["events"]
+            .as_array()
+            .expect("human baseline event journal")
+            .iter()
+            .rev()
+            .find(|event| event["kind"] == "move")
+            .expect("human did not observe the baseline cursor position");
+        let baseline_xy = (
+            baseline_move["x"].as_f64().expect("baseline pointer x"),
+            baseline_move["y"].as_f64().expect("baseline pointer y"),
+        );
+        for event in events[deactivated..]
+            .iter()
+            .filter(|event| event["kind"] == "move")
+        {
+            assert_eq!(
+                (event["x"].as_f64(), event["y"].as_f64()),
+                (Some(baseline_xy.0), Some(baseline_xy.1)),
+                "pointer moved over the human after activation: {event}"
+            );
+        }
+        let keys: Vec<_> = events
             .iter()
             .filter(|event| {
                 event["kind"] == "keyboard"

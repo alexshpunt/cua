@@ -128,12 +128,14 @@ pub fn would_be_silently_dropped(hwnd: u64, kind: EventKind) -> bool {
         // WPF drops posted pointer messages unless the real cursor is over its
         // window, and its buttons read the button from the key state. Posted
         // WM_CHAR text and key-state chords reach its keyboard focus element.
+        // An unmodified key can be dropped by WPF's InputManager while a
+        // different window is foreground (for example, an F5 binding).
         //
         // Do not classify WM_VSCROLL/WM_HSCROLL here: the scroll tool posts the
         // scrollbar messages directly to the top-level HWND, and WPF hosts that
         // explicitly handle those messages (including our harness hook) can
         // consume them without a foreground swap.
-        return wpf_drops_event(kind);
+        return wpf_drops_event(kind, target_is_foreground(hwnd));
     }
     if is_tk_target_window(hwnd) {
         // Tk derives button transitions from GetKeyState rather than trusting
@@ -164,11 +166,25 @@ pub fn would_be_silently_dropped(hwnd: u64, kind: EventKind) -> bool {
     false
 }
 
-fn wpf_drops_event(kind: EventKind) -> bool {
+fn wpf_drops_event(kind: EventKind, target_is_foreground: bool) -> bool {
     matches!(
         kind,
         EventKind::MouseClick | EventKind::MouseMove | EventKind::MouseWheel
-    )
+    ) || (!target_is_foreground && matches!(kind, EventKind::Keystroke))
+}
+
+fn target_is_foreground(hwnd: u64) -> bool {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{GetAncestor, GetForegroundWindow, GA_ROOT};
+    if hwnd == 0 {
+        return false;
+    }
+    unsafe {
+        let target = GetAncestor(HWND(hwnd as *mut _), GA_ROOT);
+        let foreground = GetForegroundWindow();
+        let foreground_root = GetAncestor(foreground, GA_ROOT);
+        !target.0.is_null() && target == foreground_root
+    }
 }
 
 fn tk_drops_event(kind: EventKind) -> bool {
@@ -356,8 +372,33 @@ pub fn background_unavailable_error_with_cause(
     kind: EventKind,
     cause: impl Into<String>,
 ) -> cua_driver_core::protocol::ToolResult {
+    refusal_with_cause(hwnd, kind, cause.into(), "refused")
+}
+
+/// Build the refusal for a failed background coordinate injection. A stroke
+/// that failed after it began may already have reached the target, so its
+/// effect is `unverifiable`; a failure before any input was sent stays
+/// `refused`.
+pub fn background_injection_error(
+    hwnd: u64,
+    kind: EventKind,
+    error: &anyhow::Error,
+) -> cua_driver_core::protocol::ToolResult {
+    let effect = if error.is::<crate::input::inject::StrokeInterrupted>() {
+        "unverifiable"
+    } else {
+        "refused"
+    };
+    refusal_with_cause(hwnd, kind, error.to_string(), effect)
+}
+
+fn refusal_with_cause(
+    hwnd: u64,
+    kind: EventKind,
+    cause: String,
+    effect: &str,
+) -> cua_driver_core::protocol::ToolResult {
     let class = read_class_name(hwnd);
-    let cause = cause.into();
     let cause_lower = cause.to_ascii_lowercase();
     let code = if cause_lower.contains("occluded") {
         "background_occluded"
@@ -383,6 +424,7 @@ pub fn background_unavailable_error_with_cause(
             "target_class": class,
             "event_kind": kind.name(),
             "cause": cause,
+            "effect": effect,
         }),
     )
 }
@@ -400,14 +442,15 @@ mod tests {
     }
 
     #[test]
-    fn wpf_refuses_posted_pointer_events_and_takes_posted_keys() {
-        assert!(wpf_drops_event(EventKind::MouseClick));
-        assert!(wpf_drops_event(EventKind::MouseMove));
-        assert!(wpf_drops_event(EventKind::MouseWheel));
-        assert!(!wpf_drops_event(EventKind::Keystroke));
-        assert!(!wpf_drops_event(EventKind::KeyCombo));
-        assert!(!wpf_drops_event(EventKind::TextInput));
-        assert!(!wpf_drops_event(EventKind::MouseScroll));
+    fn wpf_refuses_pointer_and_background_unmodified_keys() {
+        assert!(wpf_drops_event(EventKind::MouseClick, true));
+        assert!(wpf_drops_event(EventKind::MouseMove, true));
+        assert!(wpf_drops_event(EventKind::MouseWheel, true));
+        assert!(wpf_drops_event(EventKind::Keystroke, false));
+        assert!(!wpf_drops_event(EventKind::Keystroke, true));
+        assert!(!wpf_drops_event(EventKind::KeyCombo, false));
+        assert!(!wpf_drops_event(EventKind::TextInput, false));
+        assert!(!wpf_drops_event(EventKind::MouseScroll, false));
     }
 
     #[test]
@@ -478,6 +521,23 @@ mod tests {
                 .as_ref()
                 .and_then(|v| v["code"].as_str()),
             Some("background_uipi_blocked")
+        );
+    }
+
+    #[test]
+    fn background_injection_error_reports_an_interrupted_stroke_as_unverifiable() {
+        let effect = |error: anyhow::Error| {
+            background_injection_error(0, EventKind::MouseMove, &error)
+                .structured_content
+                .and_then(|v| v["effect"].as_str().map(str::to_owned))
+        };
+        let interrupted = crate::input::inject::StrokeInterrupted(
+            "InjectSyntheticPointerInput(touch drag): failed".into(),
+        );
+        assert_eq!(effect(interrupted.into()).as_deref(), Some("unverifiable"));
+        assert_eq!(
+            effect(anyhow::anyhow!("target is occluded by another window")).as_deref(),
+            Some("refused")
         );
     }
 }

@@ -66,5 +66,8 @@ where
     R: Send + 'static,
 {
     let call = current();
-    tokio::task::spawn_blocking(move || CALL.sync_scope(call, operation))
+    let admission = crate::tool::retain_desktop_action_admission();
+    tokio::task::spawn_blocking(move || {
+        crate::tool::with_action_admission(admission, || CALL.sync_scope(call, operation))
+    })
 }

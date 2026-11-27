@@ -117,7 +117,7 @@ impl<T: PartialEq> Hud<T> {
             let _ = unsafe {
                 SetWindowPos(
                     self.hwnd,
-                    HWND_TOPMOST,
+                    Some(HWND_TOPMOST),
                     0,
                     0,
                     0,

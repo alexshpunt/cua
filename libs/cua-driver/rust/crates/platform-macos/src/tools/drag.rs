@@ -173,7 +173,7 @@ impl Tool for DragTool {
                 cursor_overlay::OverlayCommand::SetPressed(true),
             );
             let prompt = PromptInput::from_args(&args);
-            let result = tokio::task::spawn_blocking(move || {
+            let result = cua_driver_core::desktop_activity::spawn_blocking(move || {
                 let modifier_refs: Vec<&str> = modifiers.iter().map(String::as_str).collect();
                 crate::input::mouse::drag_at_xy_foreground_observed(
                     prompt,
@@ -318,8 +318,14 @@ impl Tool for DragTool {
         // mouse events (LibreOffice VCL) cannot take a background gesture;
         // refuse before any activation or dispatch.
         if !fg {
-            if let Err(refusal) =
-                super::pixel_route::resolve(pid, false, window_id, "mouse_drag").await
+            if let Err(refusal) = super::pixel_route::resolve(
+                pid,
+                false,
+                window_id,
+                "mouse_drag",
+                super::pixel_route::PointerGesture::Other,
+            )
+            .await
             {
                 return refusal;
             }
@@ -379,10 +385,12 @@ impl Tool for DragTool {
         let _key_focus = if fg {
             None
         } else {
-            tokio::task::spawn_blocking(move || crate::key_focus_guard::protect(pid))
-                .await
-                .ok()
-                .flatten()
+            cua_driver_core::desktop_activity::spawn_blocking(move || {
+                crate::key_focus_guard::protect(pid)
+            })
+            .await
+            .ok()
+            .flatten()
         };
         let prior_key_wid = match prior_front {
             Some(prior) if !fg && prior != pid => tokio::task::spawn_blocking(move || {
@@ -396,7 +404,7 @@ impl Tool for DragTool {
         let focus_without_raise = if fg {
             false
         } else {
-            match tokio::task::spawn_blocking(move || {
+            match cua_driver_core::desktop_activity::spawn_blocking(move || {
                 crate::input::mouse::prepare_background_pixel_click(pid, wid)
             })
             .await
@@ -435,88 +443,90 @@ impl Tool for DragTool {
             prior_front,
             "drag.CGEvent",
             || async move {
-                tokio::task::spawn_blocking(move || -> anyhow::Result<BackgroundDrag> {
-                    let m: Vec<&str> = mods_owned.iter().map(String::as_str).collect();
-                    let observe = move |x: f64, y: f64| {
-                        crate::cursor::overlay::send_command(
-                            cursor_for_drag.clone(),
-                            cursor_overlay::track_pointer_command(x, y),
-                        );
-                    };
-                    if fg {
-                        // Keep the exact target window active for the
-                        // complete HID gesture, then restore the prior
-                        // front process.
-                        return crate::input::skylight::with_foreground_hid_activation(
-                            pid as libc::pid_t,
+                cua_driver_core::desktop_activity::spawn_blocking(
+                    move || -> anyhow::Result<BackgroundDrag> {
+                        let m: Vec<&str> = mods_owned.iter().map(String::as_str).collect();
+                        let observe = move |x: f64, y: f64| {
+                            crate::cursor::overlay::send_command(
+                                cursor_for_drag.clone(),
+                                cursor_overlay::track_pointer_command(x, y),
+                            );
+                        };
+                        if fg {
+                            // Keep the exact target window active for the
+                            // complete HID gesture, then restore the prior
+                            // front process.
+                            return crate::input::skylight::with_foreground_hid_activation(
+                                pid as libc::pid_t,
+                                wid,
+                                || {
+                                    crate::input::mouse::drag_at_xy_observed(
+                                        prompt,
+                                        pid,
+                                        from_sx,
+                                        from_sy,
+                                        to_sx,
+                                        to_sy,
+                                        Some((from_lx, from_ly)),
+                                        Some((to_lx, to_ly)),
+                                        Some(wid),
+                                        duration_ms,
+                                        steps,
+                                        &m,
+                                        button,
+                                        true,
+                                        observe,
+                                    )?;
+                                    // Hold the front until AppKit finishes the
+                                    // drop: restoring the previous app while the
+                                    // session is still open cancels it.
+                                    await_drag_session_end(pid);
+                                    Ok(())
+                                },
+                            )
+                            .map(|()| BackgroundDrag::Gesture);
+                        }
+                        // A drag that starts a system drag-and-drop session
+                        // (list reordering, file drags, HTML5 draggable) shows
+                        // its drag image in a window of the target at the
+                        // dragging level. AppKit ends a session started by
+                        // window-routed events soon after it starts, dropping
+                        // at the last dragged point, so the gesture holds the
+                        // drop point until the image goes away. A session that
+                        // outlives the hold did not drop there.
+                        let before = drag_image_windows(pid);
+                        let outcome = crate::input::mouse::drag_at_xy_background(
+                            pid,
+                            (from_sx, from_sy),
+                            (to_sx, to_sy),
+                            (from_sx - from_lx, from_sy - from_ly),
                             wid,
-                            || {
-                                crate::input::mouse::drag_at_xy_observed(
-                                    prompt,
-                                    pid,
-                                    from_sx,
-                                    from_sy,
-                                    to_sx,
-                                    to_sy,
-                                    Some((from_lx, from_ly)),
-                                    Some((to_lx, to_ly)),
-                                    Some(wid),
-                                    duration_ms,
-                                    steps,
-                                    &m,
-                                    button,
-                                    true,
-                                    observe,
-                                )?;
-                                // Hold the front until AppKit finishes the
-                                // drop: restoring the previous app while the
-                                // session is still open cancels it.
-                                await_drag_session_end(pid);
-                                Ok(())
-                            },
-                        )
-                        .map(|()| BackgroundDrag::Gesture);
-                    }
-                    // A drag that starts a system drag-and-drop session
-                    // (list reordering, file drags, HTML5 draggable) shows
-                    // its drag image in a window of the target at the
-                    // dragging level. AppKit ends a session started by
-                    // window-routed events soon after it starts, dropping
-                    // at the last dragged point, so the gesture holds the
-                    // drop point until the image goes away. A session that
-                    // outlives the hold did not drop there.
-                    let before = drag_image_windows(pid);
-                    let outcome = crate::input::mouse::drag_at_xy_background(
-                        pid,
-                        (from_sx, from_sy),
-                        (to_sx, to_sy),
-                        (from_sx - from_lx, from_sy - from_ly),
-                        wid,
-                        duration_ms,
-                        steps,
-                        &m,
-                        button,
-                        observe,
-                        || !drag_image_windows(pid).is_subset(&before),
-                    )?;
-                    use crate::input::mouse::BackgroundDragOutcome;
-                    Ok(match outcome {
-                        BackgroundDragOutcome::DragSession { ended: false } => {
-                            BackgroundDrag::SessionOpen
-                        }
-                        BackgroundDragOutcome::DragSession { ended: true } => {
-                            BackgroundDrag::SessionDropped
-                        }
-                        // A session that showed only after the release is
-                        // sliding its image back: nothing dropped.
-                        BackgroundDragOutcome::Completed
-                            if !drag_image_windows(pid).is_subset(&before) =>
-                        {
-                            BackgroundDrag::SessionOpen
-                        }
-                        BackgroundDragOutcome::Completed => BackgroundDrag::Gesture,
-                    })
-                })
+                            duration_ms,
+                            steps,
+                            &m,
+                            button,
+                            observe,
+                            || !drag_image_windows(pid).is_subset(&before),
+                        )?;
+                        use crate::input::mouse::BackgroundDragOutcome;
+                        Ok(match outcome {
+                            BackgroundDragOutcome::DragSession { ended: false } => {
+                                BackgroundDrag::SessionOpen
+                            }
+                            BackgroundDragOutcome::DragSession { ended: true } => {
+                                BackgroundDrag::SessionDropped
+                            }
+                            // A session that showed only after the release is
+                            // sliding its image back: nothing dropped.
+                            BackgroundDragOutcome::Completed
+                                if !drag_image_windows(pid).is_subset(&before) =>
+                            {
+                                BackgroundDrag::SessionOpen
+                            }
+                            BackgroundDragOutcome::Completed => BackgroundDrag::Gesture,
+                        })
+                    },
+                )
                 .await
             },
         )
@@ -583,7 +593,7 @@ impl Tool for DragTool {
         match result {
             Ok(Ok(BackgroundDrag::SessionOpen))
                 if cua_driver_core::delivery::brief_foreground_allowed()
-                    && !cua_driver_core::delivery::background_requested_explicitly(&args) =>
+                    && delivery_mode.allows_escalation() =>
             {
                 self.brief_foreground_drag(&args, pid, wid, prior_front)
                     .await
@@ -654,9 +664,10 @@ impl DragTool {
         // drop has finished, see `await_drag_session_end`); this step promised
         // to hand it back, so put it where the user left it.
         if let Some((x, y)) = pointer_before {
-            let _ =
-                tokio::task::spawn_blocking(move || crate::input::mouse::move_cursor_desktop(x, y))
-                    .await;
+            let _ = cua_driver_core::desktop_activity::spawn_blocking(move || {
+                crate::input::mouse::move_cursor_desktop(x, y)
+            })
+            .await;
         }
         let pointer_after = tokio::task::spawn_blocking(super::cursor_tools::pointer_location)
             .await
