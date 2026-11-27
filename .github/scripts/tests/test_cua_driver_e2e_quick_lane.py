@@ -34,20 +34,26 @@ class QuickLane(unittest.TestCase):
         # Every other trigger is a full run.
         self.assertIn("lanes=${4:-full}", decide)
 
-    def test_quick_lane_is_the_shared_electron_lane_on_each_os(self):
-        self.assertIn(
-            "lane: ${{ needs.decide.outputs.lanes == 'quick' && 'shared' || 'all' }}",
-            job(GATE, "linux"),
-        )
+    def test_quick_lane_runs_windows_shared_electron(self):
         self.assertIn(
             "lane: ${{ needs.decide.outputs.lanes == 'quick' && 'shared' || needs.decide.outputs.lanes == 'queue' && 'native,capture,installer' || 'all' }}",
             job(GATE, "windows"),
         )
-        for name in ("linux", "windows"):
-            self.assertIn(
-                "harness_filter: ${{ needs.decide.outputs.lanes == 'quick' && 'electron' || '' }}",
-                job(GATE, name),
-            )
+        self.assertIn(
+            "harness_filter: ${{ needs.decide.outputs.lanes == 'quick' && 'electron' || '' }}",
+            job(GATE, "windows"),
+        )
+
+    def test_automatic_gate_only_requires_windows(self):
+        jobs = re.findall(r"^  ([a-z0-9-]+):\n", GATE.split("\njobs:\n", 1)[1], re.M)
+        self.assertNotIn("linux", jobs)
+        self.assertIn("platform: windows", job(GATE, "browsers"))
+        self.assertNotIn("linux", job(GATE, "result"))
+        self.assertNotIn("linux", job(GATE, "nightly-report"))
+        browser = (WF / "e2e-rust-standalone-browsers.yml").read_text()
+        self.assertIn("platform:", browser)
+        self.assertIn("default: all", browser)
+        self.assertIn("Linux X11", browser)
 
     def test_merge_queue_runs_the_lanes_that_fit_its_timeout_on_gated_paths(self):
         decide = job(GATE, "decide")
@@ -76,7 +82,11 @@ class QuickLane(unittest.TestCase):
                     ["bash", "-c", helper + "compare_files a b"],
                     capture_output=True,
                     text=True,
-                    env={**os.environ, "PATH": f"{d}:{os.environ['PATH']}", "REPO": "o/r"},
+                    env={
+                        **{k: v for k, v in os.environ.items() if k != "BASH_ENV"},
+                        "PATH": f"{d}:{os.environ['PATH']}",
+                        "REPO": "o/r",
+                    },
                     check=True,
                 ).stdout.split()
 
@@ -94,10 +104,10 @@ class QuickLane(unittest.TestCase):
         )
 
     def test_fork_gate_runs_no_macos_lane(self):
-        # The fork targets Windows and Linux; the upstream macOS lanes stay manual.
+        # Other desktop platforms remain available through manual workflows.
         jobs = re.findall(r"^  ([a-z0-9-]+):\n", GATE.split("\njobs:\n", 1)[1], re.M)
         self.assertEqual(
-            jobs, ["quick", "decide", "linux", "windows", "browsers", "result", "nightly-report"]
+            jobs, ["quick", "decide", "windows", "browsers", "result", "nightly-report"]
         )
         self.assertNotIn("e2e-rust-macos.yml", GATE)
 

@@ -1,21 +1,8 @@
 name: "E2E: Cua Driver release gate"
 
-# The Linux, Windows and standalone browser E2E lanes, without publishing
-# anything. The fork does not run the upstream macOS lane. Two sizes:
-#
-#   full   Linux and Windows full matrices and the standalone browser
-#          lanes (26 to 47 min per lane). Runs after merge:
-#            - nightly 06:00 UTC against the default branch,
-#            - every push to main that touches the gated paths (runs queue, a
-#              burst of merges is one pending run for the newest commit),
-#            - a manual dispatch.
-#   quick  The PR lane. The core paths on each OS, on the Electron harness:
-#          the shared Windows lane and the shared Linux lane (click, type,
-#          scroll, drag, focus and background input), plus the Linux
-#          verification-skill proof that E2E: Rust Linux interactive already
-#          runs on PRs. The Tauri, WebView2, WPF, WinUI3 and GTK harnesses, the
-#          capture and installer lanes and the standalone browser lanes wait for
-#          the full run after merge.
+# The fork's Windows and standalone Windows browser E2E lanes, without
+# publishing. Full runs cover every Windows lane; PR runs use the shared
+# Electron lane. Linux suites remain available through manual workflows.
 #
 # A PR gets the quick lane when the `e2e-gate` label is present or it touches the
 # gated paths (.github/scripts/cua_driver_e2e_gate_paths.py: driver crates,
@@ -180,20 +167,6 @@ jobs:
           fi
           emit false pr "no gated paths and no e2e-gate label"
 
-  linux:
-    name: "gate / Linux E2E"
-    needs: [quick, decide]
-    if: ${{ !failure() && !cancelled() && needs.decide.outputs.run == 'true' && needs.quick.outputs.skip != 'true' }}
-    permissions:
-      actions: read
-      contents: read
-    uses: ./.github/workflows/e2e-rust-linux.yml
-    with:
-      ref: ${{ github.sha }}
-      # Quick (PR): the shared lane on the Electron harness. Full: every lane.
-      lane: ${{ needs.decide.outputs.lanes == 'quick' && 'shared' || 'all' }}
-      harness_filter: ${{ needs.decide.outputs.lanes == 'quick' && 'electron' || '' }}
-
   windows:
     name: "gate / Windows E2E"
     needs: [quick, decide]
@@ -221,6 +194,7 @@ jobs:
     uses: ./.github/workflows/e2e-rust-standalone-browsers.yml
     with:
       ref: ${{ github.sha }}
+      platform: windows
 
   # The single check to require in branch protection. Skipped lanes pass
   # (path-based requirement); gated PRs need every lane green.
@@ -228,7 +202,7 @@ jobs:
   result:
     name: "E2E gate / result"
     if: ${{ always() && needs.quick.outputs.skip != 'true' }}
-    needs: [quick, decide, linux, windows, browsers]
+    needs: [quick, decide, windows, browsers]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -263,7 +237,7 @@ jobs:
     # A post-merge push without gated paths runs no lanes (decide.run == false): every lane
     # is then `skipped`, which is not a failure, so there is nothing to report.
     if: ${{ always() && needs.decide.outputs.run == 'true' && (needs.decide.outputs.mode == 'nightly' || needs.decide.outputs.mode == 'post-merge') && needs.quick.outputs.skip != 'true' }}
-    needs: [quick, decide, linux, windows, browsers]
+    needs: [quick, decide, windows, browsers]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

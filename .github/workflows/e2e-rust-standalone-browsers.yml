@@ -8,6 +8,11 @@ on:
         description: "Full 40-character commit SHA to certify"
         required: true
         type: string
+      platform:
+        description: "Browser platform: all or windows"
+        required: false
+        default: all
+        type: string
   workflow_dispatch:
     inputs:
       ref:
@@ -50,8 +55,10 @@ jobs:
         env:
           REQUESTED_SHA: ${{ inputs.ref }}
           DISPATCH_SHA: ${{ github.sha }}
+          PLATFORM: ${{ inputs.platform }}
         run: |
           sha="${REQUESTED_SHA:-$DISPATCH_SHA}"
+          case "${PLATFORM:-all}" in all|windows) ;; *) echo "invalid browser platform" >&2; exit 2;; esac
           if [[ ! "$sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
             echo "ref must be a full 40-character commit SHA" >&2
             exit 2
@@ -64,15 +71,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - label: Windows
-            os: windows-latest
-            artifact: rust-browser-windows
-            products: chrome,edge
-          - label: Linux X11
-            os: ubuntu-latest
-            artifact: rust-browser-linux-x11
-            products: chrome
+        include: ${{ fromJSON(inputs.platform == 'windows' && '[{"label":"Windows","os":"windows-latest","artifact":"rust-browser-windows","products":"chrome,edge"}]' || '[{"label":"Windows","os":"windows-latest","artifact":"rust-browser-windows","products":"chrome,edge"},{"label":"Linux X11","os":"ubuntu-latest","artifact":"rust-browser-linux-x11","products":"chrome"}]') }}
     runs-on: ${{ matrix.os }}
     # Cold Windows builds plus the complete two-browser matrix and report can
     # exceed an hour; retain time for the report and artifact upload.
