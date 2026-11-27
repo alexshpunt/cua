@@ -54,7 +54,7 @@ class WindowsDesktopTest(unittest.TestCase):
                     "foreground",
                     [sys.executable, str(ORACLE), "--mode", "{mode}", "--seed", "{seed}"],
                 )
-                failed = [k for k, v in row["evaluation"]["checks"].items() if not v["passed"]]
+                failed = {k: v for k, v in row["evaluation"]["checks"].items() if not v["passed"]}
                 self.assertTrue(row["checker_passed"], failed)
                 self.assertFalse(row["gui_only"]["violation"], row["gui_only"])
                 self.assertTrue(row["passed"])
