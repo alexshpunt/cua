@@ -288,7 +288,8 @@ mod native {
         {
             return false;
         }
-        crate::input::inject::force_foreground_attached(before)
+        // The app that took the foreground is not this process: Windows may refuse a plain request.
+        crate::input::inject::force_foreground_assisted(before).0
     }
 
     /// Undoes the peek on every exit path, including a panic in the capture.
