@@ -96,6 +96,8 @@ pub(crate) struct Report {
     pub bounds: (i32, i32, i32, i32),
     /// The app activated itself when restored and the driver handed the foreground back.
     pub foreground_returned: bool,
+    /// The window that had the foreground before the peek has it again after it.
+    pub foreground_kept: bool,
 }
 
 impl Report {
@@ -111,6 +113,7 @@ impl Report {
                 "height": self.bounds.3 - self.bounds.1,
             },
             "foreground_returned": self.foreground_returned,
+            "foreground_kept": self.foreground_kept,
         })
     }
 }
@@ -478,14 +481,29 @@ mod native {
             let held_ms = restored_at.elapsed().as_millis() as u64;
             foreground_returned |= give_foreground_back(window, foreground_before);
             ghost.finish(true);
-            // Minimizing an active window activates the next one in z-order, not the human's.
-            foreground_returned |= give_foreground_back(window, foreground_before)
-                || (foreground_returned && restore_foreground(foreground_before));
+            // Minimizing an active window activates the next one in z-order, not the human's, and
+            // an app that took the foreground once may take it again as its restore settles.
+            if foreground_returned {
+                for _ in 0..4 {
+                    restore_foreground(foreground_before);
+                    std::thread::sleep(Duration::from_millis(40));
+                }
+                restore_foreground(foreground_before);
+            }
+            foreground_returned |= give_foreground_back(window, foreground_before);
+            tracing::debug!(
+                target: "cua-driver",
+                "minimized peek of 0x{hwnd:x}: foreground returned {foreground_returned}, now {:?}, before {:?}",
+                GetForegroundWindow(),
+                foreground_before
+            );
             let report = Report {
                 settle_ms,
                 held_ms,
                 bounds: (rect.left, rect.top, rect.right, rect.bottom),
                 foreground_returned,
+                foreground_kept: foreground_before.0.is_null()
+                    || GetForegroundWindow() == foreground_before,
             };
             outcome.map(|captured| (captured, report))
         }
@@ -577,6 +595,7 @@ mod tests {
             held_ms: 480,
             bounds: (300, 180, 1650, 1230),
             foreground_returned: false,
+            foreground_kept: true,
         };
         assert_eq!(
             report.to_json(),
@@ -586,6 +605,7 @@ mod tests {
                 "held_ms": 480,
                 "window_bounds": {"x": 300, "y": 180, "width": 1350, "height": 1050},
                 "foreground_returned": false,
+                "foreground_kept": true,
             })
         );
     }
