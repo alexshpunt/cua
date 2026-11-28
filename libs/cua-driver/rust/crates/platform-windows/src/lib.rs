@@ -161,6 +161,8 @@ mod capture_admission;
 #[cfg(target_os = "windows")]
 mod clipboard;
 #[cfg(any(target_os = "windows", test))]
+mod minimized_peek;
+#[cfg(any(target_os = "windows", test))]
 mod persistent_wgc;
 #[cfg(any(target_os = "windows", test))]
 mod window_restore_state;

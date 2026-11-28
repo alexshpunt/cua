@@ -461,6 +461,8 @@ impl Tool for GetWindowStateTool {
                 "max_elements":{"type":"integer","minimum":1,"description":"Cap on the total number of UIA nodes walked. Truncates depth-first; markdown and structured elements truncate together. Default 250 (5 000 with full_output:true); the response states when the tree was cut. Raise it to read further into a large window."},
                 "max_depth":{"type":"integer","minimum":1,"description":"Cap on the UIA-tree walk depth. Nodes whose rendered indent would exceed this are omitted. Omit for the default (25). Lower for deep menu / Electron trees."},
                 "timeout_ms": cua_driver_core::tool_schema::timeout_ms_schema(),
+                "minimized_capture":{"type":"string","enum":["refuse","peek"],"description":"Windows: what to do when the window is minimized. Default `refuse`: no screenshot, with a reason. `peek`: restore the window without activating it, fully transparent, click-through and on top, capture it after `minimized_settle_ms`, then minimize it again and put every style back (about 0.2-0.6 s). This is the only way to get fresh pixels of a minimized window: Windows stops composing it and many apps stop rendering. The app can see itself visible for that moment. Refused for elevated windows, per-pixel-alpha windows and not-responding apps. The result names `minimized_capture` with the held time and the restored `window_bounds`. The accessibility tree is still read from the minimized window."},
+                "minimized_settle_ms":{"type":"integer","minimum":0,"maximum":2000,"description":"With minimized_capture:\"peek\": time the restored window gets to paint before the capture. Default 150."},
                 "max_image_dimension":{"type":"integer","minimum":0,"description":"Per-call long-edge limit for the returned screenshot, in pixels (aspect ratio preserved). Explicit values override configured behavior; 0 returns native resolution. Omit to preserve the configured default."},
                 "max_dimension":{"type":"integer","minimum":1,"description":"Legacy optional cap on the returned screenshot's long edge, in pixels (aspect ratio preserved). Applied on top of the configured max_image_dimension ceiling when max_image_dimension is omitted; the tighter wins."},
                 "crop":{"type":"object","required":["x","y","width","height"],"additionalProperties":false,"description":"With display_only:true only: return just this rectangle of the window, in its physical pixels (screenshot_original_width/height space), clamped to the window. Only the rectangle is encoded; max_image_dimension applies to it. The result names the clamped rectangle as screenshot_crop.","properties":{"x":{"type":"integer","minimum":0},"y":{"type":"integer","minimum":0},"width":{"type":"integer","minimum":1},"height":{"type":"integer","minimum":1}}}
@@ -645,6 +647,13 @@ impl Tool for GetWindowStateTool {
             return ToolResult::error("crop is not available with capture_backend:\"wgc\".")
                 .with_structured(json!({"code": "invalid_arguments"}));
         }
+        let minimized_policy = match crate::minimized_peek::Policy::from_args(&args) {
+            Ok(policy) => policy,
+            Err(message) => {
+                return ToolResult::error(message)
+                    .with_structured(json!({"code": "invalid_arguments"}))
+            }
+        };
         let state = self.state.clone();
         let q = query.clone();
         let out_file = screenshot_out_file.clone();
@@ -738,9 +747,10 @@ impl Tool for GetWindowStateTool {
             // The previous `Err(_) => None` silently dropped the error and
             // upstream agents saw an empty response with no signal.
             let mut applied_crop = None;
+            let mut peek_report = None;
             let (screenshot, screenshot_err) = if do_shot {
-                let captured = match (retained, crop) {
-                    (Some(frame), _) => Ok((frame.png, frame.width, frame.height)),
+                let mut capture_window = || match (&retained, crop) {
+                    (Some(frame), _) => Ok((frame.png.clone(), frame.width, frame.height)),
                     (None, Some(region)) => crate::capture::screenshot_window_region(
                         hwnd, max_dim, region,
                     )
@@ -749,6 +759,23 @@ impl Tool for GetWindowStateTool {
                         (png, w, h)
                     }),
                     (None, None) => crate::capture::screenshot_window_overview(hwnd, max_dim),
+                };
+                let captured = match minimized_policy {
+                    crate::minimized_peek::Policy::Peek { settle_ms }
+                        if retained.is_none() && crate::input::window_is_iconic(hwnd) =>
+                    {
+                        crate::minimized_peek::run(
+                            hwnd,
+                            settle_ms,
+                            &mut capture_window,
+                            |(png, _, _)| crate::minimized_peek::png_is_flat(png),
+                        )
+                        .map(|(captured, report)| {
+                            peek_report = Some(report);
+                            captured
+                        })
+                    }
+                    _ => capture_window(),
                 };
                 match captured {
                     Ok((png, native_w, native_h)) => {
@@ -775,7 +802,7 @@ impl Tool for GetWindowStateTool {
             } else {
                 (None, None)
             };
-            Ok((screenshot, screenshot_err, applied_crop))
+            Ok((screenshot, screenshot_err, applied_crop, peek_report))
         });
         let result: anyhow::Result<_> =
             match tokio::time::timeout(UIA_SCREENSHOT_TIMEOUT, blocking).await {
@@ -789,11 +816,14 @@ impl Tool for GetWindowStateTool {
                         UIA_SCREENSHOT_TIMEOUT.as_secs()
                     )),
                     None,
+                    None,
                 )),
             };
         let mut applied_crop = None;
-        let result = result.map(|(screenshot, screenshot_err, crop)| {
+        let mut peek_report = None;
+        let result = result.map(|(screenshot, screenshot_err, crop, peek)| {
             applied_crop = crop;
+            peek_report = peek;
             (tree_result, screenshot, screenshot_err)
         });
 
@@ -1089,6 +1119,13 @@ impl Tool for GetWindowStateTool {
                     }
                     structured["window_bounds"] =
                         json!({ "x": x, "y": y, "width": w, "height": h });
+                }
+                // A peek captured the window restored: report where it was then, since the
+                // minimized rectangle above is the off-screen icon position.
+                if let Some(report) = peek_report {
+                    let peek = report.to_json();
+                    structured["window_bounds"] = peek["window_bounds"].clone();
+                    structured["minimized_capture"] = peek;
                 }
                 if let Some(name) = app_name.as_deref().filter(|n| !n.is_empty()) {
                     structured["app_name"] = json!(name);
