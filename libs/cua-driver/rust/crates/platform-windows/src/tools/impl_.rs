@@ -864,6 +864,9 @@ impl ToolState {
     pub fn new(
         capture_service: Option<Arc<cua_driver_core::capture_runtime::CaptureService>>,
     ) -> Arc<Self> {
+        // A driver that died during a minimized-window peek left a window invisible.
+        #[cfg(target_os = "windows")]
+        crate::minimized_peek::recover_stale();
         Arc::new(Self {
             snapshots: Arc::new(Snapshots::new()),
             cursor_registry: Arc::new(CursorRegistry::new()),
