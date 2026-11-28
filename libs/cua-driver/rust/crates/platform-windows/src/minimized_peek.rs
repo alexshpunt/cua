@@ -94,8 +94,8 @@ pub(crate) struct Report {
     pub held_ms: u64,
     /// The window rectangle while it was restored, in physical screen pixels.
     pub bounds: (i32, i32, i32, i32),
-    /// The human or another process activated the window during the peek: it stays restored.
-    pub taken_over: bool,
+    /// The app activated itself when restored and the driver handed the foreground back.
+    pub foreground_returned: bool,
 }
 
 impl Report {
@@ -110,7 +110,7 @@ impl Report {
                 "width": self.bounds.2 - self.bounds.0,
                 "height": self.bounds.3 - self.bounds.1,
             },
-            "taken_over": self.taken_over,
+            "foreground_returned": self.foreground_returned,
         })
     }
 }
@@ -132,10 +132,11 @@ mod native {
     };
     use windows::Win32::UI::WindowsAndMessaging::{
         GetForegroundWindow, GetLayeredWindowAttributes, GetWindowLongW, GetWindowRect,
-        GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow, SetLayeredWindowAttributes,
-        SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_NOTOPMOST, HWND_TOPMOST,
-        LAYERED_WINDOW_ATTRIBUTES_FLAGS, LWA_ALPHA, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-        SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE, WS_EX_LAYERED, WS_EX_TOPMOST,
+        GetWindowThreadProcessId, IsHungAppWindow, IsIconic, IsWindow, IsWindowVisible,
+        SetLayeredWindowAttributes, SetWindowLongW, SetWindowPos, ShowWindow, GWL_EXSTYLE,
+        HWND_NOTOPMOST, HWND_TOPMOST, LAYERED_WINDOW_ATTRIBUTES_FLAGS, LWA_ALPHA, SWP_NOACTIVATE,
+        SWP_NOMOVE, SWP_NOSIZE, SW_SHOWMINNOACTIVE, SW_SHOWNOACTIVATE, WS_EX_LAYERED,
+        WS_EX_TOPMOST,
     };
 
     /// One ghost at a time: a second concurrent peek would only add risk.
@@ -221,7 +222,6 @@ mod native {
     }
 
     /// Put the window back as it was. Safe to call again and on a window that is gone.
-    /// `minimize` is false when the human took the window over: it stays restored.
     unsafe fn undo(saved: &Saved, minimize: bool, topmost_set: bool) {
         let hwnd = hwnd_of(saved.hwnd);
         if !IsWindow(Some(hwnd)).as_bool() {
@@ -263,6 +263,29 @@ mod native {
             }
         }
         SetWindowLongW(hwnd, GWL_EXSTYLE, saved.ex_style as i32);
+    }
+
+    /// Give the foreground back to the window that had it when the app took it for itself.
+    /// Returns whether the foreground had to be returned.
+    unsafe fn give_foreground_back(window: HWND, before: HWND) -> bool {
+        if before == window || GetForegroundWindow() != window {
+            return false;
+        }
+        restore_foreground(before);
+        true
+    }
+
+    /// Make `before` the foreground window again if it is still an ordinary visible window.
+    unsafe fn restore_foreground(before: HWND) -> bool {
+        if before.0.is_null()
+            || !IsWindow(Some(before)).as_bool()
+            || IsIconic(before).as_bool()
+            || !IsWindowVisible(before).as_bool()
+            || GetForegroundWindow() == before
+        {
+            return false;
+        }
+        crate::input::inject::force_foreground_attached(before)
     }
 
     /// Undoes the peek on every exit path, including a panic in the capture.
@@ -439,34 +462,30 @@ mod native {
                 ghost.topmost_set = true;
             }
 
-            // 3. Let the app paint, watching for a human who activates the window meanwhile.
-            let mut taken_over = false;
+            // 3. Let the app paint. Some apps activate themselves when restored: the foreground goes
+            // back at once, so the human's keystrokes do not land in a transparent window.
+            let mut foreground_returned = false;
             let settle = Duration::from_millis(settle_ms);
             let settle_started = Instant::now();
             while settle_started.elapsed() < settle {
                 std::thread::sleep(Duration::from_millis(10).min(settle));
-                if GetForegroundWindow() == window && foreground_before != window {
-                    taken_over = true;
-                    break;
-                }
+                foreground_returned |= give_foreground_back(window, foreground_before);
             }
-            if taken_over {
-                // The human wants this window: make it ordinary at once and keep it restored.
-                ghost.finish(false);
-            }
+            foreground_returned |= give_foreground_back(window, foreground_before);
             let mut rect = RECT::default();
             let _ = GetWindowRect(window, &mut rect);
             let outcome = capture();
-            if !taken_over {
-                taken_over = GetForegroundWindow() == window && foreground_before != window;
-            }
             let held_ms = restored_at.elapsed().as_millis() as u64;
-            ghost.finish(!taken_over);
+            foreground_returned |= give_foreground_back(window, foreground_before);
+            ghost.finish(true);
+            // Minimizing an active window activates the next one in z-order, not the human's.
+            foreground_returned |= give_foreground_back(window, foreground_before)
+                || (foreground_returned && restore_foreground(foreground_before));
             let report = Report {
                 settle_ms,
                 held_ms,
                 bounds: (rect.left, rect.top, rect.right, rect.bottom),
-                taken_over,
+                foreground_returned,
             };
             outcome.map(|captured| (captured, report))
         }
@@ -557,7 +576,7 @@ mod tests {
             settle_ms: 150,
             held_ms: 480,
             bounds: (300, 180, 1650, 1230),
-            taken_over: false,
+            foreground_returned: false,
         };
         assert_eq!(
             report.to_json(),
@@ -566,7 +585,7 @@ mod tests {
                 "settle_ms": 150,
                 "held_ms": 480,
                 "window_bounds": {"x": 300, "y": 180, "width": 1350, "height": 1050},
-                "taken_over": false,
+                "foreground_returned": false,
             })
         );
     }
