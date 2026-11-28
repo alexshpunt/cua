@@ -764,12 +764,16 @@ impl Tool for GetWindowStateTool {
                     crate::minimized_peek::Policy::Peek { settle_ms }
                         if retained.is_none() && crate::input::window_is_iconic(hwnd) =>
                     {
-                        crate::minimized_peek::run(hwnd, settle_ms, capture_window).map(
-                            |(captured, report)| {
-                                peek_report = Some(report);
-                                captured
-                            },
+                        crate::minimized_peek::run(
+                            hwnd,
+                            settle_ms,
+                            &mut capture_window,
+                            |(png, _, _)| crate::minimized_peek::png_is_flat(png),
                         )
+                        .map(|(captured, report)| {
+                            peek_report = Some(report);
+                            captured
+                        })
                     }
                     _ => capture_window(),
                 };

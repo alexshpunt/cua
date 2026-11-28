@@ -30,6 +30,25 @@ pub(crate) const MAX_SETTLE_MS: u64 = 2000;
 /// frame about 12 ms after the restore and the compositor needs a few more.
 pub(crate) const DEFAULT_SETTLE_MS: u64 = 150;
 
+/// How often a capture of one flat colour is retried, and the wait before each retry.
+pub(crate) const MAX_REPAINT_WAITS: u32 = 4;
+pub(crate) const REPAINT_WAIT: std::time::Duration = std::time::Duration::from_millis(250);
+
+/// True when (almost) every pixel of a BGRA/RGBA frame has the colour of the first one: a window
+/// that has not painted yet shows its frame colour and nothing else. Real content, even a mostly
+/// empty page, has text, controls or edges.
+pub(crate) fn is_flat_frame(pixels: &[u8]) -> bool {
+    let Some(first) = pixels.get(..4) else {
+        return false;
+    };
+    let total = pixels.len() / 4;
+    let different = pixels
+        .chunks_exact(4)
+        .filter(|pixel| *pixel != first)
+        .count();
+    different * 1000 <= total
+}
+
 /// `WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE`.
 pub(crate) const GHOST_BITS: u32 = 0x0008_0000 | 0x0000_0020 | 0x0800_0000;
 
@@ -94,6 +113,9 @@ pub(crate) struct Report {
     pub held_ms: u64,
     /// The window rectangle while it was restored, in physical screen pixels.
     pub bounds: (i32, i32, i32, i32),
+    /// How often the capture showed one flat colour and the driver waited for the app's first
+    /// frame before capturing again.
+    pub repaint_waits: u32,
     /// The app activated itself when restored and the driver handed the foreground back.
     pub foreground_returned: bool,
     /// The window that had the foreground before the peek has it again after it.
@@ -112,6 +134,7 @@ impl Report {
                 "width": self.bounds.2 - self.bounds.0,
                 "height": self.bounds.3 - self.bounds.1,
             },
+            "repaint_waits": self.repaint_waits,
             "foreground_returned": self.foreground_returned,
             "foreground_kept": self.foreground_kept,
         })
@@ -119,11 +142,11 @@ impl Report {
 }
 
 #[cfg(target_os = "windows")]
-pub(crate) use native::{recover_stale, run};
+pub(crate) use native::{png_is_flat, recover_stale, run};
 
 #[cfg(target_os = "windows")]
 mod native {
-    use super::{ghost_style, Layered, Report, Saved, GHOST_BITS};
+    use super::{ghost_style, Layered, Report, Saved, GHOST_BITS, MAX_REPAINT_WAITS, REPAINT_WAIT};
     use anyhow::{bail, Context, Result};
     use std::path::PathBuf;
     use std::sync::Mutex;
@@ -145,6 +168,17 @@ mod native {
     /// One ghost at a time: a second concurrent peek would only add risk.
     static ONE_PEEK: Mutex<()> = Mutex::new(());
     const RESTORE_TIMEOUT: Duration = Duration::from_millis(1500);
+
+    /// Whether a PNG shows one flat colour: the first frame of an app has not arrived yet.
+    pub(crate) fn png_is_flat(png: &[u8]) -> bool {
+        // A flat image compresses to a few kilobytes; skip decoding anything larger.
+        if png.len() > 64 * 1024 {
+            return false;
+        }
+        image::load_from_memory_with_format(png, image::ImageFormat::Png)
+            .map(|decoded| super::is_flat_frame(decoded.to_rgba8().as_raw()))
+            .unwrap_or(false)
+    }
 
     fn hwnd_of(raw: u64) -> HWND {
         HWND(raw as *mut _)
@@ -364,7 +398,8 @@ mod native {
     pub(crate) fn run<T>(
         hwnd: u64,
         settle_ms: u64,
-        capture: impl FnOnce() -> Result<T>,
+        mut capture: impl FnMut() -> Result<T>,
+        unpainted: impl Fn(&T) -> bool,
     ) -> Result<(T, Report)> {
         let _one = ONE_PEEK.lock().unwrap_or_else(|poison| poison.into_inner());
         let window = hwnd_of(hwnd);
@@ -478,7 +513,19 @@ mod native {
             foreground_returned |= give_foreground_back(window, foreground_before);
             let mut rect = RECT::default();
             let _ = GetWindowRect(window, &mut rect);
-            let outcome = capture();
+            let mut outcome = capture();
+            // An app that was hidden for a while can need longer than the settle time for its
+            // first frame; until then the capture shows its frame colour and nothing else.
+            let mut repaint_waits = 0u32;
+            while repaint_waits < MAX_REPAINT_WAITS
+                && outcome.as_ref().map(&unpainted).unwrap_or(false)
+            {
+                repaint_waits += 1;
+                std::thread::sleep(REPAINT_WAIT);
+                foreground_returned |= give_foreground_back(window, foreground_before);
+                let _ = GetWindowRect(window, &mut rect);
+                outcome = capture();
+            }
             let held_ms = restored_at.elapsed().as_millis() as u64;
             foreground_returned |= give_foreground_back(window, foreground_before);
             ghost.finish(true);
@@ -502,6 +549,7 @@ mod native {
                 settle_ms,
                 held_ms,
                 bounds: (rect.left, rect.top, rect.right, rect.bottom),
+                repaint_waits,
                 foreground_returned,
                 foreground_kept: foreground_before.0.is_null()
                     || GetForegroundWindow() == foreground_before,
@@ -590,11 +638,49 @@ mod tests {
     }
 
     #[test]
+    fn a_frame_of_one_colour_is_unpainted_but_any_content_is_not() {
+        let flat = [214u8, 226, 251, 255].repeat(10_000);
+        assert!(is_flat_frame(&flat));
+        // A dark page with a few pixels of text is real content.
+        let mut page = [16u8, 26, 50, 255].repeat(10_000);
+        for pixel in page.chunks_exact_mut(4).take(200) {
+            pixel.copy_from_slice(&[255, 255, 255, 255]);
+        }
+        assert!(!is_flat_frame(&page));
+        assert!(!is_flat_frame(&[]));
+        assert!(!is_flat_frame(&[1, 2, 3]));
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn a_flat_png_is_detected_and_a_painted_one_is_not() {
+        let encode = |pixels: &[u8]| {
+            let mut png = Vec::new();
+            image::codecs::png::PngEncoder::new(&mut png)
+                .write_image(pixels, 100, 80, image::ExtendedColorType::Rgba8)
+                .unwrap();
+            png
+        };
+        use image::ImageEncoder;
+        let flat = encode(&[214u8, 226, 251, 255].repeat(100 * 80));
+        assert!(png_is_flat(&flat));
+        let mut painted = [16u8, 26, 50, 255].repeat(100 * 80);
+        for (i, pixel) in painted.chunks_exact_mut(4).enumerate() {
+            if i % 7 == 0 {
+                pixel.copy_from_slice(&[(i % 251) as u8, 200, 90, 255]);
+            }
+        }
+        assert!(!png_is_flat(&encode(&painted)));
+        assert!(!png_is_flat(b"not a png"));
+    }
+
+    #[test]
     fn the_report_names_the_restored_bounds_and_the_hold_time() {
         let report = Report {
             settle_ms: 150,
             held_ms: 480,
             bounds: (300, 180, 1650, 1230),
+            repaint_waits: 0,
             foreground_returned: false,
             foreground_kept: true,
         };
@@ -605,6 +691,7 @@ mod tests {
                 "settle_ms": 150,
                 "held_ms": 480,
                 "window_bounds": {"x": 300, "y": 180, "width": 1350, "height": 1050},
+                "repaint_waits": 0,
                 "foreground_returned": false,
                 "foreground_kept": true,
             })
